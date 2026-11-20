@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M2 and M3 checks' den: alice's install hosts it, with Lounge and
+# The calls check's den: alice's install hosts it, with Lounge and
 # Games; Firefox's
 # microphone plays speech. Carol joins, whom the voice probe plays as a
 # third member joining and leaving the sealed call.

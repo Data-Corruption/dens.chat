@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The M5.2 check's den: bob posts three photos in one message, and a clip
-# with text in another; and from M17.2 alice and bob have a DM, for a
-# spoiler sent in it; and from M21.1 alice posts an animated GIF in #gifs,
+# The files check's den: bob posts three photos in one message, and a clip
+# with text in another; alice and bob have a DM, for a
+# spoiler sent in it; and alice posts an animated GIF in #gifs,
 # which 45 messages of three lines after it push far up the channel, yet
 # within the page the channel loads first.
 # shellcheck source=scripts/test/browser/lib.sh

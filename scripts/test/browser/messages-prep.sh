@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M11.2 check's dens. Alice's install hosts hers: general, where bob
+# The messages check's dens. Alice's install hosts hers: general, where bob
 # and alice have written, a link of alice's among it, a message of
 # bob's deleted since, and bob's links to messages, one at an address the
 # den left and one to a den bob hasn't joined at the den's address;

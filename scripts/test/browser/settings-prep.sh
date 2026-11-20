@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M19.1 check's den: alice's install hosts it, with general, a text
+# The settings check's den: alice's install hosts it, with general, a text
 # channel bob has written in, so a message list has rows to measure, a
 # phone's photo among them and a link to a YouTube video.
 # shellcheck source=scripts/test/browser/lib.sh

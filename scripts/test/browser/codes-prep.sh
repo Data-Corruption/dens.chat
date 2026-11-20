@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M16.1 check's den: alice's install hosts it, bob joins, and a DM
+# The codes check's den: alice's install hosts it, bob joins, and a DM
 # between them opens at once, neither having written yet; bob's laptop,
 # m2e, signs in as him through his first device's approval, so it holds
 # his seal and the record of what his Dens kept.

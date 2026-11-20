@@ -1,4 +1,4 @@
-// The M8 check of call answers: Bob, in the browser named, joins Lounge,
+// The answers check, of call answers: Bob, in the browser named, joins Lounge,
 // and carol, the voice probe, joins and leaves, so his browser answers the
 // den's offers again once it has gathered, when a browser names its
 // address in an answer's connection lines. The den is behind

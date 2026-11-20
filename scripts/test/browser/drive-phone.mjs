@@ -22,7 +22,7 @@
 // volume dragged in a sheet, a share docked above the channel, full
 // screen and back, and the call left from its bar; and staff's long press
 // on a channel's or a group's row for its menu and settings, on a touch
-// screen, and from M22.2 a channel and a group made from each menu a finger
+// screen, and a channel and a group made from each menu a finger
 // reaches; and
 // the soundboard: the bar's mute and soundboard, its sheet, and
 // Manage opened from the den's name; and emoji: the picker as a
@@ -401,8 +401,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
                 await h.snap('recovery-codes', { scroll: `document.querySelector('main')`, max: 4 });
             });
             await h.step('codes-saved', async () => {
-                // Saving them, as a file named for the den, lets Done through
-                // (M22.4).
+                // Saving them, as a file named for the den, lets Done through.
                 const done = h.byText('main button', 'Done');
                 const waited = await h.ev(`${done}?.disabled === true`);
                 await h.click(h.byText('main button', 'Save as a file'));

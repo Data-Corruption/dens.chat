@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M10 move check's dens: alice's instance hosts hers at the den's
+# The move check's dens: alice's instance hosts hers at the den's
 # address, 18490, which forward.mjs sends to her den listener, as Caddy and
 # the router would, with bob in it; carol's, hosting on ports of its own,
 # stands in for the server the driver restores the den's export into. The

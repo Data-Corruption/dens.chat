@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M8 answers check's den, behind den-proxy.mjs, which logs each call
+# The answers check's den, behind den-proxy.mjs, which logs each call
 # answer a client sends it to ~/answers.jsonl: its address is the proxy's,
 # so the members' clients reach it there. Carol joins, whom the voice probe
 # plays; Firefox's microphone plays speech.

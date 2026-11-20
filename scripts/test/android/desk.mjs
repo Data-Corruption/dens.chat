@@ -64,7 +64,7 @@ async function join() {
 
 // CALL is the call as desk's list shows it: each member's name, whether
 // they ring, as for push to talk held, and whether they're muted, by marks
-// any of Dens's pages since M11 make, as desk's den, made once, may still
+// any of Dens's pages since v1.4.0 make, as desk's den, made once, may still
 // serve an older one.
 const CALL = `[...document.querySelectorAll('ul[aria-label="In the call"] li')].map((li) => ({
     name: li.querySelector('button span.truncate')?.textContent.trim() || '',

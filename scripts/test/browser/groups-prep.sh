@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M16.3 check's den: alice's install hosts it, and bob, carol and dave
+# The groups check's den: alice's install hosts it, and bob, carol and dave
 # join, each Dens publishing its member's identity as it signs in, so any
 # of them can make a group with the others, or be added to one.
 # shellcheck source=scripts/test/browser/lib.sh

@@ -1,4 +1,4 @@
-// The M5.3 check: Bob, in the browser named, adds three phone photos,
+// The photos check: Bob, in the browser named, adds three phone photos,
 // which go as smaller copies, and compares them in the viewer: fitted and
 // at 100%, flipping with the switch and with Space, dragging, → to the
 // next, and sending one full size. Alice, in the other browser, gets them.

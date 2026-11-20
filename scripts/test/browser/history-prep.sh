@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M6.2 check's den: 30 messages from alice in general, and one to edit
+# The history check's den: 30 messages from alice in general, and one to edit
 # and one to delete while bob's service is off.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"

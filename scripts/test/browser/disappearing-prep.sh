@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M16.4 check's den: alice's install hosts it, a development instance's,
+# The disappearing check's den: alice's install hosts it, a development instance's,
 # whose den takes times of seconds; bob and carol join, each Dens
 # publishing its member's identity, and a DM between alice and bob opens
 # at once.

@@ -1,8 +1,8 @@
-// The M4.1 check: Alice posts YouTube links; Bob turns players on, plays
+// The youtube check: Alice posts YouTube links; Bob turns players on, plays
 // them, and checks what the page does, in Chromium and Firefox, with each
-// browser's own autoplay rules; and from M14.1, a cover's title and channel
+// browser's own autoplay rules; a cover's title and channel
 // as links to YouTube, underlined only on hover and keyboard focus, which
-// open their tabs without playing it; and from M19.2 a Short, its cover and
+// open their tabs without playing it; and a Short, its cover and
 // player portrait. YouTube is on the internet, so this check needs it.
 //
 //   run.sh youtube chromium|firefox chromium|firefox   (alice's, then bob's)

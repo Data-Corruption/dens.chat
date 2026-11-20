@@ -112,7 +112,7 @@ expect_uninstalled() {
 # owner both check by typing each other's digits, as that release has
 # them; and updates to this one, which still hosts it: the switch takes
 # the den role it had; and which migrated its database, as a
-# member's own sound shows, the den's soundboard, M15's
+# member's own sound shows, the den's soundboard, its
 # emoji, a reaction and a poll, and the DM, which reads and sends under
 # the key they checked. Then it uninstalls, for the fresh install
 # after it.
@@ -145,7 +145,7 @@ first_release() {
     api GET /api/hosting | grep -q '"enabled":true,"serving":true' || fail "hosting after the update: $(api GET /api/hosting)"
     api GET /api/dens | grep -q '"name":"First Den"' || fail "the den is gone after the update: $(api GET /api/dens)"
     # The update migrated the first release's database: a sound replaced
-    # with a file of the member's own keeps it, in the table M14.2's
+    # with a file of the member's own keeps it, in the table v1.7.0's
     # migration, the first since v1.0.0, made. The file is a WAV's header.
     own=/root/own-sound.wav
     printf 'RIFF\044\000\000\000WAVEfmt \020\000\000\000\001\000\001\000\100\037\000\000\200\076\000\000\002\000\020\000data\000\000\000\000' >"$own"
@@ -154,7 +154,7 @@ first_release() {
     [ "$(curl -sS --fail -b "$JAR" "$CLIENT/api/sounds/joined" | sha256sum)" = "$(sha256sum <"$own")" ] ||
         fail "the member's own sound didn't come back as it went after the update"
     wait_own_connected
-    # And M14.3's: the den has its soundboard's limits, its new columns'
+    # And the soundboard: the den has its soundboard's limits, its new columns'
     # defaults, and takes a sound, in the den's named files' table. The
     # sound is Opus's silence in Ogg, a packet of it, as a page writes one.
     den_id=$(api GET /api/dens | sed -n 's/.*"den_id":"\([^"]*\)".*/\1/p')
@@ -170,7 +170,7 @@ first_release() {
     api POST "/api/dens/$den_id/soundboard" "{\"name\":\"First\",\"upload\":\"$upload\"}" | grep -q '"name":"First"' ||
         fail "the den took no sound after the update"
     api GET "/api/dens/$den_id/state" | grep -q '"sounds":\[{"id":"[0-9]*","name":"First"' || fail "the den's soundboard doesn't hold the sound"
-    # And M15's: the den has its limit for emoji and takes one, an image of
+    # And v1.8.0's: the den has its limit for emoji and takes one, an image of
     # 8 by 8 pixels; a message takes a reaction of it; and a
     # poll goes, takes a vote and shows it, in the tables their
     # migrations made.

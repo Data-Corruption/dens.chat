@@ -1,4 +1,4 @@
-// The M10 check: alice moves her den to another computer from the
+// The move check: alice moves her den to another computer from the
 // settings. Move asks her local password, turns hosting off and downloads
 // the den's export; Hosting then says when, and her den's row says so and
 // leads there. Turning hosting on again says first that another computer

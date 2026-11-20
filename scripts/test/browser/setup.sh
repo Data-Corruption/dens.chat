@@ -6,8 +6,8 @@
 # Node.js, the media the checks send, this directory, and the public site's
 # build. Then run a check with run.sh.
 #
-# The checks drive real browsers through every milestone's page features,
-# from M2's calls on. CI doesn't run them: they're the check before each
+# The checks drive real browsers through the page's features, calls
+# among them. CI doesn't run them: they're the check before each
 # manual test, run by hand, and they take minutes each. A check measures
 # what a feature delivers, as the other page receives it, such as the
 # samples it decodes and the frames its worker opens, rather than what a

@@ -26,8 +26,7 @@ channel the-longest-name-a-channel-takes text "$projects" >/dev/null
 channel Standup voice "$projects" >/dev/null
 api alice POST "/api/dens/$DEN/channels" '{"name":"staff","kind":"text","staff_only":true}' >/dev/null
 api alice PATCH "/api/dens/$DEN/channels/$general" '{"description":"Anything goes here: say hi, share what you are up to, and **be kind**. The rules are in #design-notes.\nA second line, which only shows once the description is opened.\nAnd a third, with a link: https://dens.chat/docs/"}' >/dev/null
-# Two may share at once, so the call's member shares beside the probe
-# (M13.4).
+# Two may share at once, so the call's member shares beside the probe.
 limits=$(api alice GET "/api/dens/$DEN/state" | python3 -c 'import json, sys; d = json.load(sys.stdin)["call_limits"]; d["shares"] = 2; print(json.dumps({"call_limits": d}))')
 api alice POST "/api/dens/$DEN/settings" "$limits" >/dev/null
 ./node browser/make-sound.mjs ping.ogg 1

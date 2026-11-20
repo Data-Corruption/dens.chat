@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M19.5 check's den: alice's install hosts it, with general, where
+# The names check's den: alice's install hosts it, with general, where
 # alice, bob and carol have each written and bob has replied to alice, and
 # a DM between alice and bob. Carol's name is Cyrillic, styled in a font
 # that has none of it.

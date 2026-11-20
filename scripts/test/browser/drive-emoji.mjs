@@ -1,4 +1,4 @@
-// The M15.2 check of the den's emoji: alice, who owns the den, in Chromium,
+// The emoji check: alice, who owns the den, in Chromium,
 // and bob in the browser named. Alice adds a still emoji and an animated
 // one in Manage's Emoji section, opened from the den's name: a face larger
 // than an emoji, which her page draws at 128 pixels, and a GIF, which her

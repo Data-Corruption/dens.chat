@@ -1,4 +1,4 @@
-// The M14.3 check of the den's soundboard: alice, who owns the den, in
+// The soundboard check: alice, who owns the den, in
 // Chromium, and bob in the browser named. With no sounds, bob has no
 // soundboard and alice's opens on adding them, in Manage, which the den's
 // name opens too. Alice adds sounds from an MP3 and a WAV, each prepared by

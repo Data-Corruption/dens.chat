@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M15.3 check's den: alice's install hosts it, with #general, where an
+# The reactions check's den: alice's install hosts it, with #general, where an
 # old message stands above forty that bob wrote, so a page reads in the
 # middle with it out of view, and alice's newest to react to; a DM between
 # alice and bob, where alice says something; and an emoji of the den's,

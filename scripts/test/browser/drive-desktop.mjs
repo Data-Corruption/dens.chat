@@ -1,8 +1,8 @@
-// The M7.2 check of the page: a stand-in helper plays a Wayland desktop
+// The desktop check, of the page: a stand-in helper plays a Wayland desktop
 // that owns the keys. The keys card offers to set them up with it, says to
 // confirm them while its dialog is up, shows its names once they're bound,
 // asks it to show its settings, and stops using it; in a call, its presses
-// open the push-to-talk gate, and from M19.3 its toggle deafen deafens and
+// open the push-to-talk gate, and its toggle deafen deafens and
 // hears again. A desktop that bound them and holds none now gets a card
 // that says so, with a way out, rather than a button that can't be
 // pressed.

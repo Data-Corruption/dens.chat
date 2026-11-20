@@ -539,8 +539,7 @@ hidden() { ! shows "another DM for the phone"; }
 waitfor 20 "the notification taken back" hidden
 ok "read on the den, the DM's notification was taken back"
 # The DM's messages go after a day, as the phone check's DM's do, so the
-# walk finds the line where its time was set, and the time in its header
-# (M16.4).
+# walk finds the line where its time was set, and the time in its header.
 den api PUT "/api/dens/$den_id/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null || fail "setting the DM's time"
 
 # An event: desk makes one in Lounge, starting within the minute,

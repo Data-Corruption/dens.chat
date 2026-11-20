@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The M17.4 check's den: alice's install hosts it, with #general, the
+# The events check's den: alice's install hosts it, with #general, the
 # voice channel Lounge, and Backstage, a voice channel staff's alone; bob
-# joins. Events are staff's, as a new den has them. For M17.5, a DM
+# joins. Events are staff's, as a new den has them. For cards and badges, a DM
 # between alice and bob, where an event's link goes, and the picture
 # alice's badge takes.
 # shellcheck source=scripts/test/browser/lib.sh

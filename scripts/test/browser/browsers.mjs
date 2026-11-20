@@ -187,7 +187,7 @@ export async function paired(b, what, previews = false) {
     await waitFor(() => b.eval(home), what);
 }
 
-// helper stands in for the shortcut helper (dens shortcuts, M7) on an
+// helper stands in for the shortcut helper (dens shortcuts) on an
 // instance's control socket: it sends what a driver gives it, and keeps
 // what the service sends, the latest state among it.
 export function helper(instance = 'm2a') {

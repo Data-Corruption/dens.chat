@@ -1,4 +1,4 @@
-// The M14.2 check of the page's sounds: bob in the browser named, alice,
+// The sounds check, of the page's sounds: bob in the browser named, alice,
 // the den's owner, in Chromium. Each page's sounds are recorded as it plays
 // them, by a preload, with the file each comes from and how loud, since a
 // headless browser plays to no speaker. In a call: bob's own joining;

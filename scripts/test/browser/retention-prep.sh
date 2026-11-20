@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M5.1 check's den: two channels whose messages are three days old, as
+# The retention check's den: two channels whose messages are three days old, as
 # far as the den knows, with retention still off.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"

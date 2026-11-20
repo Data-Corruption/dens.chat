@@ -1,7 +1,7 @@
-// The M11.3 check: bob in the browser named, alice in Chromium, in a call,
+// The talk check: bob in the browser named, alice in Chromium, in a call,
 // both sending by push to talk. Held, push to talk rings for the call's
 // other member, in silence too, as the den passes it on, and never while
-// muted; from M19.3, bob's release delay keeps his gate open and his ring
+// muted; bob's release delay keeps his gate open and his ring
 // lit on both pages for it after he lets go, and his deafen key deafens
 // him and hears again; a share bob watches opens in a window of its own,
 // plays there with its controls and his voice keys, and comes back to the

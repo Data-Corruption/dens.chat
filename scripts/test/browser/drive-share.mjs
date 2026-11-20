@@ -1,12 +1,12 @@
-// The M4.2 check: Chromium (alice, the owner) shares its fake screen, and
+// The share check: Chromium (alice, the owner) shares its fake screen, and
 // Firefox (bob), headed on Xvfb, the X screen; each watches the other's in
 // the player. Then the share's limits, a staff mute, and a voice channel's
-// bitrate. From M18 it measures what arrives of alice's share's sound:
+// bitrate. Then it measures what arrives of alice's share's sound:
 // bob's Firefox and carol's Chromium each decode it, samples with energy in
 // them, their workers opening its frames and dropping none, as alice's
 // seals them; and with a preload that sets the sound's transform a task
-// late, as the page did before M18, alice's page stops the sound within a
-// second and says so. From M21.1 bob turns alice's share down, mutes and
+// late, as the page did before v1.10.1, alice's page stops the sound within a
+// second and says so. Then bob turns alice's share down, mutes and
 // unmutes it, and it plays where it was, and again as he watches it anew.
 //
 //   run.sh share

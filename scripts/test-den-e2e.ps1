@@ -712,8 +712,7 @@ den.test:$HttpsPort {
         Wait-Probe $memberSide "the member, over $network,"
         Wait-Probe $ownerSide "the owner"
         # Each probe got the call's keys with the other's, which their
-        # services sealed to each other's identity and passed through the den
-        # (M16.2).
+        # services sealed to each other's identity and passed through the den.
         foreach ($side in @($memberSide, $ownerSide)) {
             if (-not ($side.Out.Result + $side.Err.Result).Contains("the call's keys: this member's numbered")) { Fail "the call's keys didn't pass between the services" }
         }

@@ -1,4 +1,4 @@
-// The M12.3 check of notifications, as alice in the browser named: DMs
+// The notify check, of notifications, as alice in the browser named: DMs
 // turned on in the settings, which the browser lets the page show; a DM
 // from bob while her tab is behind another shows through the browser, with
 // who sent it, the den and its start, a spoiler hidden, and its click
@@ -11,7 +11,7 @@
 // open, Dens's helper, dens shortcuts, shows a DM
 // through the desktop's notification service, dunst here, as Dens's, and
 // its click opens the page at the message, paired as dens open pairs it;
-// read elsewhere, it's taken back from the desktop too. From M22.2 the
+// read elsewhere, it's taken back from the desktop too. Then the
 // tab's icon: the mark, then with its dot while the DM waits behind
 // another tab, and the mark again once it's read.
 //

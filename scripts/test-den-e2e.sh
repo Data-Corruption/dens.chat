@@ -890,8 +890,7 @@ run() {
   [[ "$refusal" == *banned* ]] || { echo "error: rejoining after the ban: $refusal" >&2; return 1; }
   echo ">> The banned member can't come back as bob"
 
-  # The den's machine, the server now, has the last word on who owns it
-  # (M8).
+  # The den's machine, the server now, has the last word on who owns it.
   echo ">> The den's machine hands the den on with an owner invite"
   invite=$(guest "$SERVER" owner-invite)
   role=$(guest "$CLIENT" join "$invite" carol Carol)

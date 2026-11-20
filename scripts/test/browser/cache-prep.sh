@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M6.1 check's den: alice, whose install hosts it, posts a photo and a
+# The cache check's den: alice, whose install hosts it, posts a photo and a
 # clip in general, which bob's install keeps as his page shows them.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"

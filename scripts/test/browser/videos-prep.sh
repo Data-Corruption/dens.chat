@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M5.4 check's den, with a #general.
+# The videos check's den, with a #general.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"
 fresh

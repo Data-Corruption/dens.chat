@@ -1,9 +1,9 @@
-// The M5.2 check: Bob, in Chromium, manages his files from home: the list,
+// The files check: Bob, in Chromium, manages his files from home: the list,
 // a swap, a delete and Open, and drops an upload from the composer. Alice,
-// in Firefox, moves through a message's images in the viewer. From M17.2,
+// in Firefox, moves through a message's images in the viewer. Then
 // spoilers: bob sends a photo as one in #general, which alice's page shows
 // covered until she clicks it, and alice one in their DM, which bob's does,
-// each page clicking the other's. From M21.1 a message's GIF, far up
+// each page clicking the other's. And a message's GIF, far up
 // #gifs: neither page fetches its file until it nears the screen, where
 // under Always it plays, and under Hover it plays while the pointer is
 // over its message.

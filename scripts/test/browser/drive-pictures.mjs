@@ -1,4 +1,4 @@
-// The M15.1 check of animated pictures: alice, who owns the den, in
+// The pictures check, of animated pictures: alice, who owns the den, in
 // Chromium, and bob in the browser named, whose system asks for less
 // motion. Bob's Animations starts at Hover and alice's at Always. Each
 // crops an animated GIF and an animated WebP, made here, into a picture and
@@ -9,7 +9,7 @@
 // call's, plays it in each while the pointer is over it alone, and in his
 // profile while it's open, and a finger's tap plays nothing; bob's page
 // does the same with alice's, and once set to Always plays every row's.
-// From M21.1 bob's GIF has a transparent ground, and a picture playing
+// Bob's GIF has a transparent ground, and a picture playing
 // under the pointer hides its preview once it has loaded, so none of its
 // first frame shows through.
 //

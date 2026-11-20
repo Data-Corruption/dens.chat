@@ -1,4 +1,4 @@
-// The M22.2 check of Steam's cards, as bob in the browser named, against a
+// The steam check, of Steam's cards, as bob in the browser named, against a
 // stand-in for Steam: the page's own requests for a card and its pictures
 // answered in the browser, with what bob's Dens would give, since the
 // service's side is checked against Steam's recorded answers in Go. Alice

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Makes Dens's Flatpak from this tree for a manual test in a VM (M9.3,
-# M9.4): release builds at VERSION, page and all, for x86_64 and aarch64,
+# Makes Dens's Flatpak from this tree for a manual test in a VM:
+# release builds at VERSION, page and all, for x86_64 and aarch64,
 # released to a release host in a directory and published there by the
 # release pipeline's publisher (ci.sh --flatpak, through
 # scripts/test/flatpak-release.sh), signed with a test key, and staged in

@@ -241,7 +241,7 @@ package_ffmpeg_source() {
 }
 
 # One file listing the sha256 of every release artifact (gzipped binaries,
-# FFmpeg's source, the version marker, and from M12.4 the APK for phones).
+# FFmpeg's source, the version marker, and the APK for phones).
 # Each installer verifies its cosign signature once, then plain
 # sha256-matches the selected artifact against it, as the Android app's
 # updater does its APK.

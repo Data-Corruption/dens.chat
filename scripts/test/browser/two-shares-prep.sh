@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The second M4.2 check's den: alice's install hosts it, with Lounge, and
+# The two-shares check's den: alice's install hosts it, with Lounge, and
 # carol joins, whom the voice probe plays; Firefox's microphone plays
 # speech.
 # shellcheck source=scripts/test/browser/lib.sh

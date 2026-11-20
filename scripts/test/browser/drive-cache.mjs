@@ -1,4 +1,4 @@
-// The M6.1 check: Bob sees alice's photo and clip, which his install
+// The cache check: Bob sees alice's photo and clip, which his install
 // keeps. They open from his cache with alice's den stopped, the photo
 // deleted while his service was off leaves his cache, and the settings show
 // the cache, change its size and empty it.

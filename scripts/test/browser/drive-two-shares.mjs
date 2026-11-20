@@ -1,4 +1,4 @@
-// The second M4.2 check: two shares in bob's player. Alice (Chromium)
+// The two-shares check: two shares in bob's player. Alice (Chromium)
 // shares her fake screen; carol is the voice probe, sharing Pion's packets,
 // which no decoder takes, so her tile waits: enough for the layout and the
 // focus.

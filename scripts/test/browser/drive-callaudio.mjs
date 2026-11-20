@@ -1,9 +1,9 @@
-// The M12.2 check: alice in the first browser named and bob in the second,
+// The callaudio check: alice in the first browser named and bob in the second,
 // in a call, each page playing it as Android's app has it play: its call's
 // audio contexts made once the microphone is open, and the voices through
 // the call's context, as the page does where the service says audio may
 // start without a click. Each hears the other there, at the level chosen
-// for them, 200% from M19.3, under the call's volume from the settings,
+// for them, 200% too, under the call's volume from the settings,
 // and not at all while deafened. A page Chromium froze plays
 // its call again as it thaws, and so does a page that hears resume with
 // its elements paused, in either browser; and the call's notes in the log

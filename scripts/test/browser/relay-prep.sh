@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M20 check's den: alice's install hosts it, with Lounge, and bob
+# The relay check's den: alice's install hosts it, with Lounge, and bob
 # joins; bob's laptop, m2e, signs in as him through his first device's
 # approval, so both hold his seal, which the boxes between them are sealed
 # with. Keybind relay is on in both of bob's installs, and the laptop

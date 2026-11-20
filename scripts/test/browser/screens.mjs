@@ -6,8 +6,9 @@
 // buttons; what a finger can do is getting around's and touching's, below,
 // through the driver's own swipes, presses, keys and Back.
 //
-// The screens, by the check that reaches each, so the walk keeps to every
-// screen the browser checks cover; a check that adds a screen adds it here:
+// The screens, by the check that reaches each, phone where no other does,
+// so the walk keeps to every screen the browser checks cover; a check that
+// adds a screen adds it here:
 //   calls, talk, callaudio   a call: its block on the list, a member's menu, the call
 //                            from a channel and from Home, a share in the player
 //   fixes, messages          a channel, its description, a message's menu, deleting,
@@ -18,23 +19,23 @@
 //   keys, desktop, notify    the settings, each section, Relay's among them
 //   relay
 //   hosting, move, cache     the System section, as an owner
-//   retention, files         Manage, each section, as a member and as an owner; the
-//   (M22.3)                  member's own sections of the den, from the cog on its page
+//   retention, files         Manage, each section, as a member and as an owner
+//   settings                 the member's own sections of the den, from the cog on its page
 //   history, hostile, codes  the den's list, its DMs, a DM, comparing codes
 //   groups                   a group DM, its members beside it, a new group
 //   disappearing             a DM's time, from its header to its setting beside it
-//   (M8.3, M11)              Home, adding a den, a member's profile, editing one's own,
+//   phone                    Home, adding a den, a member's profile, editing one's own,
 //                            removing a member, a channel's and a group's settings
-//   (M17.6)                  a profile card's ⋯ as a sheet
-//   (M9, M10)                unpaired, setting the local password, joining a den,
+//   phone                    a profile card's ⋯ as a sheet
+//   phone                    unpaired, setting the local password, joining a den,
 //                            the recovery codes
-//   (M13.2)                  a message's sheet, three lines sent, a tip opened by a tap
-//   (M13.3)                  the settings' and Manage's lists of sections, the viewer
+//   phone                    a message's sheet, three lines sent, a tip opened by a tap
+//   phone                    the settings' and Manage's lists of sections, the viewer
 //                            swiped and zoomed, a dialog as a sheet swiped down
-//   (M13.4)                  the call's bar, the call's button muted, its role, held,
+//   phone                    the call's bar, the call's button muted, its role, held,
 //                            a member's sheet, a share docked and full screen
 //   emoji, reactions         the emoji picker's sheet, completion; a message's sheet
-//   (M15.2, M15.3)           with its quick reactions, its chips and a chip's tip, the
+//                            with its quick reactions, its chips and a chip's tip, the
 //                            picker's sheet to react
 //   files            Compact's messages a line each, and a spoiler covered,
 //                            then shown
@@ -94,7 +95,7 @@ export const AUDIT = `(() => {
         if (!held(e) && !over.some((o) => o.el.contains(e))) over.push({ el: e, what: desc(e) + ' → ' + Math.round(r.right) });
     }
     // A channel's message list holds whatever scrolls sideways in a scroller
-    // of its own, as code does, so it never scrolls sideways itself (M13.4).
+    // of its own, as code does, so it never scrolls sideways itself.
     const listSideways = [...document.querySelectorAll('[data-scroller]')].some((l) => shown(l) && !l.closest('[inert]') && l.scrollWidth > l.clientWidth + 1);
     const faded = (e) => { for (let p = e; p; p = p.parentElement) if (getComputedStyle(p).opacity === '0') return true; return false; };
     const disabled = (e) => e.disabled || e.getAttribute('aria-disabled') === 'true' || !!e.closest('fieldset:disabled');
@@ -170,7 +171,7 @@ export const AUDIT = `(() => {
     for (const e of document.querySelectorAll('button')) {
         if (e.getClientRects().length && getComputedStyle(e).visibility === 'hidden' && !disabled(e) && !e.closest('[aria-hidden=true], [inert]')) hoverOnly.push(desc(e));
     }
-    // Each button is one of the page's four kinds by its classes (M22.3):
+    // Each button is one of the page's four kinds by its classes:
     // primary, secondary, quiet (danger's red words among them) or danger
     // filled, never outlined; filled red only where it confirms, in a dialog
     // or a step's actions; and one primary to a dialog, or to a frame's
@@ -945,7 +946,7 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
     await h.step('call-soundboard', async () => {
         const labels = await h.ev(`[...document.querySelectorAll('[data-call-bar] button')].map((b) => b.getAttribute('aria-label')).filter(Boolean).join('|')`);
         did(labels === 'The call is end-to-end encrypted: compare codes|Soundboard|Mute|Deafen|Leave the call',
-            `the call's bar holds its lock (M16.2), the soundboard, mute, deafen and leave: ${labels}`);
+            `the call's bar holds its lock, the soundboard, mute, deafen and leave: ${labels}`);
         await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Mute"]')`);
         const muted = await waitFor(() => h.has(`document.querySelector('[data-call-bar] button[aria-label="Unmute"][aria-pressed="true"]')`), 'muted from the bar', 5000).catch(() => false);
         await d.tap(`document.querySelector('[data-call-bar] button[aria-label="Unmute"]')`);
@@ -961,8 +962,7 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         await waitFor(async () => !(await h.has(sheet)), 'the sheet to close', 5000);
     });
     // The call's lock, beside how it stands in the bar, opens the member's
-    // code and each other member's Compare, which compares in place
-    // (M16.2).
+    // code and each other member's Compare, which compares in place.
     await h.step('call-lock', async () => {
         await d.tap(`document.querySelector('[data-call-bar] [data-call-lock]')`);
         const dialog = `document.querySelector('[data-call-lock-dialog]')`;
@@ -1183,7 +1183,7 @@ const PANE = `(() => {
     return { path: location.pathname, pane: on.length === 1 && on[0].whole ? on[0].pane : on.map((p) => p.pane).join('+'), settings };
 })()`;
 
-// gettingAround walks M13.1's done-when on the phone layout, by what the
+// gettingAround walks around the phone layout, by what the
 // driver's d does as a member would: d.swipe('right') moves to the pane on
 // the left, d.tap(x) taps what the expression x names, or the point x
 // as [x, y] in the page's pixels, d.back() is the
@@ -1258,7 +1258,7 @@ const SHEET = `document.querySelector('[role=dialog][data-sheet]')`;
 const NEWEST = `[...document.querySelectorAll('[data-scroller] [data-id]')].at(-1)`;
 const SEND = `document.querySelector('button[aria-label="Send"]')`;
 
-// touching walks M13.2's done-when, by what the driver's d does as a
+// touching walks what a finger does, by what the driver's d does as a
 // member would, on the phone layout of ctx's den at general. With a
 // finger, d.touch, d.press(x) holds a finger on what the expression x
 // names, a long press; d.drag(from, to) drags between two of the page's
@@ -1388,7 +1388,7 @@ const VIEWER = `(() => {
         shown: [Math.round(shown.left), Math.round(shown.top), Math.round(shown.width), Math.round(shown.height)], path: location.pathname };
 })()`;
 
-// pages walks M13.3's done-when on the phone layout, by what the driver's
+// pages walks the phone layout's pages, by what the driver's
 // d does as a member would; d.tap, d.back and d.drag are gettingAround's
 // and touching's, d.double(x) taps twice quickly, or clicks, on what x
 // names, d.pinch(at, from, to), where given, spreads two fingers about the
@@ -1522,7 +1522,7 @@ export async function pages(h, ctx, d, report) {
 // EMOJI_SHEET is the emoji picker as a sheet.
 const EMOJI_SHEET = `document.querySelector('[data-sheet][aria-label="Emoji"]')`;
 
-// emojiPicking walks M15.2 on the phone layout, by what the driver's d
+// emojiPicking walks the emoji picker on the phone layout, by what the driver's d
 // does as a member would: the composer's smiley opens the emoji picker as
 // a sheet from the screen's foot, whose search and buttons stay at its top
 // as the emoji scroll, a group's button going to its emoji, and a tap on

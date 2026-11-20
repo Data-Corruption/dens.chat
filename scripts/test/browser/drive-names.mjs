@@ -1,4 +1,4 @@
-// The M19.5 check of name styles, in the browser named: alice picks a
+// The names check, of name styles, in the browser named: alice picks a
 // font and a gradient in Edit profile, the fonts as tiles in their own
 // faces and the name over them as it will show, and saves; bob's page, on
 // Dark, shows her name in them in the member list, a message, a reply's
@@ -9,7 +9,7 @@
 // chosen while the page shows, the pale end darkened instead; carol's
 // Cyrillic name draws in the page's font, her font never fetched; bob's
 // Name styles at Color drops the fonts, and at Off shows every name
-// plain, which a reload keeps; and alice clears her style. From M21.1 her
+// plain, which a reload keeps; and alice clears her style. Then her
 // name in each font in turn, its box holding every Latin letter and digit
 // the font draws, by how far the browser measures each one's ink reaching.
 //

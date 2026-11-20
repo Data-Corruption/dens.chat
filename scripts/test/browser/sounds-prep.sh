@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M14.2 check's den: alice's install hosts it, with Lounge and general,
+# The sounds check's den: alice's install hosts it, with Lounge and general,
 # and a DM between bob and alice, which opens at once; Firefox's
 # microphone plays speech.
 # shellcheck source=scripts/test/browser/lib.sh

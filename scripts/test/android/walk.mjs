@@ -16,14 +16,14 @@
 // by Android's taps and keyboard, to the recovery codes and Home, where
 // Manage lists the phone among the member's devices by its name, with its
 // model under it; around, getting around from Home to a channel, the list
-// and the members, and Back up to Home and out of the app; touch, M13.2's:
+// and the members, and Back up to Home and out of the app; touch:
 // a long press, a sheet's swipe down and Back, three lines sent by the send
 // button with the keyboard up, and a tip's tap;
-// pages, M13.3's: the settings and Manage as lists of pages that Back
+// pages: the settings and Manage as lists of pages that Back
 // walks out of, the phone's settings without keyboard shortcuts or screen
 // share, the viewer swiped through a message's photos, zoomed by a double
 // tap and closed by Back, a dialog swiped down, and the system bars
-// taking the page's background as its theme changes; call, M13.4's: in
+// taking the page's background as its theme changes; call: in
 // a call with desk, whose desk.mjs answers at CTX's desk, its length on
 // Lounge's row as desk's page shows it, from a text channel and
 // without going to the list, the call's bar and button, desk's
@@ -33,12 +33,12 @@
 // long press's buzz, and let go as the notification shade comes down
 // mid-press, desk leaving and joining again, whose sounds the page plays
 // through the call's context, and the call left from its bar;
-// reactions, M15.3's: desk's reaction on the member's message, whose
+// reactions: desk's reaction on the member's message, whose
 // phone_msg CTX names, shown as a chip, and the member's on desk's,
 // desk_msg, from the long press's quick row, which stays for desk to see,
-// with the chip's tip by a long press; polls, M15.4's: desk's poll, whose
+// with the chip's tip by a long press; polls: desk's poll, whose
 // desk_poll CTX names, voted on by Android's own touch, its totals and
-// voters showing; relay, M20.3's: Keybind relay turned on in the settings,
+// voters showing; relay: Keybind relay turned on in the settings,
 // which has Android ask to let Dens reach its network, allowed on its
 // dialog, and the member's install beside desk's listed as sharing its
 // sound, whose Listen plays it across the link, as media, the page held as
@@ -275,7 +275,7 @@ async function styledName(h, c) {
     await h.snap('styled-name');
 }
 
-// callWalk walks M13.4's done-when, in a call with desk, the den's owner,
+// callWalk walks a call with desk, the den's owner,
 // whose desk.mjs answers at c.desk with what its page shows of the call,
 // and c.name the member's name there: the member joins Lounge from the
 // list, as desk shares, taps desk's LIVE there and goes to general, and
@@ -536,8 +536,7 @@ async function reactionsWalk(h, d, c) {
 
 // pollsWalk has the member vote on desk's poll by Android's own touch: a
 // tap on a choice's row and one on Vote, after which the totals show, with
-// their vote marked and desk's beside it, and a tap on its count says who
-// (M15.4).
+// their vote marked and desk's beside it, and a tap on its count says who.
 async function pollsWalk(h, d, c) {
     await h.go(`/den/${c.den}/${c.general}`);
     const poll = `document.querySelector('[data-scroller] [data-poll="${c.desk_poll}"]')`;

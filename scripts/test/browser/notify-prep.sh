@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M12.3 check's den: a DM between alice and bob, which opens at once,
+# The notify check's den: a DM between alice and bob, which opens at once,
 # bob a moderator, whose @everyone in #general mentions alice,
 # and the desktop's notification service, dunst on Xvfb's
 # display, which keeps each notification it shows until it's taken back,

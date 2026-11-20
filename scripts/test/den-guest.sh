@@ -505,8 +505,7 @@ wait-retention)
     ;;
 wait-limit)
     # wait-limit DEN_ID BYTES: wait until this client hears that the den
-    # takes files of at most BYTES, which a video's copy is fitted to
-    # (M5.4).
+    # takes files of at most BYTES, which a video's copy is fitted to.
     for _ in $(seq 1 40); do
         [ "$(api GET "/api/dens/$1/state" | json 'd["limits"]["file_size"]')" = "$2" ] && exit 0
         sleep 0.25
@@ -797,8 +796,7 @@ delete)
     api DELETE "/api/dens/$1/messages/$2" >/dev/null
     ;;
 cache)
-    # cache: print how many bytes of other dens' files this client keeps
-    # (M6).
+    # cache: print how many bytes of other dens' files this client keeps.
     api GET /api/settings | json 'd["cacheUsed"]'
     ;;
 send-file)

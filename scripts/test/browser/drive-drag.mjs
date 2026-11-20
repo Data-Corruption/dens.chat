@@ -1,16 +1,16 @@
-// The M17.2 drag check, in the browsers named, alice's first: alice, who
+// The drag check, in the browsers named, alice's first: alice, who
 // owns the den, drags a channel into the channels in no group and into
 // another group, and a group above another, which bob's den state follows;
 // then, with bob in Lounge's call in his browser, muted, she drags his row
 // onto Games, and his page joins its call, sealed and still muted, which
 // ends the one in Lounge; and Move to in his menu in the call takes him
-// back. From M19.3, with bob and carol moderators, carol, on alice's
+// back. Then, with bob and carol moderators, carol, on alice's
 // browser, moves bob: his menu offers her Move to and neither Mute for
 // everyone nor Disconnect, and she drags him onto Games. Chromium drags as
 // a mouse does, the drag handed over through the DevTools protocol, which
 // a headless Chromium needs; Firefox's drag under WebDriver starts but
 // never ends, so its drops are the page's own events, dispatched in order,
-// and at the end a mouse's drag in it starts one. From M22.2, alice makes
+// and at the end a mouse's drag in it starts one. Then alice makes
 // a channel and a group from each menu with the mouse, a right click on
 // the list's empty space among them, a channel in a group from the group's
 // menu, and one from the den's name by the keyboard alone, and moves a

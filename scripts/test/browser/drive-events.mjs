@@ -1,4 +1,4 @@
-// The M17.4 check of events: alice, who hosts the den, and bob, a member,
+// The events check: alice, who hosts the den, and bob, a member,
 // each in the browser named. Each page's Den tab starts its list with
 // Events, which opens the den's events in the channel's place; alice's has
 // + Event, bob's, a member's while events are staff's, none. Alice makes
@@ -17,7 +17,7 @@
 // den's timer, notifying nobody. The den's database holds no event's name
 // in the clear, and nobody's interest once they end.
 //
-// M17.5's cards and badges: alice gives Game night a badge in the form, a
+// Cards and badges: alice gives Game night a badge in the form, a
 // picture she crops and a title, which bob's page shows on its card; her
 // Copy link gives the event's link, which she sends in #general and in
 // their DM, where bob's page shows it as a chip naming the event and as its
@@ -342,7 +342,7 @@ try {
     await B.b.eval(CLOSE_CARD);
     await waitFor(() => B.b.eval(`!${PROFILE}`), "alice's card closed");
 
-    step("alice hides her badge in Edit profile, and bob's card of her shows it no more (M17.6)");
+    step("alice hides her badge in Edit profile, and bob's card of her shows it no more");
     const TOGGLE = `document.querySelector('[data-badge-toggle="${night.id}"]')`;
     const eye = (pressed, look) => `${TOGGLE}?.getAttribute('aria-pressed') === '${pressed}' && !!${TOGGLE}.querySelector('[data-eye="${look}"]')`;
     await A.b.eval(`document.querySelector('button[aria-label="Edit your profile"]').click(), true`);

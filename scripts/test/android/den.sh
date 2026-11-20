@@ -158,7 +158,7 @@ case $1 in
     ;;
   third)
     # A member beside desk on an instance of its own, which a group needs
-    # for a third (M16.3), joined once through Caddy, as the phone joins.
+    # for a third, joined once through Caddy, as the phone joins.
     TJAR=$HOME/android-den/jar-tden
     TPORT=18586
     tapi() {
@@ -203,7 +203,7 @@ case $1 in
     ;;
   url) echo "$URL" ;;
   twin)
-    # An install of the phone's member's own (M20.3), which signs in to the
+    # An install of the phone's member's own, which signs in to the
     # den through the phone's approval, so both hold the member's seal, and
     # shares this container's sound, a tone, which the phone's Relay plays.
     # Each run's member is new, so its install is too.

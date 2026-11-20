@@ -1,4 +1,4 @@
-// The M5.4 check: Bob, in the browser named, adds an iPhone's H.264 video,
+// The videos check: Bob, in the browser named, adds an iPhone's H.264 video,
 // whose chip follows its copy as the module makes it, and compares the two
 // versions playing in place: play, Space, the switch, seeking, both at the
 // same moment. Alice, in the other browser, gets the copy, which plays.

@@ -1,17 +1,17 @@
-// The M2 and M3 checks: two members in a call, in the browsers named,
+// The calls check: two members in a call, in the browsers named,
 // alice's first. Each hears the other, at the channel's bitrate; speaking
-// rings; volume, and from M19.3 a member at 200%, measured twice as loud
+// rings; volume, and a member at 200%, measured twice as loud
 // as their own stream; the settings' Voice section and RNNoise; how a member
 // sends, by voice activity or push to talk; staff mute and disconnect; a
 // call that rides out its member's service restarting and its UDP path
 // breaking; deafen; and the page around the call: the composer, the
-// member's panel, the themes, and the home page. From M16.2 the call is
+// member's panel, the themes, and the home page. The call is
 // sealed end to end: each page seals its microphone and opens every
 // member's track, so each hears the other only by opening their frames;
 // the call's lock opens the members' codes; a third member joining and
 // leaving, the voice probe as carol, changes both pages' keys; and a page
 // denied a member's keys, by a development build's hook, receives their
-// packets and hears nothing. From M21.2, a short call of alice's alone sets
+// packets and hears nothing. A short call of alice's alone sets
 // the channel's record, and the call after it shows its length on both
 // pages a second apart, in the rainbow past the record, with fireworks as
 // it passes, and none of it for bob once he turns Call timer off.
@@ -50,7 +50,7 @@ const PRELOAD = `() => {
     const W = window.Worker;
     window.__workers = [];
     window.Worker = class extends W { constructor(...args) { super(...args); window.__workers.push(this); } };
-    // When the fireworks went off over a call's row (M21.2), which they do
+    // When the fireworks went off over a call's row, which they do
     // for a couple of seconds whenever the call passes its record.
     window.__fireworks = [];
     new MutationObserver((records) => {
@@ -80,7 +80,7 @@ const STATS = `(async () => {
     return JSON.stringify({ status, members, state: pc.connectionState, rx, tx, level: Math.round(level * 1000) / 1000, pair });
 })()`;
 
-// M3: speaking rings, RNNoise, staff mute and disconnect, and a call that
+// Speaking rings, RNNoise, staff mute and disconnect, and a call that
 // rides out its member's service restarting.
 const [, , aName, bName] = process.argv;
 const { DEN: den, LOUNGE: loungeID } = process.env;
@@ -544,8 +544,7 @@ try {
     await closeSettings(B, 'close');
 
     // Staff's menu on Bob: his own Mute first, then staff's, Move to
-    // opening the other voice channels beside it, and Disconnect last
-    // (M22.2).
+    // opening the other voice channels beside it, and Disconnect last.
     await click(A, `document.querySelector('button[aria-label="Options for Bob in the call"]')`);
     await waitFor(() => A.b.eval(`!!document.querySelector('[data-call-menu] [data-menu-item=move]')`), `${A.browser}'s menu on Bob`, 5000);
     const rows = await A.b.eval(`[...document.querySelectorAll('[data-call-menu] [role=menuitem]')].map((r) => r.textContent.trim()).join(' | ')`);
@@ -739,7 +738,7 @@ try {
         const b = block.getBoundingClientRect();
         // The buttons are spread evenly; how the call stands is said to a
         // screen reader alone while it's connected here, and shows on the
-        // channel's row (M14.3).
+        // channel's row.
         const items = buttons.map((x) => x.getBoundingClientRect());
         const gaps = items.slice(1).map((r, i) => Math.round(r.left - items[i].right));
         const status = block.querySelector('[role=status]');
@@ -815,7 +814,7 @@ try {
         const menu = ${LIST};
         const items = [...menu.querySelectorAll('[data-theme-row]')];
         const primaries = new Set(items.slice(1).map((i) => getComputedStyle(i.querySelector('[data-theme] > :nth-child(2)')).backgroundColor));
-        // Role marks (M17.6), in their color, in every theme, against WCAG's
+        // Role marks, in their color, in every theme, against WCAG's
         // 3:1 for a graphic, on the member list and on a card.
         const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true });
         const lum = (...layers) => {

@@ -1,7 +1,7 @@
-// The M11.2 check of each message's ⋯ menu and links to messages, as bob
+// The messages check, of each message's ⋯ menu and links to messages, as bob
 // in the browser named: the ⋯ showing on hover and focus, and its menu by
 // keyboard, Reply, Copy text and Copy message link, Edit, and Delete through its
-// dialog; from M22.4 the hover bar's Reply and Edit, an edit's one row,
+// dialog; the hover bar's Reply and Edit, an edit's one row,
 // and who else edits from the ⋯; the menu by touch, through a long press, a touch screen having
 // no ⋯; a message's link in its color, underlined only on hover
 // and keyboard focus; the chips of links to messages, opening one

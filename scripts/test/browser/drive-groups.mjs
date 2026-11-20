@@ -1,4 +1,4 @@
-// The M16.3 check of group DMs: alice, who owns the den, in Chromium, and
+// The groups check, of group DMs: alice, who owns the den, in Chromium, and
 // bob in the browser named; carol and dave through their pages' API. Alice
 // makes a group of bob, carol and herself from the DM tab's +,
 // naming it, and each change shows in it as a line: bob writes and sends a
