@@ -340,9 +340,9 @@ artifacts also verify when served from a mirror.
 | Job | What it does |
 |---|---|
 | `release-plan` | Runs `ci.sh --plan` on pushes to `main`; on pull requests, `ci.sh --plan-pr`, which picks the test jobs by the files the PR changes and asks for no release |
-| `linux-tests` | Linux Go tests, the third-party notices, shell lint, the page's tests and the release tests |
+| `linux-tests` | `test.sh -lint` first, in a checkout nothing has written to; then the Linux Go tests, the third-party notices, the list of emoji, the page's tests and the release tests |
 | `linux-e2e` | The lifecycle e2e, installer tests included, across the supported distros, in Incus containers |
-| `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in two Incus containers |
+| `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in three Incus containers |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and Windows installer tests |
 | `flatpak-e2e` | The Flatpak's publisher, then the Flatpak itself, published by it and run for a member, in Incus containers; releases wait for it |
 | `android-build` | The Android app as a development build (`test.sh -android`): Go vetted for Android, both APKs, and the host package's tests for the emulator; releases wait for it |
@@ -355,9 +355,9 @@ A pull request's plan reads the files it changes, its merge commit against
 the first parent, renames as both their paths. Docs alone, `docs/` and the
 root's `.md` files but `CHANGELOG.md`, run no test job; the media module's
 inputs (`internal/media/`, `scripts/ffmpeg.sh`, `scripts/rnnoise.sh`,
-`internal/ui/rnnoise/`, RNNoise's module, `scripts/vendor.sh` and
-`scripts/build/common.sh`) or CI's own files (`.github/`, `scripts/ci.sh` and
-`scripts/ci/`) run every job; anything else runs every job but `media-module`
+`internal/ui/rnnoise/`, RNNoise's module, `scripts/vendor.sh`,
+`scripts/build/common.sh` and `scripts/build/go.sh`) or CI's own files
+(`.github/`, `scripts/ci.sh` and `scripts/ci/`) run every job; anything else runs every job but `media-module`
 and `media-fuzz` (`media_required`). A list that can't be read, or holds
 nothing, runs every job. A push to `main` plans as before, every test job or
 none, since `release` needs every one to pass or every one skipped. The site

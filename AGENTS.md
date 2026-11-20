@@ -56,7 +56,7 @@ The target design is [docs/dev/design.md](docs/dev/design.md), with each deploym
 | `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` that put the Windows manifest in `dens.exe` |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
 | `android/` | The Android app's shell (M12): Kotlin with no AndroidX, its manifest and resources, the newer framework calls it makes behind a version check, and the release key's certificate (`release.pem`), which a release's APK must be signed by; from M20.3 Relay's asking for the local network (`Local.kt`), and its sound played as media; and from M22.6 the camera, for the page's Scan |
-| `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, artifact helpers, and the Android app's APKs, built without Gradle, with the check that stands in for Android Lint's NewApi |
+| `scripts/build.sh`, `scripts/build/` | Project values (top block of `build.sh`), local builds, the Go every script runs (`go.sh`), artifact helpers, and the Android app's APKs, built without Gradle, with the check that stands in for Android Lint's NewApi |
 | `scripts/ci.sh`, `scripts/ci/` | Release planning, a pull request's test jobs chosen by the files it changes, publication and recovery, and the Flatpak's publication after each release |
 | `scripts/vendor.sh` | Pinned versions and SHA-256s for every third-party tool; the only fetcher |
 | `scripts/ffmpeg.sh` | Builds the media module from its pinned inputs, checks the committed one, packages FFmpeg's source for releases, and fuzzes the driver |
@@ -180,14 +180,13 @@ never by build tags. Like a platform difference, a form never reaches the
 protocol or the database, and reaches the page only as what it can do.
 
 **Windows code compiles only under `GOOS=windows`.** After touching a
-`_windows.go` file, run `GOOS=windows go vet ./...` and
+`_windows.go` file, run `./scripts/test.sh -lint`, which vets for Windows, and
 `GOOS=windows go test -c -o /dev/null ./<pkg>` to catch build breaks. From
 WSL, `./scripts/test.sh -windows` runs the Go tests natively on the Windows
 host; CI runs them on a Windows runner. Android code likewise compiles only
-under `GOOS=android`: after touching an `_android.go` file, run
-`GOOS=android GOARCH=arm64 go vet ./...` (amd64 needs cgo even to vet), and
-`./scripts/test.sh -android-e2e` runs the host package's tests in the emulator,
-as the app.
+under `GOOS=android`: `-lint` vets it for arm64 (amd64 needs cgo even to
+vet), and `./scripts/test.sh -android-e2e` runs the host package's tests in
+the emulator, as the app.
 
 **SQLite uses a modest fixed pool (4) per process.** The Wasm driver gives each
 connection its own memory sandbox and SQLite serializes writers anyway.
@@ -244,42 +243,48 @@ with the notices written again; tests fail on one that lacks any of them.
 ## Build and test
 
 ```sh
-./scripts/test.sh              # go test -race ./... with embed placeholders; run constantly
-./scripts/test.sh -lint        # pinned shellcheck over the shell scripts; run after touching them
-./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts
-./scripts/test.sh -docs        # the site built as the Docs workflow builds it, failing on any warning, and its icon checked; run after touching the site
-./scripts/test.sh -release     # release state machine against a local rclone backend
-./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers
-./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in two Incus containers
-./scripts/test.sh -flatpak-e2e # the Flatpak's publisher, then the Flatpak, made from this tree and published: launched, unlocked, updated and rolled back, in Incus containers
-./scripts/test.sh -android     # the Android app built, as CI's android-build job: vetted for Android, both APKs, the host tests for the emulator
-./scripts/test.sh -android-e2e # the Android app, made from this tree, in Android 17's and 12's emulators: paired, joined to a den behind Caddy, chatting, sending and saving a photo, in a call off screen, and updated from fixture releases
+./scripts/test.sh              # go test -race ./...; run constantly. 4 to 5 min, seconds for what's cached
+./scripts/test.sh -lint        # gofmt, go vet for Linux, Windows and Android, and the pinned shellcheck over every tracked script; run before each commit. 25 s, 3 min the first time
+./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts. 30 s
+./scripts/test.sh -docs        # the site built as the Docs workflow builds it, failing on any warning, and its icon checked; run after touching the site. 2 s
+./scripts/test.sh -release     # release state machine against a local rclone backend. 50 s
+./scripts/test.sh -e2e         # lifecycle e2e across the supported distros in Incus containers. 6 to 8 min
+./scripts/test.sh -den-e2e     # a member joins a den through Caddy, chats, calls, and is banned, in three Incus containers. 9 to 12 min
+./scripts/test.sh -flatpak-e2e # the Flatpak's publisher, then the Flatpak, made from this tree and published: launched, unlocked, updated and rolled back, in Incus containers. 9 to 15 min
+./scripts/test.sh -android     # the Android app built, as CI's android-build job: vetted for Android, both APKs, the host tests for the emulator. 30 s with its tools fetched
+./scripts/test.sh -android-e2e # the Android app, made from this tree, in Android 17's and 12's emulators: paired, joined to a den behind Caddy, chatting, sending and saving a photo, in a call off screen, and updated from fixture releases. 18 min
+./scripts/test.sh -all         # every suite above, one after another. About an hour
 scripts/test/android/phone.sh SERIAL COMMAND  # a phone through the Android container's adb: pair, connect, install, log, pull
 scripts/test/android/bg.sh SERIAL [SECONDS]   # a phone's call with its screen off, ten minutes unless given, watched and summed up
-./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host
+./scripts/test.sh -windows     # from WSL: the Go tests, run natively on the Windows host. 5 min
 scripts/test/browser/setup.sh  # the browser checks' Incus container, with this tree's build and the site's in it
-scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Firefox, before a manual test
-./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs
-./scripts/build.sh --prod      # production-mode binary for this architecture
-./scripts/build.sh --prod-all  # all release binaries
-./scripts/build.sh --android   # the Android app's development APKs, out/android-{arm64,amd64}.apk
-./scripts/ffmpeg.sh            # regenerate the media module after changing its driver or build
-./scripts/ffmpeg.sh --fuzz 10m # fuzz the driver in the module and natively under AddressSanitizer
-./scripts/rnnoise.sh           # rebuild RNNoise's module for the page after changing its build
-./scripts/emoji.sh             # rewrite the list of Unicode's emoji after changing its generator or its pins
-./scripts/notices.sh           # rewrite the third-party notices after a dependency or pin changes
+scripts/test/browser/run.sh CHECK [BROWSER...]  # one check in Chromium and Firefox, before a manual test. Up to 15 min for a chain
+./scripts/build.sh             # dev binary: runs a development instance as you, -dev storage, debug logs. 10 s, 2 s again
+./scripts/build.sh --prod      # production-mode binary for this architecture, after the Go tests. 1 min with them cached
+./scripts/build.sh --prod-all  # all release binaries, after the Go tests. 80 s with them cached
+./scripts/build.sh --android   # the Android app's development APKs, out/android-{arm64,amd64}.apk. 20 s
+./scripts/ffmpeg.sh            # regenerate the media module after changing its driver or build; --check takes 50 s once its libraries are built
+./scripts/ffmpeg.sh --fuzz 12000x  # fuzz the driver in the module and natively under AddressSanitizer, for a count of runs, as CI does
+./scripts/rnnoise.sh           # rebuild RNNoise's module for the page after changing its build; --check 3 s
+./scripts/emoji.sh             # rewrite the list of Unicode's emoji after changing its generator or its pins; --check 1 s
+./scripts/notices.sh           # rewrite the third-party notices after a dependency or pin changes; --check 4 s
 go test ./internal/build/winres -args -update  # rewrite cmd's Windows resource objects after changing the manifest
-gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./... && GOOS=android GOARCH=arm64 go vet ./...
 ```
+
+Durations are on 16 cores with Go's caches warm, the e2e harnesses' as CI
+runs them; run one heavy suite at a time. The scripts run go.mod's Go through
+`GOTOOLCHAIN` (`scripts/build/go.sh`), whatever Go is on PATH, as CI does; a
+`go` typed by hand runs PATH's.
 
 The `-release`, `-e2e`, `-den-e2e`, `-flatpak-e2e` and `-android-e2e` harnesses,
 and the browser checks, run on Linux only, the Android e2e on x86_64 with KVM;
-the harnesses' logs land under `out/`. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
+the harnesses' logs land under `out/`, which `./scripts/build.sh` empties in
+every mode but `--android`, and with it the media module's build cache. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 `scripts/test-den-e2e.ps1`) install real services, so they run in CI or on a
 Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
-cosign, rclone, shellcheck, goimports, Hugo, Node.js for the page's tests,
+cosign, rclone, shellcheck, Hugo, Node.js for the page's tests,
 Caddy for the den e2e, the media module's FFmpeg, zlib, libaom, CMake,
 wasi-sdk, binaryen and wasm2go, RNNoise's source and model, Unicode's emoji
 test file and CLDR's annotations, the names' fonts, and the Android app's
@@ -289,7 +294,12 @@ Never depend on `tools/` contents directly.
 
 Generated and ignored: `internal/ui/assets/{css/output.css,js/output.js,manifest.json,fonts/}`,
 `out/`, `tools/`, `docs/out/`. Edit sources under
-`internal/ui/assets/css/input.css` and `internal/ui/assets/js/src/`.
+`internal/ui/assets/css/input.css` and `internal/ui/assets/js/src/`. A clone
+builds and tests before the page is built, serving a placeholder page, which
+a binary a script builds refuses.
+
+Search with `git grep -I` or `rg`: both skip the media module's 24 MB of
+generated Go (`.gitattributes`, `.ignore`), which a bare `grep -r` reads.
 
 ## Where to add things
 

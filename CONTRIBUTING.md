@@ -29,9 +29,8 @@ the page's tests run on). The lifecycle E2E harness also needs Incus.
 
 ```sh
 ./scripts/test.sh            # go test -race ./...; run liberally
-./scripts/test.sh -lint      # pinned shellcheck; after touching any .sh
+./scripts/test.sh -lint      # gofmt, go vet for each OS, and shellcheck; before each commit
 ./scripts/test.sh -js        # the page's tests; after touching its scripts
-gofmt -l ./cmd ./internal ./pkg && go vet ./... && GOOS=windows go vet ./...
 ```
 
 If you touched the installers or the release scripts, also run
