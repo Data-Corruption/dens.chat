@@ -9,7 +9,8 @@
 # Usage: scripts/test/android/den.sh up       start Caddy and the den, made once
 #        scripts/test/android/den.sh invite   print a one-use invite for the phone
 #        scripts/test/android/den.sh root     print Caddy's root certificate
-#        scripts/test/android/den.sh down     stop both
+#        scripts/test/android/den.sh down     stop Caddy, the den, third and the twin
+#        scripts/test/android/den.sh den      print the den's ID
 #        scripts/test/android/den.sh general  print the den's general channel's ID
 #        scripts/test/android/den.sh channel NAME  print a text channel's ID, made if it isn't there
 #        scripts/test/android/den.sh api METHOD PATH [JSON]   desk's page API
@@ -281,7 +282,7 @@ case ${1:-} in
     as_tester ./android-den.sh "$@"
     ;;
   *)
-    sed -n '9,22p' "$0" >&2
+    awk '/^# Usage:/ { on = 1 } on && !/^# / { exit } on' "$0" >&2
     exit 2
     ;;
 esac

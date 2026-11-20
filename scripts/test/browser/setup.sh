@@ -22,6 +22,8 @@
 
 set -euo pipefail
 cd "$(dirname "$0")/../../.."
+# shellcheck source=scripts/build/go.sh
+source scripts/build/go.sh
 
 CONTAINER=${CONTAINER:-dens-browsers}
 build=true

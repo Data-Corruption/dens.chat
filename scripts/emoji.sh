@@ -9,8 +9,8 @@
 #
 # The list stops at UPTO, the newest Emoji version that Windows 11 and Noto
 # Color Emoji both draw everywhere, since the page draws emoji in the
-# system's font: Windows 11 has drawn Emoji 16.0 since 24H2, and 17.0 only
-# reaches it as an update rolls out. Raise it once both draw the next.
+# system's font: Windows 11 has drawn Emoji 16.0 since 24H2. Raise it once
+# both draw the next.
 #
 # Usage:
 #   ./scripts/emoji.sh           # write both lists
@@ -23,6 +23,8 @@ export LC_ALL=C
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
+# shellcheck source=build/go.sh
+source scripts/build/go.sh
 
 UPTO=16.0
 PAGE=internal/ui/assets/emoji.json
@@ -35,7 +37,7 @@ generate() {
   [[ -n "$data" ]] || { echo "error: vendor.sh returned no emoji data" >&2; return 1; }
   go run ./scripts/emoji -upto "$UPTO" -test "$data/emoji-test.txt" -annotations "$data/annotations-en.xml" \
     -derived "$data/annotations-derived-en.xml" -page "$1" -go "$2"
-  gofmt -l "$2" | grep -q . && { echo "error: $2 isn't formatted as gofmt formats it" >&2; return 1; }
+  go_fmt -l "$2" | grep -q . && { echo "error: $2 isn't formatted as gofmt formats it" >&2; return 1; }
   return 0
 }
 

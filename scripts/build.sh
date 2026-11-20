@@ -7,6 +7,10 @@
 # local build order is visible here. scripts/ci.sh reuses these settings and
 # build helpers when publishing a release.
 #
+# Every mode but --android empties out/ first, and with it the harnesses'
+# logs, the backups and builds they leave there, and the media module's
+# build cache.
+#
 # Dev (default):
 #   ./scripts/build.sh
 #     Build frontend assets and a DevMode binary for the current host. DevMode
@@ -38,25 +42,22 @@
 # portable - copy the release bucket byte-for-byte and install with
 # --release-url pointing at the copy; all cosign signatures stay valid.
 #
-# Dependencies: go, gcc (only when tests run: go test -race needs cgo), and
-# curl. The build is pure Go (no cgo), so Linux release binaries are fully
-# static and run on any distro, including NixOS. Android's alone uses cgo,
-# through the NDK vendor.sh pins.
+# Dependencies: go, curl, sed, awk, sha256sum and gzip, and gcc when tests
+# run (go test -race needs cgo). Whatever Go is on PATH runs go.mod's
+# (scripts/build/go.sh). The build is pure Go (no cgo), so Linux release
+# binaries are fully static and run on any distro, including NixOS.
+# Android's alone uses cgo, through the NDK vendor.sh pins.
 #
 # NixOS: the downloaded tailwind standalone is dynamically linked and won't
-# run; local builds prefer a tailwindcss found on PATH instead. Use the repo
-# flake (`nix develop`) or `nix shell nixpkgs#tailwindcss_4` before building.
-# Note nixpkgs may lag TAILWIND_VERSION slightly - fine for local dev, CI
-# always uses the pinned standalone.
+# run; local builds prefer a tailwindcss found on PATH instead, such as
+# `nix shell nixpkgs#tailwindcss_4`'s. Note nixpkgs may lag TAILWIND_VERSION
+# slightly - fine for local dev, CI always uses the pinned standalone.
 
 set -euo pipefail
 umask 022
 export LC_ALL=C
 
 # Project config --------------------------------------------------------------
-#
-# Template adopters normally change values in this section and leave the build
-# implementation alone.
 
 APP_NAME="dens"
 # The URL path is also the publication prefix inside R2_BUCKET. End with /.
@@ -87,6 +88,7 @@ MODE="local" # frontend tool selection; ci.sh uses the pinned CI tools
 BUILD_KIND="dev" # dev | prod | prod-all | android
 VERSION="v0.0.0-dev" # dev version marker (valid semver prerelease, so x/mod/semver handles it; any real release compares newer)
 DEV_MODE=true # baked into BuildInfo; true only for the default dev build
+PAGE_REQUIRED=true # the binary refuses to start without the page; the harnesses' fixtures, built without it, don't
 RUN_TESTS=true # production builds run test.sh first; ci.sh's release build doesn't
 HOST_GOARCH=""
 BUILD_OUTS=()
@@ -100,6 +102,8 @@ VERSION_DIR=""
 OIDC_ISSUER="https://token.actions.githubusercontent.com"
 CERT_IDENTITY=""
 
+# shellcheck source=build/go.sh
+source "$BUILD_SCRIPT_DIR/build/go.sh"
 # shellcheck source=build/common.sh
 source "$BUILD_SCRIPT_DIR/build/common.sh"
 # shellcheck source=build/artifacts.sh

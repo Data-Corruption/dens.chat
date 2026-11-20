@@ -14,10 +14,11 @@
 // first, the page's first screens (M13.3): the local password set, with
 // Link previews on (M22.7), and the den joined through the page's forms,
 // by Android's taps and keyboard, to the recovery codes and Home, where
-// Manage lists the phone among the
-// member's devices by its name, with its model under it; around, getting around from Home as M13.1's done-when has it;
-// touch, M13.2's: a long press, a sheet's swipe down and Back, three
-// lines sent by the send button with the keyboard up, and a tip's tap;
+// Manage lists the phone among the member's devices by its name, with its
+// model under it; around, getting around from Home to a channel, the list
+// and the members, and Back up to Home and out of the app; touch, M13.2's:
+// a long press, a sheet's swipe down and Back, three lines sent by the send
+// button with the keyboard up, and a tip's tap;
 // pages, M13.3's: the settings and Manage as lists of pages that Back
 // walks out of, the phone's settings without keyboard shortcuts or screen
 // share, the viewer swiped through a message's photos, zoomed by a double

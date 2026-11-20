@@ -24,6 +24,8 @@ export LC_ALL=C
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
+# shellcheck source=build/go.sh
+source scripts/build/go.sh
 
 MODULE_DIR=internal/media/ffmpeg/module
 DRIVER_DIR=internal/media/ffmpeg/driver
@@ -181,7 +183,7 @@ EOF
   echo "== the translation" >&2
   mkdir -p "$out"
   "$wasm2go" -pkg module -unsafe -embed -o "$out/module.go" "$work/module.wasm"
-  gofmt -w "$out/module.go"
+  go_fmt -w "$out/module.go"
   local pages
   pages=$("$(dirname "$wasm_opt")/wasm-dis" "$work/module.wasm" |
     sed -n 's/.*(import "env" "memory" (memory [^ ]* \([0-9]*\).*/\1/p')

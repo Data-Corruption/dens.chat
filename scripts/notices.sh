@@ -23,6 +23,8 @@ export LC_ALL=C
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
+# shellcheck source=build/go.sh
+source scripts/build/go.sh
 
 OUT=internal/build/notices.txt
 TEXTS=scripts/notices

@@ -11,66 +11,69 @@
 # One Incus container hosts the den behind the pinned Caddy, serving
 # https://den.test with Caddy's internal certificate authority. Another, on
 # a different distro, trusts that authority, installs Dens and joins with an
-# invite from the owner. The two chat, the den's service restarts, and the
-# member must reconnect with the whole history. The two then call each other
-# in a voice channel, a test binary with Pion standing in for each one's
-# browser, and each must hear the other: over UDP, and with the member's
-# side over TCP alone. Both installs must give the call's length a second
-# apart at most (M21.2). The member's call must ride out Caddy restarting,
-# and then its own service restarting, the den holding it while the member
-# is away and the member taking it back on the same connection. A staff
-# mute must silence the member, and a staff disconnect end their call, and
-# the voice channel's longest call must hold through a den restart. The
-# member sends a phone photo that must arrive
-# stripped, a phone video that must arrive stripped with its preview and
-# play from any byte, and an iPhone HEIC that must arrive as a JPEG. The
-# owner's retention period must reach the member and outlive the restart.
-# At their limit, the member swaps a file for a smaller one and deletes
-# another. A HEIC sent smaller must arrive as an upright copy in its own
-# colors, and another switched to full size, full size, and a video over a
-# lowered limit as an AV1 copy that fits, with its preview. The owner and
-# the member write in a DM at the same moment, neither typing a digit, and
-# compare codes, which asks nothing of the den (M16.1); it carries text, a
-# photo, a photo's and a video's smaller copies and a video the den stores
-# only sealed. The member opens their notes and writes one, which they
-# read back, the owner can't, and the den holds sealed (M17.3). The owner
-# makes an event in the voice channel, which the member marks Interested:
-# as it starts the den tells the member's service, and not the owner's,
-# and End now takes it off (M17.4). The owner
-# shares a checklist with the member, and the
-# two tick different boxes at the same moment, all of which must stay. A
-# second instance on the member's machine stands in for a fresh one: it
-# signs in by the den's address with a recovery code, whose new password
-# must sign the first install out at once, and reads the DM only once the
-# member types their DM seal, and their notes then too, the seal making
-# their key. The new password alone doesn't sign the first
-# install in again: the fresh one approves it, the two comparing digits, and
-# hands it the seal, with which it reads the DM. Signed out once more from
-# the fresh one's device list, it signs in again the same way, with the
-# digits typed into the fresh one first, which must go on showing its own.
-# With Keybind relay on in both (M20.1), the first install holds a call, and
-# the fresh one, which sees it, says hello through Caddy; the first answers,
-# the two link across the member's machine, and push to talk held by the
-# fresh one's stand-in helper reaches the first one's call as a relayed
-# press. The owner then bans the member, whose connections must close at once and
-# who can't join again under the same name. Last, the den's machine makes an
-# owner invite with dens den owner-invite, and whoever redeems it, on the
-# member's machine under a new name, must own the den, with the owner before
-# them a moderator.
+# invite from the owner. The two chat, a YouTube link losing its tracking,
+# the den's service restarts, and the member must reconnect with the whole
+# history. The two then call each other in a voice channel, a test binary
+# with Pion standing in for each one's browser, and each must hear the
+# other: over UDP, and with the member's side over TCP alone. Both installs
+# must give the call's length a second apart at most (M21.2). The member's
+# call must ride out Caddy restarting, and then its own service restarting,
+# the den holding it while the member is away and the member taking it back
+# on the same connection. A staff mute must silence the member, and a staff
+# disconnect end their call, and the voice channel's longest call must hold
+# through a den restart. The member shares their screen, which the owner
+# watches with its sound, and a voice channel's new bitrate reaches the call
+# in progress. The member sends a phone photo that must arrive stripped, a
+# phone video that must arrive stripped with its preview and play from any
+# byte, and an iPhone HEIC that must arrive as a JPEG. The owner's retention
+# period must reach the member and outlive the restart. At their limit, the
+# member swaps a file for a smaller one and deletes another. A HEIC sent
+# smaller must arrive as an upright copy in its own colors, and another
+# switched to full size, full size, and a video over a lowered limit as an
+# AV1 copy that fits, with its preview. The member's cache keeps what they
+# viewed across both restarts, drops what went, and reads with the den
+# stopped. The owner and the member write in a DM at the same moment,
+# neither typing a digit, and compare codes, which asks nothing of the den
+# (M16.1); it carries text, a photo, a photo's and a video's smaller copies
+# and a video the den stores only sealed. The member opens their notes and
+# writes one, which they read back, the owner can't, and the den holds
+# sealed (M17.3). The owner makes an event in the voice channel, which the
+# member marks Interested: as it starts the den tells the member's service,
+# and not the owner's, and End now takes it off (M17.4). The owner shares a
+# checklist with the member, and the two tick different boxes at the same
+# moment, all of which must stay. A second instance on the member's machine
+# stands in for a fresh one: it signs in by the den's address with a
+# recovery code, whose new password must sign the first install out at once,
+# and reads the DM only once the member types their DM seal, and their notes
+# then too, the seal making their key. The new password alone doesn't sign
+# the first install in again: the fresh one approves it, the two comparing
+# digits, and hands it the seal, with which it reads the DM. Signed out once
+# more from the fresh one's device list, it signs in again the same way,
+# with the digits typed into the fresh one first, which must go on showing
+# its own. With Keybind relay on in both (M20.1), the first install holds a
+# call, and the fresh one, which sees it, says hello through Caddy; the
+# first answers, the two link across the member's machine, and push to talk
+# held by the fresh one's stand-in helper reaches the first one's call as a
+# relayed press. The owner then bans the member, whose connections must
+# close at once, whose cache of the den empties, and who can't join again
+# under the same name. Last, the den's machine makes an owner invite with
+# dens den owner-invite, and whoever redeems it, on the member's machine
+# under a new name, must own the den, with the owner before them a
+# moderator.
 #
 # Before the recovery, the den moves to a server (M10): the host exports it
-# from the command line, which waits for hosting to go off, and a third
-# container, on the den's distro, restores the export, turns hosting on
-# with dens den hosting on and serves it behind Caddy, with the first host's
-# certificate authority. den.test then points at the server, the first
-# host's Caddy stops, and the first host removes its copy, which it refuses
-# to while nothing else answers as the den. The member must reconnect by
-# themselves, the owner's install must reach the den at its address as its
-# owner, with its history and DMs, and refuse the export, which would
-# replace its account there, and the two must chat and call through the
-# server, where everything after the move happens. All three install
-# from unsigned fixture releases through install.sh, like the lifecycle
-# harness; the guest steps are in scripts/test/den-guest.sh.
+# from the command line, which refuses while hosting is on, so the host
+# turns hosting off first; a third container, on the den's distro, restores
+# the export, turns hosting on with dens den hosting on and serves it behind
+# Caddy, with the first host's certificate authority. den.test then points
+# at the server, the first host's Caddy stops, and the first host removes
+# its copy, which it refuses to while nothing else answers as the den. The
+# member must reconnect by themselves, the owner's install must reach the
+# den at its address as its owner, with its history and DMs, and refuse the
+# export, which would replace its account there, and the two must chat and
+# call through the server, where everything after the move happens. All
+# three install from unsigned fixture releases through install.sh, like the
+# lifecycle harness; the guest steps are in scripts/test/den-guest.sh.
 #
 # Usage:
 #   ./scripts/test-den-e2e.sh
@@ -102,6 +105,8 @@ esac
 
 # shellcheck source=test/incus.sh
 source scripts/test/incus.sh
+# shellcheck source=build/go.sh
+source scripts/build/go.sh
 for distro in "$DEN_DISTRO" "$CLIENT_DISTRO"; do
   distro_spec "$distro" >/dev/null || { echo "error: unknown distro '$distro'" >&2; exit 1; }
 done
@@ -731,7 +736,7 @@ run() {
   refusal=$(guest "$DEN" remove-refused)
   [[ "$refusal" == *"doesn't answer at https://den.test"* ]] ||
     { echo "error: removing the den while nothing else serves it: $refusal" >&2; return 1; }
-  echo ">> The export waited for hosting to go off, and the first host keeps its copy while nothing else answers as the den"
+  echo ">> The export refused while hosting was on, and the first host keeps its copy while nothing else answers as the den"
   "${INCUS[@]}" file pull -q "$DEN/root/den.backup" "$HARNESS_DIR/den.backup"
   "${INCUS[@]}" file push -q "$HARNESS_DIR/den.backup" "$SERVER/root/den.backup"
   "${INCUS[@]}" file push -q --mode 0755 "$caddy" "$SERVER/usr/local/bin/caddy"

@@ -3,16 +3,6 @@
 # This file is sourced by ../build.sh. It owns frontend generation, Go builds,
 # build verification, deterministic installer rendering, and release packaging.
 
-# The generated frontend outputs are gitignored; Go embed needs the files to
-# exist when the installer harness builds directly without the frontend
-# toolchain.
-ensure_embed_placeholders() {
-  [[ -f "$CSS_DIR/output.css" ]] || : > "$CSS_DIR/output.css"
-  [[ -f "$JS_DIR/output.js" ]] || : > "$JS_DIR/output.js"
-  [[ -f "$ASSETS_DIR/manifest.json" ]] ||
-    printf '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","js/sframe.worker.js":"test","js/relay.worker.js":"test","js/relay.worklet.js":"test","wasm/rnnoise.wasm":"test","emoji.json":"test"}' > "$ASSETS_DIR/manifest.json"
-}
-
 frontend_build() {
   # Versions, hashes, and the fetch itself all live in scripts/vendor.sh.
   # The daisyui modules are consumed by input.css, not invoked directly.
@@ -42,7 +32,8 @@ frontend_hash_assets() {
   local assets_dir="./internal/ui/assets"
   local manifest="$assets_dir/manifest.json"
 
-  # Patterns to ignore (matched against relative path from assets/)
+  # Patterns to ignore (matched against relative path from assets/), as
+  # internal/ui's placeholder page leaves them out too
   local ignore_patterns=(
     "css/input.css"
     "js/src/*"
@@ -112,6 +103,7 @@ make_ldflags() {
   # names its root (M12.4).
   [[ -z "${SIGSTORE_ROOT:-}" ]] || ldflags+=" -X '${pkg}.sigstoreRoot=$SIGSTORE_ROOT'"
   ldflags+=" -X '${pkg}.devMode=$1'"
+  ldflags+=" -X '${pkg}.pageRequired=$PAGE_REQUIRED'"
   [[ "$1" == "true" ]] || ldflags+=" -s -w"
   printf '%s' "$ldflags"
 }

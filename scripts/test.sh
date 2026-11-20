@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./scripts/test.sh                              # race-enabled Go tests
-#   ./scripts/test.sh -lint                        # shellcheck over the shell scripts
+#   ./scripts/test.sh -lint                        # gofmt, go vet for each OS, and shellcheck
 #   ./scripts/test.sh -js                          # the page's tests on the pinned Node
 #   ./scripts/test.sh -docs                        # the site built as the Docs workflow builds it, and its icon checked
 #   ./scripts/test.sh -release                     # release state machine
@@ -23,13 +23,15 @@ set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"
+# shellcheck source=build/go.sh
+source scripts/build/go.sh
 
 usage() {
   cat <<'EOF'
 Usage: ./scripts/test.sh [mode]
 
 With no argument, run the race-enabled Go test suite.
-  -lint     Run the pinned shellcheck over every shell script
+  -lint     Check every Go file is gofmt's, vet for Linux, Windows and Android, and run the pinned shellcheck over every script
   -js       Run the page's tests on the pinned Node
   -docs     Build the site as the Docs workflow does, failing on any warning, and check its icon is the app's mark
 EOF
@@ -66,20 +68,10 @@ run_go_tests() {
     exit 1
   }
 
-  ensure_ui_placeholders
   go test -race ./...
   # The race detector slows the media module's workers fifty times over and
   # finds nothing in them, so its long cases run without it.
   go test ./internal/media/...
-}
-
-ensure_ui_placeholders() {
-  # Generated frontend outputs are gitignored. Empty compile-only placeholders
-  # keep ordinary Go tests independent of the frontend toolchain.
-  [[ -f internal/ui/assets/css/output.css ]] || : > internal/ui/assets/css/output.css
-  [[ -f internal/ui/assets/js/output.js ]] || : > internal/ui/assets/js/output.js
-  [[ -f internal/ui/assets/manifest.json ]] ||
-    printf '{"css/output.css":"test","js/output.js":"test","js/voice.worklet.js":"test","js/sframe.worker.js":"test","js/relay.worker.js":"test","js/relay.worklet.js":"test","wasm/rnnoise.wasm":"test","emoji.json":"test"}' > internal/ui/assets/manifest.json
 }
 
 # run_windows_tests cross-compiles every package's tests and runs them on
@@ -93,7 +85,6 @@ run_windows_tests() {
     printf "error: -windows needs WSL with Windows interop\n" >&2
     exit 1
   }
-  ensure_ui_placeholders
   local win_temp work pkg name rel dir failed=0
   win_temp=$(powershell.exe -NoProfile -NonInteractive -Command '[IO.Path]::GetTempPath()' | tr -d '\r')
   work=$(wslpath -u "${win_temp}dens-go-tests")
@@ -127,41 +118,32 @@ run_windows_tests() {
   return "$failed"
 }
 
-# Entry points only; -x follows the build and CI libraries through `source` so the
-# libraries are checked in the context that defines their variables.
-run_shell_lint() {
-  local shellcheck_bin
+# run_lint checks every Go file is formatted as go.mod's gofmt formats it,
+# vets the module for each OS Dens builds for, whose files only that OS
+# compiles, and runs shellcheck over every tracked script. The build's and
+# CI's libraries are left out: --external-sources follows them through
+# `source` from the scripts that define their variables.
+run_lint() {
+  local files unformatted
+  mapfile -d '' files < <(git ls-files -z '*.go')
+  unformatted=$(go_fmt -l "${files[@]}")
+  if [[ -n "$unformatted" ]]; then
+    printf "error: gofmt would change:\n%s\n" "$unformatted" >&2
+    exit 1
+  fi
+  printf '🟢 gofmt passed (%d files)\n' "${#files[@]}"
+  go vet ./...
+  GOOS=windows go vet ./...
+  GOOS=android GOARCH=arm64 go vet ./...
+  printf '🟢 go vet passed for Linux, Windows and Android\n'
+
+  local shellcheck_bin scripts
   shellcheck_bin=$(./scripts/vendor.sh shellcheck | sed -n 's/^shellcheck=//p')
   if [[ -z "$shellcheck_bin" || ! -x "$shellcheck_bin" ]]; then
     printf "error: vendor.sh returned no executable shellcheck path\n" >&2
     exit 1
   fi
-  local scripts=(
-    scripts/build.sh
-    scripts/ci.sh
-    scripts/vendor.sh
-    scripts/ffmpeg.sh
-    scripts/notices.sh
-    scripts/rnnoise.sh
-    scripts/test.sh
-    scripts/test-release.sh
-    scripts/test-lifecycle-e2e.sh
-    scripts/test/lifecycle-guest.sh
-    scripts/test/fixture-releases.sh
-    scripts/test-den-e2e.sh
-    scripts/test/den-guest.sh
-    scripts/test-flatpak-e2e.sh
-    scripts/test/flatpak-guest.sh
-    scripts/test/flatpak-release.sh
-    scripts/test/flatpak-publish.sh
-    scripts/flatpak.sh
-    scripts/test-android-e2e.sh
-    scripts/test/android/*.sh
-    scripts/test/browser/*.sh
-    scripts/dev/seed-chat.sh
-    scripts/dev/flatpak-vm.sh
-    scripts/install.sh
-  )
+  mapfile -d '' scripts < <(git ls-files -z '*.sh' ':!scripts/build/*.sh' ':!scripts/ci/*.sh' ':!scripts/test/incus.sh')
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
   printf '🟢 shellcheck passed (%d scripts)\n' "${#scripts[@]}"
 }
@@ -226,7 +208,6 @@ run_docs_tests() {
 # calls against the oldest Android it runs on; and the host package's tests
 # built for the emulator, as the Android e2e runs them.
 run_android_build() {
-  ensure_ui_placeholders
   GOOS=android GOARCH=arm64 go vet ./...
   ./scripts/build.sh --android
   local tools
@@ -250,7 +231,7 @@ case "$mode" in
     ;;
   -lint)
     require_no_args "-lint" "$@"
-    run_shell_lint
+    run_lint
     ;;
   -js)
     require_no_args "-js" "$@"
@@ -288,7 +269,7 @@ case "$mode" in
   -all)
     require_no_args "-all" "$@"
     run_go_tests
-    run_shell_lint
+    run_lint
     run_js_tests
     run_docs_tests
     run_release_tests

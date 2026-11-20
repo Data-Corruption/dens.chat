@@ -2,8 +2,9 @@ name: Docs
 
 # Builds the Hugo docs site and tests it (scripts/test.sh -docs) on pushes to
 # main and on PRs that change it, and deploys it from main to Cloudflare
-# Workers Static Assets, when DOCS_ENABLED is true. workflow_dispatch also
-# builds it, and deploys it when run on main.
+# Workers Static Assets. workflow_dispatch also builds it, and deploys it
+# when run on main. Unless DOCS_ENABLED is true, the gate skips all of it,
+# the build and the test included.
 # Set the worker name in docs/wrangler.jsonc and site URL in docs/hugo.yaml.
 # Follow docs/DEPLOYMENT.md before enabling deployment.
 
@@ -16,6 +17,7 @@ on:
       - 'scripts/test.sh'
       - 'scripts/vendor.sh'
       - 'scripts/build/common.sh'
+      - 'scripts/build/go.sh'
       - '.github/workflows/docs.yml'
   pull_request:
     branches: [ main ]
@@ -25,6 +27,7 @@ on:
       - 'scripts/test.sh'
       - 'scripts/vendor.sh'
       - 'scripts/build/common.sh'
+      - 'scripts/build/go.sh'
       - '.github/workflows/docs.yml'
   workflow_dispatch:
 
@@ -32,9 +35,10 @@ permissions:
   contents: read
 
 concurrency:
-  # Deploys from main wait their turn, never canceled. Each PR's runs are a
-  # group of their own, so a PR never cancels a deploy waiting to start,
-  # and its newer commit replaces its older run.
+  # A deploy from main that has started is never canceled; one still
+  # waiting gives way to a newer one. Each PR's runs are a group of their
+  # own, so a PR never cancels a deploy, and its newer commit replaces its
+  # older run.
   group: docs-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
