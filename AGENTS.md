@@ -52,7 +52,7 @@ holds.
 | `internal/vault` | Data key envelope: host and password wraps, key check value, signing keys in locked memory |
 | `internal/backup`, `internal/pairing` | Backup archives; one-time pairing tokens |
 | `internal/platform/database` | SQLite open and pool, ordered migrations, focused accessors per table |
-| `internal/platform/http` | Listeners, client and den routers, guards, handlers |
+| `internal/platform/http` | Listeners, client and den routers, guards, handlers; `routetest`, which records a router's routes for the tests that fail on one given twice |
 | `internal/platform/release` | Reads the root `version` pointer from the release host, and checks a release's signed checksums where no cosign runs; `sigstoretest`, a Sigstore of the tests' own |
 | `internal/types` | Configuration shape |
 | `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, its workers and worklets, sounds, fonts and emoji |
@@ -321,7 +321,9 @@ generated Go (`.gitattributes`, `.ignore`), which a bare `grep -r` reads.
   `commands.go`. A test scans the AST and fails if you forget to register it.
 - Durable state: a migration step, then accessors beside the owning subsystem.
 - HTTP route: a handler on the client router (`internal/platform/http/client`)
-  or the den router (`internal/platform/http/den`), never both.
+  or the den router (`internal/platform/http/den`), never both. Each router's
+  `TestNoRouteTwice` fails on a method and path given twice, which chi would
+  take silently.
 - OS-specific behavior: a seam in `internal/platform/host`, or a `System`
   method in `internal/install` for an install-time step.
 - Project values (name, release URL, contact, ports): the block at the top of

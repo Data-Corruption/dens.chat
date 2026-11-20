@@ -75,6 +75,12 @@ func New(a *app.App) http.Handler {
 		fonts:      fontAssets(a.UI),
 	}
 	r := chi.NewRouter()
+	rt.routes(r)
+	return r
+}
+
+func (rt *router) routes(r chi.Router) {
+	a := rt.a
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			next.ServeHTTP(w, req.WithContext(xlog.IntoContext(req.Context(), a.Log)))
@@ -119,7 +125,6 @@ func New(a *app.App) http.Handler {
 			rt.mountBackground(r)
 		})
 	})
-	return r
 }
 
 // Headers between the page and the service: the version of Dens that

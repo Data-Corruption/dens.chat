@@ -31,8 +31,13 @@ type handler struct {
 
 // New returns the den listener's handler.
 func New(a *app.App) http.Handler {
-	h := &handler{d: a.Den, log: a.Log}
 	r := chi.NewRouter()
+	routes(r, a)
+	return r
+}
+
+func routes(r chi.Router, a *app.App) {
+	h := &handler{d: a.Den, log: a.Log}
 	r.Use(func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 			next.ServeHTTP(w, req.WithContext(xlog.IntoContext(req.Context(), a.Log)))
@@ -149,7 +154,6 @@ func New(a *app.App) http.Handler {
 	r.MethodNotAllowed(func(w http.ResponseWriter, _ *http.Request) {
 		denproto.WriteError(w, denproto.Errorf(http.StatusMethodNotAllowed, denproto.CodeNotFound, "method not allowed"))
 	})
-	return r
 }
 
 // rootLine is what the den's address answers a browser with (M11), as
