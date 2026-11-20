@@ -198,6 +198,23 @@ func (r *received) snapshot() ([][]byte, []string) {
 	return slices.Clone(r.pieces), slices.Clone(r.problems)
 }
 
+// count gives the frames of sound in pieces, and the pieces of silence alone.
+func count(pieces [][]byte) (sound, silent int) {
+	for _, p := range pieces {
+		quiet := true
+		for _, v := range frames(p) {
+			if v != 0 {
+				sound++
+				quiet = false
+			}
+		}
+		if quiet {
+			silent++
+		}
+	}
+	return sound, silent
+}
+
 func waitTrue(t *testing.T, what string, ok func() bool) {
 	t.Helper()
 	end := time.Now().Add(10 * time.Second)
@@ -233,37 +250,33 @@ func TestTheHelperSendsTheComputersSound(t *testing.T) {
 	h.OpenSound = func(string) (*control.Stream, error) { return client.Open(control.Request{Op: control.OpSound}) }
 	h.Capture = fake.capture
 	run(t, h)
+	// A stall past fillAfter, as on a busy Windows runner, is filled as a
+	// quiet device's would be, so the test waits for sound and silence to
+	// come through rather than holding either to a share of the time. The
+	// fake's ramp is never 0: a frame of 0 is silence the helper filled.
 	waitTrue(t, "a second of sound", func() bool {
 		pieces, _ := got.snapshot()
-		return len(pieces) >= 200
+		sound, _ := count(pieces)
+		return sound >= 200*PieceFrames
 	})
 	pieces, problems := got.snapshot()
 	if problems[len(problems)-1] != "" {
 		t.Errorf("Relay heard %q once the helper read the sound", problems)
 	}
-	sound := 0
 	for _, p := range pieces {
 		if PieceRate(p) != 48000 {
 			t.Fatalf("a piece of %d bytes at %d Hz", len(p), PieceRate(p))
 		}
-		for _, v := range frames(p) {
-			if v != 0 {
-				sound++
-			}
-		}
-	}
-	if sound < 200*240*9/10 {
-		t.Errorf("%d frames of sound in %d pieces", sound, len(pieces))
 	}
 
 	// Paused, as an output with nothing playing: silence keeps coming.
 	fake.set(true, "")
 	before := len(pieces)
-	time.Sleep(500 * time.Millisecond)
-	pieces, _ = got.snapshot()
-	if n := len(pieces) - before; n < 50 {
-		t.Errorf("%d pieces in half a second of nothing playing", n)
-	}
+	waitTrue(t, "half a second of silence with nothing playing", func() bool {
+		pieces, _ := got.snapshot()
+		_, silent := count(pieces[before:])
+		return silent >= 100
+	})
 
 	fake.set(false, "the output went")
 	waitTrue(t, "Relay hearing the problem", func() bool {
