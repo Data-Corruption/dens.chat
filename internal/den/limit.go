@@ -67,7 +67,8 @@ func ipKey(ip net.IP) string {
 	return ip.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }
 
-// Limit kinds, with the starting values from protocol.md.
+// Limit kinds, with the starting values from docs/dev/protocol.md's Rate
+// limits.
 const (
 	LimitChallenge    = iota // per IP
 	LimitJoin                // per IP: join and preview

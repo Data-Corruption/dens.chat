@@ -1015,7 +1015,7 @@ The page signals over its event socket to its local service, which relays on the
 6. When someone joins or leaves the call, the den sends each other member a new offer, which adds or retires that member's section. One offer is outstanding per member at a time, and one not answered within 15 seconds ends that member's call.
 7. When the page's connection to the media ports breaks, as on a move to another network, it asks for an ICE restart (M3). The den's next offer carries new ICE credentials, the local service writes the den's addresses into it afresh, and the browser checks its new paths. DTLS carries on, so the call keeps its keys and its sections.
 
-The messages are in [protocol.md](protocol.md#voice-m2).
+The messages are in [protocol.md](protocol/calls.md#voice).
 
 **Riding out a dropped connection (M3)**
 

@@ -1,8 +1,12 @@
-## Files (M1.4, M1.8)
+# Den protocol: files
+
+Uploads, their metadata, attachments, pictures on a profile and the limits on files. The conventions, versions, errors, keys, objects and rate limits every part follows are in [protocol.md](../protocol.md).
+
+## Files
 
 ```
-file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"width", "height"}, "spoiler"? (M17.2)}
-image = {"id", "width", "height"}
+file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "duration_ms"?, "thumb"?: {"width", "height"}, "spoiler"?}
+image = {"id", "width", "height", "animated"?}
 ```
 
 A file is an upload: an attachment on a message, or a picture on a profile. `type` is what the den found the file to be from its bytes, never what its name says. `width` and `height` are set for images and videos, as they display, so a client lays out the space one takes before it loads. `duration_ms` is a video's or audio's length when it's known, at most a week. `thumb` is there when the file has a preview.
@@ -24,11 +28,11 @@ Dens-Filename: <the file's name, UTF-8, percent-encoded>
   - Anything else is a file to download, with the media type the den sniffed, for clients to pick an icon.
 - The name is cleaned: control, bidi and zero-width characters are dropped, `/` and `\` become `_`, spaces and dots are trimmed from both ends, and it is cut to 255 bytes without splitting a character. An empty name becomes `file`.
 - An upload waits an hour for a message or a profile to use it, and is then deleted. Until it's used, only the member who uploaded it can fetch it.
-- Uploads are limited per member (see [Rate limits](#rate-limits)).
+- Uploads are limited per member (see [Rate limits](../protocol.md#rate-limits)).
 
 ### Metadata
 
-Clients take metadata out of images before uploading, so a den never receives it, and the den checks: an image that still has any is refused with `400 invalid_field`. The den re-encodes nothing; a client's smaller copy of a photo (M5) is a new image, checked like any other. What an image keeps:
+Clients take metadata out of images before uploading, so a den never receives it, and the den checks: an image that still has any is refused with `400 invalid_field`. The den re-encodes nothing; a client's smaller copy of a photo is a new image, checked like any other. What an image keeps:
 
 | Kind | Kept | Everything else goes, including |
 | --- | --- | --- |
@@ -62,26 +66,26 @@ POST /api/uploads/{id}/thumb   (body: a JPEG or PNG)   200 file
 ### Attachments
 
 ```
-POST   /api/channels/{id}/messages   {"nonce", "text", "reply_to"?, "attachments"?: ["<upload id>", …], "spoilers"?: ["<upload id>", …] (M17.2)}
-PATCH  /api/messages/{id}            {"revision", "text", "attachments"?: ["<file or upload id>", …]}   (M5)
-DELETE /api/uploads/{id}             204                                                         (M5)
+POST   /api/channels/{id}/messages   {"nonce", "text", "reply_to"?, "attachments"?: ["<upload id>", …], "spoilers"?: ["<upload id>", …]}
+PATCH  /api/messages/{id}            {"revision", "text", "attachments"?: ["<file or upload id>", …]}
+DELETE /api/uploads/{id}             204
 GET    /api/files/{id}               200 the file's bytes
 GET    /api/files/{id}/thumb         200 the preview's bytes
 GET    /api/me/storage               200 {"used", "den_used"}
-GET    /api/me/files?after=<cursor>  200 {"files": [file, …], "messages"?: [message, …], "next"?}  (M5)
+GET    /api/me/files?after=<cursor>  200 {"files": [file, …], "messages"?: [message, …], "next"?}
 ```
 
 - A message holds at most 10 files: the author's own uploads, not yet used. `message.attachments` lists them in the order sent.
-- `spoilers` (M17.2) names which of them go as spoilers, each one of the message's uploads, once; anything else gets `400 invalid_field`. The den keeps it on the file, which says `"spoiler": true` to everyone who sees it, and clients show it covered until it's clicked. Once sent it stays: an edit keeps it, and an upload that takes a file's place (`Dens-Replaces`) is a spoiler if the file was. A DM's spoilers go inside its sealed text, never to the den: a DM's send naming any gets `400 invalid_field`. A den older than them, which doesn't say `spoilers` in its info, ignores the field, so a client offers spoilers in a channel only where the den says it keeps them; an older client shows a spoiler uncovered.
-- An edit changes the text. From M5, the author's edit can change the files too: `attachments` lists them afterward, in order, as files the message already has and the author's waiting uploads. Files it leaves out are deleted, and `message.updated` lists them in `files`. A change of files marks the message edited. An edit can't leave a message with neither text nor files; a client deletes the message instead.
-- An upload made to take a file's place names it, as `Dens-Replaces: <file id>` (M5): one of the member's files, on a message or their profile. The den counts the upload against the member's space less that file's, and it can only take that file's place, in an edit that drops the file or as a picture replacing it. A file has one replacement waiting at most; a newer one drops the older.
-- `DELETE /api/uploads/{id}` drops one of the member's uploads waiting to be used, and frees its space at once (M5).
-- `GET /api/me/files` lists the member's files on the den, largest first by the space each takes with its preview, at most 50 at a time, `next` continuing the list (M5). Each is a `file` with `created_at`, and `message_id` and `channel_id`, or `"profile": "avatar"` or `"banner"`, or neither while it waits to be used. A channel's file has `excerpt`, the start of its message's text, as a reply's preview has. A DM's blobs come as sealed files, previews among them, and the page's `messages` carry the DM messages they're on, sealed, for the client to open and name them; a page ends early rather than carry more than 600 KiB of them.
+- `spoilers` names which of them go as spoilers, each one of the message's uploads, once; anything else gets `400 invalid_field`. The den keeps it on the file, which says `"spoiler": true` to everyone who sees it, and clients show it covered until it's clicked. Once sent it stays: an edit keeps it, and an upload that takes a file's place (`Dens-Replaces`) is a spoiler if the file was. A DM's spoilers go inside its sealed text, never to the den: a DM's send naming any gets `400 invalid_field`. A den older than them, which doesn't say `spoilers` in its info, ignores the field, so a client offers spoilers in a channel only where the den says it keeps them; an older client shows a spoiler uncovered.
+- An edit changes the text, and the author's edit can change the files too: `attachments` lists them afterward, in order, as files the message already has and the author's waiting uploads. Files it leaves out are deleted, and `message.updated` lists them in `files`. A change of files marks the message edited. An edit can't leave a message with neither text nor files; a client deletes the message instead.
+- An upload made to take a file's place names it, as `Dens-Replaces: <file id>`: one of the member's files, on a message or their profile. The den counts the upload against the member's space less that file's, and it can only take that file's place, in an edit that drops the file or as a picture replacing it. A file has one replacement waiting at most; a newer one drops the older.
+- `DELETE /api/uploads/{id}` drops one of the member's uploads waiting to be used, and frees its space at once.
+- `GET /api/me/files` lists the member's files on the den, largest first by the space each takes with its preview, at most 50 at a time, `next` continuing the list. Each is a `file` with `created_at`, and `message_id` and `channel_id`, or `"profile": "avatar"` or `"banner"`, or neither while it waits to be used. A channel's file has `excerpt`, the start of its message's text, as a reply's preview has. A DM's blobs come as sealed files, previews among them, and the page's `messages` carry the DM messages they're on, sealed, for the client to open and name them; a page ends early rather than carry more than 600 KiB of them.
 - A file is served as `application/octet-stream` with `Content-Disposition: attachment`. The den never states a type a browser would act on; clients check the bytes before showing anything as an image, video or audio.
 - A file answers byte ranges (`Range: bytes=N-`, `206 Partial Content`), and the den decrypts only the chunks a range covers, so a player seeks without fetching the whole file. Its `ETag` is its ID, quoted, since its bytes never change.
-- A DM's files are sealed uploads, which its message lists only inside its sealed text (see [DM files](#dm-files)).
+- A DM's files are sealed uploads, which its message lists only inside its sealed text (see [DM files](e2ee.md#dm-files)).
 - A member may fetch a file when they can see the message it's on, any member may fetch a picture on a profile, and only its uploader may fetch an upload waiting to be used. Anyone else gets `404 not_found`.
-- A file's bytes never change under its ID, so clients may keep a copy until an event says it's gone: `message.deleted` lists a message's files, a profile's replaced picture drops out of `member.updated`, `member.left` takes a member's pictures with it, `channel.deleted` takes the channel's, and `messages.expired` those of the messages it ends. After a `ready`, the changes since the client's version say which messages lost files or went (M6; see [What changed while away](#what-changed-while-away-m6)).
+- A file's bytes never change under its ID, so clients may keep a copy until an event says it's gone: `message.deleted` lists a message's files, a profile's replaced picture drops out of `member.updated`, `member.left` takes a member's pictures with it, `channel.deleted` takes the channel's, and `messages.expired` those of the messages it ends. After a `ready`, the changes since the client's version say which messages lost files or went (see [What changed while away](sync.md#what-changed-while-away)).
 - `GET /api/me/storage` says how much space the member's files take and how much everyone's do, in bytes, previews included.
 
 ### Pictures on a profile
@@ -91,7 +95,7 @@ PATCH /api/me   {"avatar"?: "<upload id>" | "", "banner"?: "<upload id>" | ""}  
 ```
 
 - An avatar is a square still image, 64 to 1,024 pixels a side. A banner is a still image 300 to 3,000 pixels wide and three times as wide as it is high, give or take 3%. Clients crop pictures to these shapes before uploading them.
-- Either may be an animated GIF instead (M15.1): an avatar then at most 256 pixels a side and 2 MiB, and a banner at most 600 pixels wide and 4 MiB. An animated picture of any other kind, such as an animated WebP or PNG, is refused; a member's own service makes its GIF.
+- Either may be an animated GIF instead: an avatar then at most 256 pixels a side and 2 MiB, and a banner at most 600 pixels wide and 4 MiB. An animated picture of any other kind, such as an animated WebP or PNG, is refused; a member's own service makes its GIF.
 - `""` takes a picture off. The picture a change replaces is deleted.
 - A member who leaves or is removed loses their pictures and the uploads they hadn't used.
 

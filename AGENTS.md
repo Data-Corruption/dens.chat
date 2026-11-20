@@ -95,8 +95,11 @@ holds.
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): the lifecycle state and
   locks every form shares, development instances, and the lifecycle e2e
   harnesses.
-- [docs/dev/protocol.md](docs/dev/protocol.md): the client-to-den protocol:
-  authentication, the WebSocket, events, history and limits.
+- [docs/dev/protocol.md](docs/dev/protocol.md) and `docs/dev/protocol/`: the
+  client-to-den protocol, its conventions, errors, keys, objects and rate
+  limits first, then a part per area: sign-in, the socket and sync, members,
+  messages, files, end-to-end encryption and calls. What crosses the wire is
+  stated there, and the design links to it.
 - [docs/dev/release.md](docs/dev/release.md): publication order, resume,
   retention, signing identity, and the Flatpak's key and job.
 - `docs/content/`: public docs for people using Dens.

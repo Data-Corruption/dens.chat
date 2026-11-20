@@ -1,8 +1,9 @@
 // Package denproto is the client-to-den protocol shared by both sides: wire
 // types, the byte layouts that get signed, password verifiers, invite
 // strings, name rules and the rule that takes tracking out of links.
-// docs/dev/protocol.md is its specification; keeping one implementation for
-// the den and the client means the two can't drift.
+// docs/dev/protocol.md and the parts under docs/dev/protocol describe it;
+// keeping one implementation for the den and the client means the two
+// can't drift.
 //
 // It holds every rule both sides apply alike: the cryptography of private
 // DMs and device approval; members' identities, their codes, the DM keys
@@ -68,7 +69,8 @@ const (
 	RecoveryCodes    = 10 // codes issued per member
 )
 
-// Error codes. Status codes pair with them as in protocol.md.
+// Error codes. Status codes pair with them as docs/dev/protocol.md's Errors
+// has it.
 const (
 	CodeMalformed           = "malformed"
 	CodeInvalidField        = "invalid_field"
