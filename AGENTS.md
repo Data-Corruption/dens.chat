@@ -228,8 +228,11 @@ notices don't name, and CI on notices that aren't current.
 `*_test_*.go` names and on `testing` reaching the shipped binary.
 
 **Line endings.** `.gitattributes` forces LF for `*.go` and `*.sh`, and for
-the notices the binary embeds, which a test reads line by line. Some
-PowerShell and a few other files are CRLF; do not "fix" them wholesale.
+each file a test reads line by line or byte for byte, the notices the binary
+embeds among them: Windows CI checks out the rest with CRLF, which `-windows`,
+copying from the Linux checkout, never meets. The PowerShell is ASCII with
+CRLF, which `-lint` checks as it parses it, and a few other files are CRLF; do
+not "fix" them wholesale.
 
 **Generated files are committed, and only their scripts write them.** Change
 a file's inputs, run its script, and commit what it writes beside the change;
@@ -257,7 +260,7 @@ with the notices written again; tests fail on one that lacks any of them.
 
 ```sh
 ./scripts/test.sh              # go test -race ./...; run constantly. 4 to 5 min, seconds for what's cached
-./scripts/test.sh -lint        # gofmt, go vet for Linux, Windows and Android, the pinned shellcheck over every tracked script, and the docs' links; run before each commit. 25 s, 3 min the first time
+./scripts/test.sh -lint        # gofmt, go vet for Linux, Windows and Android, the pinned shellcheck over every tracked script, the PowerShell parsed, and the docs' links; run before each commit. 25 s, 3 min the first time
 ./scripts/test.sh -js          # the page's tests on the pinned Node; run after touching the page's scripts. 30 s
 ./scripts/test.sh -docs        # the site built as the Docs workflow builds it, failing on any warning, and its icon checked; run after touching the site. 2 s
 ./scripts/test.sh -release     # release state machine against a local rclone backend. 50 s

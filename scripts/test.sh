@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./scripts/test.sh                              # race-enabled Go tests
-#   ./scripts/test.sh -lint                        # gofmt, go vet for each OS, shellcheck, and the docs' links
+#   ./scripts/test.sh -lint                        # gofmt, go vet for each OS, shellcheck, the PowerShell's bytes and parse, and the docs' links
 #   ./scripts/test.sh -js                          # the page's tests on the pinned Node
 #   ./scripts/test.sh -docs                        # the site built as the Docs workflow builds it, and its icon checked
 #   ./scripts/test.sh -release                     # release state machine
@@ -31,7 +31,7 @@ usage() {
 Usage: ./scripts/test.sh [mode]
 
 With no argument, run the race-enabled Go test suite.
-  -lint     Check every Go file is gofmt's, vet for Linux, Windows and Android, run the pinned shellcheck over every script, and check the docs' links
+  -lint     Check every Go file is gofmt's, vet for Linux, Windows and Android, run the pinned shellcheck over every script, check the PowerShell is ASCII with CRLF and parses, and check the docs' links
   -js       Run the page's tests on the pinned Node
   -docs     Build the site as the Docs workflow does, failing on any warning, and check its icon is the app's mark
 EOF
@@ -120,10 +120,11 @@ run_windows_tests() {
 
 # run_lint checks every Go file is formatted as go.mod's gofmt formats it,
 # vets the module for each OS Dens builds for, whose files only that OS
-# compiles, runs shellcheck over every tracked script, and checks the docs'
-# links (scripts/test/links). The build's and CI's libraries aren't linted
-# alone: --external-sources follows them through `source` from the scripts
-# that define their variables.
+# compiles, runs shellcheck over every tracked script, checks the
+# PowerShell's bytes and parses it, and checks the docs' links
+# (scripts/test/links). The build's and CI's libraries aren't linted alone:
+# --external-sources follows them through `source` from the scripts that
+# define their variables.
 run_lint() {
   local files unformatted
   mapfile -d '' files < <(git ls-files -z '*.go')
@@ -147,7 +148,54 @@ run_lint() {
   mapfile -d '' scripts < <(git ls-files -z '*.sh' ':!scripts/build/*.sh' ':!scripts/ci/*.sh' ':!scripts/test/incus.sh')
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
   printf '🟢 shellcheck passed (%d scripts)\n' "${#scripts[@]}"
+  # Windows PowerShell 5.1 reads a script with no byte order mark in the
+  # ANSI code page, so the PowerShell stays ASCII, and CRLF, as it's kept.
+  local ps1 file
+  mapfile -d '' ps1 < <(git ls-files -z '*.ps1')
+  for file in "${ps1[@]}"; do
+    if LC_ALL=C grep -qP '[^\x00-\x7F]' "$file" || grep -qv $'\r$' "$file"; then
+      printf "error: %s isn't ASCII with CRLF line endings\n" "$file" >&2
+      exit 1
+    fi
+  done
+  printf '🟢 PowerShell is ASCII with CRLF (%d files)\n' "${#ps1[@]}"
+  parse_powershell "${ps1[@]}"
   go run ./scripts/test/links
+}
+
+# parse_powershell parses each script as CI's Windows job does, with
+# Windows PowerShell 5.1 where WSL reaches it, which is what members run
+# install.ps1 with. A pwsh on PATH stands in elsewhere, though PowerShell 7
+# takes syntax 5.1 refuses; with neither, CI's parse is the first.
+parse_powershell() {
+  local shell file path quoted script
+  if command -v powershell.exe >/dev/null 2>&1 && command -v wslpath >/dev/null 2>&1; then
+    shell=powershell.exe
+  elif command -v pwsh >/dev/null 2>&1; then
+    shell=pwsh
+  else
+    printf "🟡 PowerShell not parsed: no powershell.exe or pwsh here, so CI's windows-e2e parses it first\n"
+    return 0
+  fi
+  for file in "$@"; do
+    path=$PWD/$file
+    [[ "$shell" != powershell.exe ]] || path=$(wslpath -w "$path")
+    # The path goes in as a PowerShell string, its quotes doubled.
+    quoted=${path//"'"/"''"}
+    script="\$tokens = \$null; \$errors = \$null
+      [System.Management.Automation.Language.Parser]::ParseFile('$quoted', [ref]\$tokens, [ref]\$errors) | Out-Null
+      \$errors | ForEach-Object { Write-Output \$_.ToString() }
+      exit [int](\$errors.Count -ne 0)"
+    if ! "$shell" -NoProfile -NonInteractive -Command "$script" </dev/null | tr -d '\r'; then
+      printf "error: %s doesn't parse\n" "$file" >&2
+      exit 1
+    fi
+  done
+  if [[ "$shell" == pwsh ]]; then
+    printf '🟢 PowerShell parses (%d files, by PowerShell 7, which takes more than 5.1 does)\n' "$#"
+  else
+    printf '🟢 PowerShell parses (%d files, by Windows PowerShell 5.1)\n' "$#"
+  fi
 }
 
 # The page's tests under internal/ui/test. esbuild bundles each with the
