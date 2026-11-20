@@ -3,14 +3,15 @@
 Thanks for looking. This file is short on purpose: [AGENTS.md](AGENTS.md) is
 the real orientation for anyone changing code, human or otherwise, and
 [docs/dev/design.md](docs/dev/design.md) is the design. Read those first;
-[docs/dev/milestones.md](docs/dev/milestones.md) says what's being built now.
+[docs/dev/milestones.md](docs/dev/milestones.md) holds the plan for the
+milestone under way, when there is one.
 
 ## Before you start
 
 Open an issue before a large change. Dens keeps a deliberately small scope, so
 these are out, and you shouldn't spend a weekend on them:
 
-- end-to-end encryption, or protection from targeted investigations;
+- protection from targeted investigations;
 - federation between dens, or multi-tenancy;
 - macOS support;
 - custom permission systems, forums, threads or bots;
@@ -18,14 +19,16 @@ these are out, and you shouldn't spend a weekend on them:
 
 Bug reports need the OS and distro, architecture, the output of
 `dens --build-vars`, and the exact command and error. Installer problems should
-include `logs/maintenance.log` from the storage directory the installer names
-in its output.
+include `control/maintenance.log` from the storage directory the installer
+names in its output.
 
 ## Development
 
-Linux or WSL on `amd64`/`arm64`, the Go version in `go.mod`, Bash, `curl`,
-`gcc` (only because `go test -race` needs it) and `xz` (for the pinned Node.js
-the page's tests run on). The lifecycle E2E harness also needs Incus.
+Linux or WSL on `amd64`, Go 1.21 or later (the scripts switch it to
+`go.mod`'s), Bash, `curl`, `gcc` (only because `go test -race` needs it) and
+`xz` (for the pinned Node.js the page's tests run on). On `arm64`,
+`vendor.sh` pins no rclone, Hugo, Android NDK or emulator. The e2e harnesses and the
+browser checks need Incus, and the Android e2e KVM.
 
 ```sh
 ./scripts/test.sh            # go test -race ./...; run liberally
@@ -33,11 +36,15 @@ the page's tests run on). The lifecycle E2E harness also needs Incus.
 ./scripts/test.sh -js        # the page's tests; after touching its scripts
 ```
 
+[AGENTS.md](AGENTS.md)'s Build and test lists the rest, with how long each
+takes.
+
 If you touched the installers or the release scripts, also run
-`./scripts/test.sh -release` (local fake remote, seconds) and, if you can,
-`./scripts/test.sh -e2e`. If you touched a `_windows.go` file,
-`GOOS=windows go test -c -o /dev/null ./<pkg>` catches build breaks locally;
-the tests themselves run in CI on Windows.
+`./scripts/test.sh -release` (a local fake remote, which needs rclone on PATH
+and gpg) and, if you can, `./scripts/test.sh -e2e`. If you touched a
+`_windows.go` file, `GOOS=windows go test -c -o /dev/null ./<pkg>` catches
+build breaks locally; from WSL, `./scripts/test.sh -windows` runs the tests on
+the Windows host, and CI runs them on Windows.
 
 ## Pull requests
 

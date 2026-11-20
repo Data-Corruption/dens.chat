@@ -1,10 +1,9 @@
-// Package youtube fetches what the covers of YouTube's players show (M4.1):
-// a linked video's title and channel, with the channel's address (M14.1),
-// from YouTube's oEmbed endpoint, and its picture from i.ytimg.com, a
-// Short's portrait, and a larger one for a larger player. The page shows
-// both from its own origin, so
-// nothing on it contacts YouTube until a member plays a video or opens one
-// of its links.
+// Package youtube fetches what the covers of YouTube's players show: a
+// linked video's title and channel, with the channel's address, from
+// YouTube's oEmbed endpoint, and its picture from i.ytimg.com, a Short's
+// portrait, and a larger one for a larger player. The page shows both from
+// its own origin, so nothing on it contacts YouTube until a member plays a
+// video or opens one of its links.
 //
 // It asks only at addresses it builds from a checked video ID, follows no
 // redirects, caps what it reads, and keeps what it found in memory. It

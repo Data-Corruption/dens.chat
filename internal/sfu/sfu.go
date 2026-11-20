@@ -1,11 +1,11 @@
 // Package sfu is the den's selective forwarding unit: one Pion peer
 // connection per member in a call, on the den's two media ports, which
-// forwards each member's audio to the others in their call, and from M4.2
-// a member's screen share to those who watch it, without decoding either.
-// From M14.3 each call has a track of its own, its soundboard's, which the
-// den plays its sounds on. The den (internal/den) decides who may be in
-// which call, who may share and watch, and what sound plays; this package
-// carries the media and makes the offers.
+// forwards each member's audio to the others in their call, and a member's
+// screen share to those who watch it, without decoding either, within the
+// owner's limits. Each call has a track of its own, its soundboard's, which
+// the den plays its sounds on (board.go). The den (internal/den) decides
+// who may be in which call, who may share and watch, and what sound plays;
+// this package carries the media and makes the offers.
 package sfu
 
 import (

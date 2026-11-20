@@ -1,13 +1,17 @@
 // Package relay links this install with the member's other installs
-// straight across their network (M20), and carries the voice keys of one
-// to the call another holds, and from M20.2 one computer's sound to play
-// on another. The dens only introduce two installs, in boxes sealed
-// between the member's devices, which denclient seals and opens: who and
-// here fill the settings' list of the member's devices, and hello and
-// answer carry each side's half of a link. The link is Pion to Pion, on an
-// ephemeral port, over host candidates on private IPv4 addresses alone,
-// which stay in memory: never logged, written, or given to the page. The
-// Android app relays its call's button's presses, and listens, once
+// straight across their network. The dens only introduce two installs, in
+// boxes sealed between the member's devices, which denclient seals and
+// opens: who and here fill the settings' list of the member's devices, and
+// hello and answer carry each side's half of a link (note.go). The link is
+// Pion to Pion, on an ephemeral port, with two channels, over host
+// candidates on private IPv4 addresses alone, which stay in memory: never
+// logged, written, or given to the page (link.go).
+//
+// Over a link go the voice keys one install reads, as states, to the call
+// another holds, which takes them as a second helper's (keys.go); and one
+// computer's sound, as RTP beside the channels, to the one device that
+// listens, the newest listener taking over (sound.go). The Android app
+// listens without sharing, and relays its call's button's presses, once
 // Android lets it reach its network.
 package relay
 

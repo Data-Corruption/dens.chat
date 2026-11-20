@@ -8,7 +8,7 @@
 // about a release (checksums, signatures, binaries) lives under the immutable
 // `releases/<version>/` prefix and is the installer's concern, but for the
 // Android app, whose updater checks the checksums' cosign bundle itself
-// (TrustedRoot.Verify) before it takes the APK they name (M12.4).
+// (TrustedRoot.Verify) before it takes the APK they name.
 package release
 
 import (

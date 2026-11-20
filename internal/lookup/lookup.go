@@ -1,9 +1,11 @@
 // Package lookup is what the local service's link covers share: YouTube's
-// (M4.1) and Steam's cards (M22.2). It asks a site only at an address its
-// caller built from a checked ID, follows no redirects, caps what it reads,
-// sends no cookies, referrer or user agent, and keeps what it found in
-// memory. Its errors never hold an address, which holds an ID that came
-// from a message and so stays out of logs.
+// and Steam's cards. It asks a site only at an address its caller built
+// from a checked ID, follows no redirects, caps what it reads, sends no
+// cookies, referrer or user agent, and keeps what it found in memory,
+// fetching each thing once for everyone who asks for it meanwhile. A
+// picture must be a JPEG, and text is cleaned as names are. Its errors
+// never hold an address, which holds an ID that came from a message and so
+// stays out of logs.
 package lookup
 
 import (

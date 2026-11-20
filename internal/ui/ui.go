@@ -1,4 +1,16 @@
-// Package ui provides embedded frontend templates and assets.
+// Package ui embeds the page and serves its assets under hashed names: the
+// shell's templates, and the stylesheet, script and manifest the build
+// writes. Where the build wrote no manifest, as in a clone, it serves a
+// placeholder page, which a binary a script builds refuses.
+//
+// The page is a Preact app, its JSX under assets/js/src and its tests under
+// test; each source file opens with a comment saying what it holds. Beside
+// it are the workers and worklets for voice, sealed calls and Relay;
+// RNNoise's module (assets/wasm/rnnoise.wasm, which scripts/rnnoise.sh
+// builds with the header in rnnoise); the list of Unicode's emoji
+// (assets/emoji.json, which scripts/emoji.sh writes); the page's sounds
+// (assets/sounds, Kenney's, CC0); and the names' fonts, which the build
+// copies into assets/fonts.
 package ui
 
 import (

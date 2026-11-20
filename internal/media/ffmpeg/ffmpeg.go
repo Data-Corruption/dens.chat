@@ -1,15 +1,17 @@
-// Package ffmpeg runs Dens's media module: FFmpeg's libraries and Dens's own
-// driver (driver/driver.c), compiled to WebAssembly and translated to Go
-// (module, which scripts/ffmpeg.sh generates). The module is its own sandbox:
-// it sees only its memory and the functions this package gives it, so a
-// hostile file that takes over a decoder stays inside it.
+// Package ffmpeg runs Dens's media module: FFmpeg's libraries, libaom and
+// Dens's own driver (driver/driver.c), compiled to WebAssembly and
+// translated to Go (module, which scripts/ffmpeg.sh generates). The module
+// is its own sandbox: it sees only its memory and the functions this
+// package gives it, so a hostile file that takes over a decoder stays
+// inside it.
 //
 // Each job runs in a worker process, a hidden command of the same binary,
 // with a memory cap and a deadline, so a decoder that loops, balloons or
 // recurses ends its job and not the service. The worker holds no keys and
 // opens no files: the module's reads and writes come back to the Runner over
 // the worker's standard input and output, and the Runner answers from the
-// files the job names.
+// files the job names. The chunks of a video's copy run side by side, each
+// in a worker of its own.
 package ffmpeg
 
 import (

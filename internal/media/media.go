@@ -1,6 +1,11 @@
 // Package media handles the files members share: it recognizes what a file
 // is, takes metadata such as EXIF and GPS out of photos without re-encoding
-// them, and makes the previews the message list shows.
+// them, and makes the previews the message list shows. It decides which
+// photos get smaller copies; plans a video's copy to fit and makes it in
+// chunks, or hands the page what WebCodecs decodes it by when the page
+// makes it (webcodecs.go); makes an animated GIF's or WebP's frames again
+// as a picture's GIF; and reads Opus in Ogg packet by packet, for the
+// soundboard.
 //
 // The sending client and the den run the same code. The client strips a
 // photo before it leaves the member's machine, so the den never sees where

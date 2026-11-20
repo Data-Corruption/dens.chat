@@ -1,4 +1,7 @@
-// Package build provides build-time information about the application.
+// Package build holds what the build bakes into the binary: the values
+// scripts/build.sh sets with -ldflags, Dens's mark, and the third-party
+// notices the binary carries (notices.txt, which scripts/notices.sh writes
+// and a test checks against every module the binary links).
 package build
 
 import (

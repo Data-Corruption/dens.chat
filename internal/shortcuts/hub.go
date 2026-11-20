@@ -1,11 +1,18 @@
-// Package shortcuts carries the voice keys to other programs (M7). A page
-// sees keys only while it has focus, and the service none at all, so a
-// helper runs as the desktop user in their session, watches the keys they
-// bound while a page is in a call, and sends each press over a stream on
-// the control endpoint. The Hub is the service's side of that stream, and
-// the Helper the desktop user's. The same stream carries the member's
-// notifications to the helper, which shows them as the desktop's own where
-// no page can (M12.3).
+// Package shortcuts carries the voice keys to other programs. A page sees
+// keys only while it has focus, and the service none at all, so a helper
+// (dens shortcuts) runs as the desktop user in their session, watches the
+// keys they bound while a page is in a call, through Windows, X11 or
+// Wayland's portal, and sends each press over a stream on the control
+// endpoint. The Hub is the service's side of that stream, and the Helper
+// the desktop user's. The same stream carries the member's notifications
+// to the helper, which shows them as the desktop's own where no page can.
+//
+// While another of the member's devices holds the call, the Hub hands what
+// the helper reads to Relay, and takes that device's keys as a second
+// helper's, keeping each hold by who holds it; a page holding no call
+// hands Relay its call's button's presses the same way. While Relay shares
+// this computer's sound, the helper reads it, cuts it into pieces with
+// silence filled, and sends it on a request of its own (sound.go).
 package shortcuts
 
 import (

@@ -1,7 +1,9 @@
 // Package instance is the per-instance configuration an elevated
 // maintenance command writes and the service reads: ports, the desktop user
-// allowed to pair, and the release source. The service can't change it; the
-// control directory is read-only to the service account.
+// allowed to pair, the release source, and the den role v1.0's installer
+// gave an instance, which the first start of a later version took as the
+// hosting switch's first setting. The service can't change it; the control
+// directory is read-only to the service account.
 package instance
 
 import (

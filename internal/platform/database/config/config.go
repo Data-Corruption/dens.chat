@@ -1,3 +1,6 @@
+// Package config reads and changes the service's own preferences
+// (types.Configuration), kept as one JSON value in the database's config
+// table.
 package config
 
 import (

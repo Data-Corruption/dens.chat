@@ -1,7 +1,7 @@
-// Command emoji writes the list of Unicode's emoji (M15.2), for the page's
-// picker and for denproto, which checks reactions against it (M15.3), from
-// Unicode's emoji-test.txt and CLDR's English annotations. scripts/emoji.sh
-// runs it with the pinned inputs; see there.
+// Command emoji writes the list of Unicode's emoji, for the page's picker
+// and for denproto, which checks reactions against it, from Unicode's
+// emoji-test.txt and CLDR's English annotations. scripts/emoji.sh runs it
+// with the pinned inputs; see there.
 //
 // Each fully qualified emoji up to an Emoji version goes in, by that
 // version as each line of emoji-test.txt names it, so the list holds only
