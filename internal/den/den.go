@@ -47,7 +47,8 @@ import (
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
-// Defaults from protocol.md.
+// Defaults from docs/dev/protocol/auth.md, and the sockets' from
+// docs/dev/protocol.md's Rate limits.
 const (
 	DefaultTokenLifetime = time.Hour
 	nonceLifetime        = 60 * time.Second

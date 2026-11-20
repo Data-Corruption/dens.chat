@@ -4,7 +4,7 @@
 #
 # Usage:
 #   ./scripts/test.sh                              # race-enabled Go tests
-#   ./scripts/test.sh -lint                        # gofmt, go vet for each OS, and shellcheck
+#   ./scripts/test.sh -lint                        # gofmt, go vet for each OS, shellcheck, and the docs' links
 #   ./scripts/test.sh -js                          # the page's tests on the pinned Node
 #   ./scripts/test.sh -docs                        # the site built as the Docs workflow builds it, and its icon checked
 #   ./scripts/test.sh -release                     # release state machine
@@ -31,7 +31,7 @@ usage() {
 Usage: ./scripts/test.sh [mode]
 
 With no argument, run the race-enabled Go test suite.
-  -lint     Check every Go file is gofmt's, vet for Linux, Windows and Android, and run the pinned shellcheck over every script
+  -lint     Check every Go file is gofmt's, vet for Linux, Windows and Android, run the pinned shellcheck over every script, and check the docs' links
   -js       Run the page's tests on the pinned Node
   -docs     Build the site as the Docs workflow does, failing on any warning, and check its icon is the app's mark
 EOF
@@ -120,9 +120,10 @@ run_windows_tests() {
 
 # run_lint checks every Go file is formatted as go.mod's gofmt formats it,
 # vets the module for each OS Dens builds for, whose files only that OS
-# compiles, and runs shellcheck over every tracked script. The build's and
-# CI's libraries are left out: --external-sources follows them through
-# `source` from the scripts that define their variables.
+# compiles, runs shellcheck over every tracked script, and checks the docs'
+# links (scripts/test/links). The build's and CI's libraries aren't linted
+# alone: --external-sources follows them through `source` from the scripts
+# that define their variables.
 run_lint() {
   local files unformatted
   mapfile -d '' files < <(git ls-files -z '*.go')
@@ -146,6 +147,7 @@ run_lint() {
   mapfile -d '' scripts < <(git ls-files -z '*.sh' ':!scripts/build/*.sh' ':!scripts/ci/*.sh' ':!scripts/test/incus.sh')
   "$shellcheck_bin" --external-sources --source-path=scripts --source-path=scripts/build "${scripts[@]}"
   printf '🟢 shellcheck passed (%d scripts)\n' "${#scripts[@]}"
+  go run ./scripts/test/links
 }
 
 # The page's tests under internal/ui/test. esbuild bundles each with the

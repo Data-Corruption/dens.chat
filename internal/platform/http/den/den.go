@@ -1,7 +1,7 @@
 // Package den is the router of the den listener, which Caddy exposes to the
 // internet. It serves only den routes; the client page and its API are never
 // mounted here. The den's logic lives in internal/den; this package is the
-// HTTP layer of docs/dev/protocol.md.
+// HTTP layer of the den protocol, docs/dev/protocol.md and its parts.
 package den
 
 import (

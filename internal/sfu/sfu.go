@@ -26,7 +26,7 @@ import (
 	"golang.org/x/net/netutil"
 )
 
-// Defaults from protocol.md.
+// Defaults from docs/dev/protocol/calls.md.
 const (
 	answerTimeout  = 15 * time.Second
 	connectTimeout = 30 * time.Second

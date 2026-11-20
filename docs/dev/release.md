@@ -42,9 +42,9 @@ flatpak/
   flatpak
 ```
 
-`ffmpeg-source.tar.xz` holds FFmpeg's source, as the binaries include it, with zlib's and libaom's, the driver and the script that builds the module (M1.8, M5.4), as the LGPL asks of a binary that includes FFmpeg.
+`ffmpeg-source.tar.xz` holds FFmpeg's source, as the binaries include it, with zlib's and libaom's, the driver and the script that builds the module, as the LGPL asks of a binary that includes FFmpeg.
 
-`android-arm64.apk` is the Android app (M12.4), `chat.dens.Dens`, in each
+`android-arm64.apk` is the Android app, `chat.dens.Dens`, in each
 release from v1.5.0 (`ANDROID_FIRST_RELEASE` in `scripts/ci/release.sh`), and
 listed in the release's checksums as the binaries are: a release before it has
 none, and still verifies. Its version code is the release's version, vX.Y.Z as
@@ -53,7 +53,7 @@ update. `dens.apk` at the root is a copy of the promoted release's, which the
 install guide links to, since a release's own paths name its version; the
 publisher replaces it as it promotes each release, and reads it back.
 
-`flatpak/` holds Dens's Flatpak (M9.4): `repo/`, its OSTree repository, with
+`flatpak/` holds Dens's Flatpak: `repo/`, its OSTree repository, with
 the builds of the promoted release's Linux binaries for x86_64 and aarch64,
 and the two links members install from, which carry its key. `.state/` holds
 the publisher's records: when each release was promoted, and what the last
@@ -203,9 +203,11 @@ head -c 32 /dev/urandom | base64 | tr -d '\n' > dens-android.password
    version:
 
    ```md
-   ## [v1.0.0] - 2026-09-06
+   ## [v1.15.0] - 2026-12-01
 
-   Initial release.
+   ### Added
+
+   - What a member notices, in their words.
    ```
 
 3. Commit and push or merge to `main`, then watch the release workflow in the
@@ -217,12 +219,14 @@ with `dens update` and check that the new version starts.
 
 ## How publication works
 
-`scripts/ci.sh` has three commands. The workflow runs `--plan`, waits for the
-tests it requests, then runs `--execute`, then `--flatpak`. Upload and
+`scripts/ci.sh` has four commands. On a push to `main` the workflow runs
+`--plan`, waits for the tests it requests, then runs `--execute`, then
+`--flatpak`; on a pull request it runs `--plan-pr` and the tests it requests. Upload and
 recovery code lives under `scripts/ci/`.
 
 ```sh
 ./scripts/ci.sh --plan     # decide which tests to run, and whether to release
+./scripts/ci.sh --plan-pr  # decide which tests a pull request's files need; never releases
 ./scripts/ci.sh --execute  # publish a release or finish an interrupted attempt
 ./scripts/ci.sh --flatpak  # publish the promoted release's Flatpak, or finish an interrupted attempt
 ```
@@ -237,14 +241,13 @@ request gets and no release job, and needs no R2 credentials. Merges to `main`
 are tested and nothing is published. Once a version tag exists, a missing
 heading fails the plan.
 
-- If the version has no Git tag yet, the E2E jobs run: Linux's, Windows' and
-  the Flatpak's. Files
+- If the version has no Git tag yet, every test job runs. Files
   left by an interrupted upload do not count as a completed release.
 - If the version is already tagged, those jobs are skipped. The publisher
   checks for installer changes and tests changed installers before replacing
   them.
 
-Pull requests always run validation and never contact the release host.
+Pull requests never contact the release host, and run the test jobs their files call for (see [CI jobs](#ci-jobs)).
 
 **Publication order.**
 
@@ -255,7 +258,7 @@ Pull requests always run validation and never contact the release host.
    which drops the symbol table and DWARF, about a third of the binary (89.4 MB
    to 56.1 MB for linux-amd64), while a panic still names its functions and
    lines, from Go's own line table; development builds keep both, for
-   debuggers (M9.1). From v1.5.0 the build makes the APK too, around Dens
+   debuggers. From v1.5.0 the build makes the APK too, around Dens
    built for Android, signs it with the APK's key, and refuses it unless that
    key alone signed it, as `android/release.pem` names it. Once cosign has
    signed the checksums, the build checks the signature as the Android app
@@ -295,9 +298,9 @@ publishes the promoted release's Flatpak (`scripts/ci/flatpak.sh`), in a Debian
    object against its checksum. A repository that fails is refused, never
    repaired. A host with no summary, which no client could have installed
    from, gets a new repository.
-4. Done, where the repository holds the version for both architectures and
-   `.state/flatpak` says the last publication left the summaries the host
-   serves; refused, where it holds a newer version than the promoted one, which
+4. Done, once it uploads any link that changed, where the repository holds the
+   version for both architectures and `.state/flatpak` says the last
+   publication left the summaries the host serves; refused, where it holds a newer version than the promoted one, which
    a Flatpak would update to and then refuse the data a newer one wrote.
 5. Download the release's checksums, their signature and its Linux binaries,
    and check them as an install does.
@@ -329,7 +332,7 @@ update from it to every new release.
 update` uses that saved source. A missing or invalid source prevents updating
 instead of falling back to the public host. Only flags change the source, or
 skip verifying, never the environment, and a binary that carries the signing
-identity refuses to skip it (M8). Nor does an install move to an older release
+identity refuses to skip it. Nor does an install move to an older release
 than the one it has, so a host or mirror that served an older signed release
 couldn't roll installs back.
 Signatures cover artifact bytes and the workflow identity, so unchanged
@@ -339,11 +342,12 @@ artifacts also verify when served from a mirror.
 
 | Job | What it does |
 |---|---|
+| `ci-gate` | Reads the `CI_ENABLED` repository variable; no other job runs unless it's `true` |
 | `release-plan` | Runs `ci.sh --plan` on pushes to `main`; on pull requests, `ci.sh --plan-pr`, which picks the test jobs by the files the PR changes and asks for no release |
-| `linux-tests` | `test.sh -lint` first, in a checkout nothing has written to; then the Linux Go tests, the third-party notices, the list of emoji, the page's tests and the release tests |
-| `linux-e2e` | The lifecycle e2e, installer tests included, across the supported distros, in Incus containers |
+| `linux-tests` | `test.sh -lint` first, in a checkout nothing has written to; then, with the pinned rclone on `PATH`, the Linux Go tests, the third-party notices, the list of emoji, the page's tests and the release tests |
+| `linux-e2e` | The lifecycle e2e across the supported distros, in Incus containers, each installing through this tree's `install.sh` |
 | `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in three Incus containers |
-| `windows-e2e` | Native Go tests, PowerShell parsing, and Windows installer tests |
+| `windows-e2e` | Native Go tests, PowerShell parsing, and, on fixture releases, the lifecycle e2e through the exact installer a release would publish and the den e2e behind the pinned Caddy |
 | `flatpak-e2e` | The Flatpak's publisher, then the Flatpak itself, published by it and run for a member, in Incus containers; releases wait for it |
 | `android-build` | The Android app as a development build (`test.sh -android`): Go vetted for Android, both APKs, and the host package's tests for the emulator; releases wait for it |
 | `media-module` | The media module and RNNoise's, each made again from its pinned inputs and compared with the committed one, and stripped copies checked with exiftool |
@@ -367,8 +371,10 @@ change it and deploys it from `main`.
 A failed plan, failed test or cancellation blocks publication. Tests skipped at
 the plan's request let publication continue. A failed `flatpak` job leaves the
 release alone. Runs on `main`, and their publications, serialize through the
-workflow's concurrency group; a pull request's newer commit replaces its older
-run.
+workflow's concurrency group: GitHub keeps one run going and one waiting, and a
+newer push replaces the waiting one, which never runs, losing nothing, since
+each run publishes the newest heading. A pull request's newer commit cancels
+its older run.
 
 ## Retry an interrupted release
 
@@ -457,7 +463,9 @@ with. APK Signature Scheme v3 lets that key hand over to a new one: `apksigner
 rotate` makes a signing lineage, the old key's signature over the new, and an
 update signed with the new key, carrying the lineage, installs over the old;
 the lineage's capabilities say what the old key may still sign after. So a key
-that leaks can be replaced while it's still in hand. The key alone can't reach
+that leaks can be replaced while it's still in hand, once the build takes the
+lineage: it signs with one key and refuses an APK any other key signed
+(`android_check_signer` in `scripts/build/android.sh`). The key alone can't reach
 installed apps, whose updater takes only an APK the release's signed checksums
 name, but whoever holds it can sign an APK that a member who downloads it from
 elsewhere installs over Dens. If every copy of the key is lost, nothing can

@@ -33,7 +33,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 	// version 1 (PRAGMA user_version), the next to 2, and so on. v1.0.0
 	// shipped the initial step, so installed copies hold databases every
 	// later version reads: a released step never changes (see Data across
-	// versions in the design doc).
+	// versions in docs/dev/design.md).
 
 	m.Add("Initial Schema", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `

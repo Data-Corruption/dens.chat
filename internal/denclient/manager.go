@@ -100,7 +100,7 @@ type Manager struct {
 	// ones the memory cache keeps.
 	Cache *cache.Store
 
-	// Timings from protocol.md; tests shorten them. A token is used only
+	// Timings from docs/dev/protocol/sync.md; tests shorten them. A token is used only
 	// while it has MinTokenLife left, and renewed RenewLead before expiry.
 	MinTokenLife time.Duration
 	RenewLead    time.Duration

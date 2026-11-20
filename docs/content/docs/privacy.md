@@ -72,9 +72,9 @@ and still sees that the messages were sent, and when.
 
 ## What Dens doesn't protect you from
 
-- **The den**, which can read channels and their files, could listen to calls,
-  and sees who DMs whom and when. Join dens run by people you trust, or host
-  your own.
+- **The den**, which can read channels and their files, and sees who DMs whom
+  and when. On a den running an older Dens, it could listen to calls too. Join
+  dens run by people you trust, or host your own.
 - **A tampered den, with people who never compare codes.** It could hand each
   of you keys of its own and read your DMs. Comparing codes, even once, shows
   it: see [Usage](../usage/#comparing-codes).
