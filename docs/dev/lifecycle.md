@@ -48,7 +48,8 @@ Holding `lifecycle.lock` proves the service is down. A transaction over several 
 - `--port` sets the client port when the instance is first created; it's recorded in `instance.json` after that.
 - `--den-port` gives the instance's den that port and turns its hosting on, as the settings would. Its owner can give it a loopback address such as `http://127.0.0.1:18485`, so a second development instance can join it without Caddy.
 - `--media-udp-port` and `--media-tcp-port` move the den's calls off 7881 and 7882, so two development instances can host dens on one machine. A browser on Windows can't call a den running in WSL: under mirrored networking the two share an address, and WSL keeps what it sends to that address. Try calls with the browser and the instances on one system.
-- The den's rate limits are lifted, so `scripts/dev/seed-chat.sh INSTANCE [COUNT] [CHANNEL]` can fill a channel with thousands of messages, ending with a reply to the first, for testing the message list by hand.
+- The den's rate limits are lifted, so `scripts/dev/seed-chat.sh INSTANCE [COUNT] [CHANNEL]` can fill a channel with thousands of messages, ending with a reply to the first, for testing the message list by hand. `scripts/dev/seed-files.sh INSTANCE [COUNT] [MIB] [CHANNEL]` fills one with large files, raising the den's limits first, for trying backups and restores at size.
+- `service run` logs to `data/logs/latest.log` under the instance's root, not to its terminal, but for why it couldn't start.
 - It refuses to run as root, and maintenance commands refuse development builds.
 
 The same binary's `open`, `status` and `backup` talk to the development instance, and its `restore` replaces the instance's data as you, stopping its service first (see Restoring in [flatpak.md](flatpak.md)).

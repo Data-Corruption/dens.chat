@@ -21,6 +21,8 @@ From a review of every screen of the page, and what it found members would want.
 - Forward a message to another channel or DM, from its menu.
 - Names for a member's devices, given by them, shown in Devices, Relay and a sign-in's approval.
 - A status line under a member's name, set from their own card, cleared after a time they pick, or never.
+- No display name in a dialog's sentence, where a name another member chose reads as words: Remove's and Ban's says `${display_name} is signed out of this den at once`, which "Everyone" makes another sentence. "They're signed out", as its other branch has it, and the rule in [The page's words](design/page.md#the-pages-words): a dialog about keys and codes names nobody, and one about a member names them by @username alone.
+- The settings' Voice misses a change to the keys or the helper that comes between its first render and its effect, until the next: `VoiceSettings` reads them in `useState` and subscribes with `onKeys`, which doesn't call back at once, in `useEffect`. Reading them again in the effect, as `NotificationSettings` does, with a page test.
 
 ## Big
 
@@ -52,6 +54,12 @@ From a review of every screen of the page, and what it found members would want.
 - On the Pixel 9 Pro in the spike, a call held with the screen off sent rougher sound through a quiet spell, until the screen came on (android.md's Calls). The page's notes on a call tell a renderer short of CPU from Opus adapting to mobile data; the fix waits for a Pixel's call with the screen off, and its logs.
 - A headset's button as push to talk's key on a phone, through the Android app's shell, which hears it with the screen off: nothing presses the call's button off screen, so a member on push to talk is silent then.
 - Select text in a message's sheet, should members miss copying part of a message: a long press opens the sheet in place of the WebView's own selection.
+- A first install that rolls back leaves the instance's root and `control/`, with its lock and `maintenance.log`, and on Linux an `/etc/sysusers.d` it made, all from before its journal starts. Whether rollback should take them is open: the log is a failure's record.
+- The shortcut helper's X11 path is tested against Xvfb alone. Untried: a real X11 session, and a session manager that runs autostart entries itself, as cinnamon-session does, rather than as systemd units, with `StartHelper`'s check of `DISPLAY` there.
+- NixOS's installs are refused with a pointer to the Flatpak's guide, which has no NixOS lines: by NixOS's own docs, Flatpak needs `services.flatpak.enable = true;` and a rebuild, and the app shows in the menu after signing in again. Untried on NixOS.
+- Relay's worklet steps between sample rates by linear interpolation with no low-pass, so a call's context below 48 kHz would alias. The rate of a phone's call context hasn't been read.
+- Each move of a call's route on the phone leaves a gap of 120 to 700 ms while the voice processor's stream opens on the new device (android.md's Calls). Untried: the processor's context with `sinkId: {type: 'none'}`, off the output device.
+- On the phone, a watched share's sound plays through the player's `<video>`, not the call's context, so it may play as media rather than on the call's route, as a Bluetooth headset or the earpiece. Untried on a phone.
 
 ## Probably not doing
 

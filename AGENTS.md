@@ -169,8 +169,11 @@ table with them on deletes every row that refers to it.
 data every later version reads. Add migrations at the end and never change a
 released step. `instance.json` and `state.json` decode strictly: keep every
 field a release wrote readable, and give a new meaning a new field rather than
-an old one's name. A backup from any release restores. A change to one of these
-comes with a test that reads its released form.
+an old one's name. A backup from any release restores. A migration step a
+manual test's staged build ran on machines that matter is as frozen as a
+released one. What the page keeps in the browser, and its theme codes, are
+released formats too. A change to one of these comes with a test that reads its
+released form.
 
 **The release identity is frozen at the first release.** The cosign signing
 identity includes the path `.github/workflows/release.yml`; never rename or
@@ -205,7 +208,8 @@ WSL, `./scripts/test.sh -windows` runs the Go tests natively on the Windows
 host; CI runs them on a Windows runner. Android code likewise compiles only
 under `GOOS=android`: `-lint` vets it for arm64 (amd64 needs cgo even to
 vet), and `./scripts/test.sh -android-e2e` runs the host package's tests in
-the emulator, as the app.
+the emulator, as the app. A test closes what it opens before it ends: Windows
+can't remove an open file, so `t.TempDir`'s cleanup fails there.
 
 **SQLite uses a modest fixed pool (4) per process.** The Wasm driver gives each
 connection its own memory sandbox and SQLite serializes writers anyway.
@@ -258,7 +262,9 @@ The names' fonts are pinned, and never committed: the build copies them from
 their packages into `internal/ui/assets/fonts`. A font is its pin in
 `scripts/vendor.sh`'s `NAME_FONTS`, its name in `denproto.NameFonts` and in
 `names.js`'s `FONTS`, in one order, and its license in `scripts/notices/`,
-with the notices written again; tests fail on one that lacks any of them.
+with the notices written again; tests fail on one that lacks any of them. It's
+an Open Font License font with no Reserved Font Name, since the page serves a
+subset of it under its own name.
 
 ## Build and test
 

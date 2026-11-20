@@ -55,11 +55,12 @@ It verifies the modules and builds with the pinned Hugo into a cleared `out/`,
 as `hugo --gc --minify --panicOnWarning` in production, and fails on code the
 highlighter marks as an error, as it does an unquoted URL in PowerShell; then
 it checks the site's icon is the app's mark. `refLinksErrorLevel: ERROR` and
-`--panicOnWarning` make unresolved Hugo references and build warnings fail.
-Hugo does not check arbitrary external links; the browser checks' `site`
-check walks the install guide at a phone's width and a desktop's, and checks
-the links on its pages and those the app carries into the guides
-(`scripts/test/browser/drive-site.mjs`).
+`--panicOnWarning` make unresolved Hugo references and build warnings fail,
+Hextra's among them: its tabs take `name=` on each `tab`, since the `tabs`
+shortcode's `items=` warns. Hugo does not check arbitrary external links; the
+browser checks' `site` check walks the install guide at a phone's width and a
+desktop's, and checks the links on its pages and those the app carries into
+the guides (`scripts/test/browser/drive-site.mjs`).
 
 Hextra is pinned in `go.mod` and verified by `go.sum`. To update it, choose a
 released version, run `hugo mod get github.com/imfing/hextra@<version>`, verify
@@ -82,6 +83,8 @@ preview steps.
 dens.chat is a landing page and a few pages of docs for people using Dens.
 
 **The landing page** says what Dens is in one plain paragraph, then argues for it in three sections, hosting it yourself (01), encrypted and pseudonymous (02) and free (03). Its tone is confident and plain, not combative: the hero's three lines are what Dens isn't (on their terms, under their watch, their product), section 01 says in one paragraph what a den is for and what it isn't, a place where the people running it set the rules and keep them with the moderation tools, and not a place for threats or for material whose making hurt someone, and section 02's table compares Dens with Discord, Signal and Matrix on who sits in between, conceding where they do better. Four notes on how it's built fold under "under the hood". It links into the docs at the install guide (`/docs/install/`, from an Install button beside the hero's caption), the hosting guide (`/docs/hosting/`) and Privacy (`/docs/privacy/`).
+
+**Its words** are concrete: they name the mechanism rather than give a verdict, scope each claim so it stays true as written, make no sweeping promises, and check each claim against the design docs. Dens's description, in the landing page's paragraph, the site's meta description and the README, says what Dens does and where it runs without naming Discord, which the comparison table alone names. Flags take two dashes (`--print`), though the commands take one too.
 
 **The docs** cover what the app can't show for itself: what happens before Dens runs, outside it (a domain, a router, Caddy), and across devices and time (passwords, recovery, backups), and, once, who can read what.
 
