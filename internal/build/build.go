@@ -41,7 +41,7 @@ var (
 	oidcIssuer   string
 	// A test release's own Sigstore trusted root, in base64, which the
 	// Android app's updater checks its releases against in place of
-	// Sigstore's public one (M12). Releases never set it.
+	// Sigstore's public one. Releases never set it.
 	sigstoreRoot string
 	devMode      string
 	pageRequired string
@@ -65,7 +65,7 @@ type BuildInfo struct {
 	OidcIssuer   string `json:"oidcIssuer"`
 	// SigstoreRoot is a test release's own Sigstore trusted root, in
 	// base64, in place of Sigstore's public one, as the Android e2e's
-	// fixture releases sign with (M12). Empty in every release.
+	// fixture releases sign with. Empty in every release.
 	SigstoreRoot string `json:"sigstoreRoot"`
 	// DevMode builds run as a development instance: storage under the
 	// developer's own data directory, no service manager, debug logging.

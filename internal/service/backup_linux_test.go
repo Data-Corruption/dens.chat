@@ -10,7 +10,7 @@ import (
 
 // A download whose archive fails partway ends without the response's last
 // chunk, so the browser marks it failed rather than keeping what came as a
-// whole backup (M10). An upload the service can't read fails the archive;
+// whole backup. An upload the service can't read fails the archive;
 // root reads any file, so the test needs another account.
 func TestPageDownloadOfAFailedBackupFails(t *testing.T) {
 	if os.Geteuid() == 0 {

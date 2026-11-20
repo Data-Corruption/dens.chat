@@ -227,7 +227,7 @@ test('a DM held since the other\'s keys changed offers Compare and Send anyway',
 });
 
 // A call's list marks a member whose keys changed since this member
-// compared codes with them, or since the call began (M16.2).
+// compared codes with them, or since the call began.
 test("a call shows a member's keys changed since they were verified, or in the call", () => {
     const began = day;
     assert.equal(keysChanged(undefined, began), false);

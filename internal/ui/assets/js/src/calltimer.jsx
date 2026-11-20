@@ -1,4 +1,4 @@
-// The call timer's marks (M21.2): a call's length at its channel's row's
+// The call timer's marks: a call's length at its channel's row's
 // right, its tip naming the channel's record, the rainbow while the call
 // beats it, and fireworks over the row as it passes. The stylesheet draws
 // both, and holds them still where less motion is asked for.

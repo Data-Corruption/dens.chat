@@ -1,4 +1,4 @@
-// Polls (M15.4), checked without a browser: the composer's draft and what
+// Polls, checked without a browser: the composer's draft and what
 // it sends, how each rule shows a poll to a member who voted and one who
 // didn't, before its end and after it, the events applied, a load's
 // replay, and the words the poll says itself in.

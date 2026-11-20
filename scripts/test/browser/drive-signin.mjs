@@ -1,4 +1,4 @@
-// The check of a sign-in on a new device (M21.1, M22.6): bob opens Add
+// The check of a sign-in on a new device: bob opens Add
 // device on his first device, at a phone's width, and his laptop reads its
 // code, in Chromium by scanning it, its camera shown the picture of it on
 // his first device's screen, and in Firefox, which has no camera, by

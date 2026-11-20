@@ -62,7 +62,7 @@ type HistoryQuery struct {
 }
 
 // History fetches a page of a channel's messages: from the cache where it
-// holds them, and from the den otherwise (M6.2). A DM's come opened, or
+// holds them, and from the den otherwise. A DM's come opened, or
 // saying why they can't be.
 func (m *Manager) History(ctx context.Context, denID, channelID string, q HistoryQuery) (PageHistory, error) {
 	c, err := m.find(denID)
@@ -81,7 +81,7 @@ func (m *Manager) History(ctx context.Context, denID, channelID string, q Histor
 	c.fetchKeys(ctx, channelID, h.Messages)
 	out := PageHistory{Messages: make([]PageMessage, 0, len(h.Messages)), HasOlder: h.HasOlder, HasNewer: h.HasNewer}
 	for _, msg := range h.Messages {
-		// One whose time to disappear came is about to go (M16.4).
+		// One whose time to disappear came is about to go.
 		if m.pastTime(msg) {
 			continue
 		}
@@ -197,7 +197,7 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 			return PageMessage{}, err
 		}
 		// A DM's spoilers go inside its seal, where the den can't read
-		// them (M17.2).
+		// them.
 		for i := range p.Files {
 			p.Files[i].Spoiler = slices.Contains(req.Spoilers, p.Files[i].ID)
 		}
@@ -217,7 +217,7 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 	return c.open(msg), nil
 }
 
-// checkSpoilers checks a send's spoilers (M17.2): each one of its uploads,
+// checkSpoilers checks a send's spoilers: each one of its uploads,
 // once.
 func checkSpoilers(spoilers, uploads []string) error {
 	for i, id := range spoilers {
@@ -283,7 +283,7 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 // and seals it again at the next revision. A revision other than the
 // current one is a conflict, as on the den, and so is errConflict from
 // edit; revision 0 takes the current one. With files set, the edit changes
-// the message's files (M5), so it names every blob they take.
+// the message's files, so it names every blob they take.
 func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision int, editors *[]string,
 	edit func(*denproto.DMPayload) (bool, error), files bool) (PageMessage, error) {
 	current, err := c.message(ctx, channelID, messageID)
@@ -422,7 +422,7 @@ func (m *Manager) MarkRead(ctx context.Context, denID, channelID, messageID stri
 	return c.call(ctx, http.MethodPut, "/api/channels/"+channelID+"/read", denproto.ReadRequest{MessageID: messageID}, nil)
 }
 
-// CallRecord reads a voice channel's longest call, as staff (M21.2).
+// CallRecord reads a voice channel's longest call, as staff.
 func (m *Manager) CallRecord(ctx context.Context, denID, channelID string) (denproto.CallRecord, error) {
 	var rec denproto.CallRecord
 	c, err := m.find(denID)

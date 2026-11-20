@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/notify"
 )
 
-// Events (M17.4): the den's events to come and live, which the state keeps
+// Events: the den's events to come and live, which the state keeps
 // with the member's own mark on each, the cache keeps for the page offline,
 // and the page shows from the den's view. The member makes, changes,
 // cancels and ends them, and marks Interested, through the den; what comes
@@ -137,7 +137,7 @@ func (m *Manager) eventCall(ctx context.Context, denID, method, path string, req
 	return e, nil
 }
 
-// Event returns one of a den's events, for a link's card (M17.5): one to
+// Event returns one of a den's events, for a link's card: one to
 // come or live as the state holds it, with the member's own mark, so the
 // den learns nothing of which they looked at, or else as the den answers,
 // an ended one among them.

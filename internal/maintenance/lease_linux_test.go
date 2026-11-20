@@ -31,7 +31,7 @@ func flatpakLayout(t *testing.T) layout.Layout {
 // The Flatpak's start keeps a snapshot before it publishes an update, so a
 // snapshot that fails leaves the data as the older version left them; a
 // newer version's data it refuses; and a start that finds the lock held
-// waits for it (M9.3).
+// waits for it.
 func TestFlatpakLeaseSnapshotsAndWaits(t *testing.T) {
 	l := flatpakLayout(t)
 	if err := WriteState(l.State, NewState(PhaseReady, "v1.0.0", ""), nil); err != nil {

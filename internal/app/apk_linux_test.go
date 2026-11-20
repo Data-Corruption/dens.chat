@@ -187,7 +187,7 @@ func checkNow(t *testing.T, a *App) {
 // The Android app's updater downloads a newer release's APK, checked
 // against its checksums and their signature, tells the shell it's ready,
 // and asks the shell to install it when the member does; a start finds it
-// ready again, and the next version's start removes it (M12).
+// ready again, and the next version's start removes it.
 func TestAndroidUpdaterReadiesACheckedAPK(t *testing.T) {
 	host, server := newReleaseHost(t)
 	files := filepath.Join(t.TempDir(), "files")
@@ -391,7 +391,7 @@ func TestAndroidUpdaterRefuses(t *testing.T) {
 	}
 }
 
-// The member's Check now, from the Android app's settings (M17.2), asks
+// The member's Check now, from the Android app's settings, asks
 // the release host whatever the daily checks are set to, answers that
 // there's no update where this build is the newest, and otherwise
 // answers once the newer release's APK is downloaded and checked, ready to

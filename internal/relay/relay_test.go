@@ -29,7 +29,7 @@ type standIn struct {
 	mu       sync.Mutex
 	installs []*install
 	calls    []string
-	// muted is whether the member is muted in their call (M20.3).
+	// muted is whether the member is muted in their call.
 	muted bool
 	// holding keeps the boxes passed until let go, held, as a slow den.
 	holding bool
@@ -81,7 +81,7 @@ func (s *standIn) install(name string) *install {
 	return s.installAs(name, NewID(), denproto.Random(denproto.IDSize))
 }
 
-// phone is an install as the Android app's is (M20.3): it shares no sound,
+// phone is an install as the Android app's is: it shares no sound,
 // and links with nothing until the system lets it reach its network. What
 // it asks of the system goes to wants.
 func (s *standIn) phone(name string, wants func(Wants)) *install {

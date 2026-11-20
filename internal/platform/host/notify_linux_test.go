@@ -81,7 +81,7 @@ func waitClick(t *testing.T, n *Notifier) string {
 // The helper shows a notification through the desktop's notification
 // service as Dens's, its text escaped where the service reads markup, a
 // newer one replacing it; a click on its body comes back as its ID, and
-// taking it back closes it (M12.3).
+// taking it back closes it.
 func TestNotifierShowsThroughTheDesktopsService(t *testing.T) {
 	conn := sessionBus(t)
 	if _, err := OpenNotifier("chat.dens.Dens", false); !errors.Is(err, errors.ErrUnsupported) {
@@ -142,7 +142,7 @@ func TestNotifierShowsThroughTheDesktopsService(t *testing.T) {
 
 // From the Flatpak's sandbox, notifications go through the desktop's
 // Notification portal, whose word of a click comes back as a signal; where
-// the desktop has no such portal, there's no notifier (M12.3).
+// the desktop has no such portal, there's no notifier.
 func TestNotifierThroughThePortal(t *testing.T) {
 	conn := sessionBus(t)
 	f := startFlatpakPortals(t, conn)

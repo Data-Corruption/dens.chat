@@ -1,4 +1,4 @@
-// Links to messages (M11). In a message, a link to one shows as a chip
+// Links to messages. In a message, a link to one shows as a chip
 // naming where it points, and a click opens the den and the channel at
 // the message, as a reply's quote jumps to its original. When it can't,
 // the chip says why: the member hasn't joined that den; the channel is
@@ -87,7 +87,7 @@ export function denOf(link, links) {
 // place is where a link to a message points, as far as this page knows:
 // the den, if the member joined it; its state, null while that's fetched
 // and false when it couldn't be; and the channel, a text channel, DM or
-// the member's notes (M17.3) they can see.
+// the member's notes they can see.
 export function place(link, links, viewOf = otherView) {
     const den = denOf(link, links);
     if (!den) return { den: null, view: null, channel: null };

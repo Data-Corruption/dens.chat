@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// Private DMs and device approval (M1.7): what the den relays and keeps.
+// Private DMs and device approval: what the den relays and keeps.
 // The cryptography is in e2e.go; the den never holds a key that opens any
 // of it.
 

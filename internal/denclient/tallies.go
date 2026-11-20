@@ -7,7 +7,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// A message's tallies, its reactions (M15.3) and its poll's votes (M15.4),
+// A message's tallies, its reactions and its poll's votes,
 // change it without changing its revision. The cache applies their events
 // to the copy it holds, and takes what the den sends of a message at its
 // own revision too, so an install that was away fetches the message again

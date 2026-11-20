@@ -6,7 +6,7 @@ import (
 	"os"
 )
 
-// Key is a key the shortcut helper reads (M7): an X11 keycode on Linux.
+// Key is a key the shortcut helper reads: an X11 keycode on Linux.
 type Key uint32
 
 // KeyState reads whether keys are down, for the shortcut helper, in an X11

@@ -185,7 +185,7 @@ func TestPairSetPasswordAndBackUp(t *testing.T) {
 	if err := client.Call(control.Request{Op: control.OpPair}, &pair); err != nil {
 		t.Fatal(err)
 	}
-	// The browser opens the page at localhost (M4.1); scripts, like this
+	// The browser opens the page at localhost; scripts, like this
 	// test, reach the same listener at 127.0.0.1.
 	token := strings.TrimPrefix(pair.URL[strings.Index(pair.URL, "#"):], "#token=")
 	if !strings.HasPrefix(pair.URL, fmt.Sprintf("http://localhost:%d/#token=", a.Instance.ClientPort)) || token == "" {
@@ -264,7 +264,7 @@ func TestPairSetPasswordAndBackUp(t *testing.T) {
 }
 
 // A browser that loads the page at 127.0.0.1 is sent to localhost, where
-// YouTube's player plays (M4.1), with the path and query it asked for. A
+// YouTube's player plays, with the path and query it asked for. A
 // script gets the page where it asked, and so does a browser already at
 // localhost.
 func TestBrowsersLoadThePageAtLocalhost(t *testing.T) {
@@ -325,7 +325,7 @@ func TestClientListenerRejectsForeignHosts(t *testing.T) {
 }
 
 // TestStartEmptiesTemp checks that the service empties the data directory's
-// tmp as it starts, so nothing a crash left there outlives it (M8).
+// tmp as it starts, so nothing a crash left there outlives it.
 func TestStartEmptiesTemp(t *testing.T) {
 	devHome(t)
 	opts := app.OpenOptions{Instance: devInstance(), DevClientPort: freePort(t)}
@@ -357,7 +357,7 @@ func TestStartEmptiesTemp(t *testing.T) {
 }
 
 // A session form's service stops when asked over the control endpoint,
-// having no service manager to stop it, after answering (M9.3).
+// having no service manager to stop it, after answering.
 func TestSessionServiceQuitsWhenAsked(t *testing.T) {
 	devHome(t)
 	a := app.New(devBuild)
@@ -397,7 +397,7 @@ func TestSessionServiceQuitsWhenAsked(t *testing.T) {
 }
 
 // The page downloads a backup as dens backup writes it, after the local
-// password, from a link that works once and soon goes (M9.3).
+// password, from a link that works once and soon goes.
 func TestPageDownloadsABackup(t *testing.T) {
 	a, client := startDevService(t)
 	b := pair(t, a, client)
@@ -431,8 +431,8 @@ func TestPageDownloadsABackup(t *testing.T) {
 	b.expect(http.StatusGone, "the link again", "GET", link.URL, nil)
 }
 
-// TestPageDownloadsTheLogs checks the logs' download from the settings
-// (M11): the newest logs, oldest first, as a file the browser keeps no
+// TestPageDownloadsTheLogs checks the logs' download from the settings:
+// the newest logs, oldest first, as a file the browser keeps no
 // copy of, for a paired browser alone; and a page's stream closing goes in
 // them, with why.
 func TestPageDownloadsTheLogs(t *testing.T) {
@@ -490,8 +490,8 @@ func TestPageDownloadsTheLogs(t *testing.T) {
 	}
 }
 
-// TestLogsOverTheControlEndpoint checks what dens logs asks of the service
-// (M11): the newest logs, as the page downloads them, and the level kept as
+// TestLogsOverTheControlEndpoint checks what dens logs asks of the service:
+// the newest logs, as the page downloads them, and the level kept as
 // the page keeps it, which the settings then show.
 func TestLogsOverTheControlEndpoint(t *testing.T) {
 	a, client := startDevService(t)

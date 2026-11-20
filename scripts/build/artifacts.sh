@@ -102,7 +102,7 @@ make_ldflags() {
   ldflags+=" -X '${pkg}.certIdentity=$CERT_IDENTITY'"
   ldflags+=" -X '${pkg}.oidcIssuer=$OIDC_ISSUER'"
   # Only a test release, whose signatures a Sigstore of its own makes,
-  # names its root (M12.4).
+  # names its root.
   [[ -z "${SIGSTORE_ROOT:-}" ]] || ldflags+=" -X '${pkg}.sigstoreRoot=$SIGSTORE_ROOT'"
   ldflags+=" -X '${pkg}.devMode=$1'"
   ldflags+=" -X '${pkg}.pageRequired=$PAGE_REQUIRED'"
@@ -166,7 +166,7 @@ verify_build() {
   if [[ "$MODE" == "ci" ]]; then
     check_var "certIdentity" "$CERT_IDENTITY"
     check_var "oidcIssuer" "$OIDC_ISSUER"
-    # A release checks updates against Sigstore's own root (M12.4).
+    # A release checks updates against Sigstore's own root.
     check_var "sigstoreRoot" ""
   fi
 

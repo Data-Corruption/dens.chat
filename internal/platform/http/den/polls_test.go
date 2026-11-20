@@ -8,7 +8,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// TestPollsOverHTTP checks the polls' routes (M15.4): a poll posted with
+// TestPollsOverHTTP checks the polls' routes: a poll posted with
 // its message, a member's vote answered with the poll as they now see it,
 // its author alone ending it early, and no vote after its end.
 func TestPollsOverHTTP(t *testing.T) {

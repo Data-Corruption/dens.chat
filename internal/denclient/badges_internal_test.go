@@ -8,8 +8,8 @@ import (
 )
 
 // A profile's badges, as a den's answer gives them, are as many as one
-// carries, each once and fit to show (M17.5), and hidden only on the
-// member's own (M17.6).
+// carries, each once and fit to show, and hidden only on the
+// member's own.
 func TestCleanBadges(t *testing.T) {
 	badge := func(event, title string) denproto.MemberBadge {
 		return denproto.MemberBadge{EventID: event, Title: title, Image: denproto.Image{ID: "9", Width: 128, Height: 128},

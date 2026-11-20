@@ -430,7 +430,7 @@ func TestExcerpt(t *testing.T) {
 }
 
 // TestKnownCodes checks that every error code the package declares is one
-// the client may show (M8), by reading the package's source.
+// the client may show, by reading the package's source.
 func TestKnownCodes(t *testing.T) {
 	files, err := filepath.Glob("*.go")
 	if err != nil {

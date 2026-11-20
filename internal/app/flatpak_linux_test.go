@@ -16,7 +16,7 @@ import (
 
 // The Flatpak's snapshot of an older version's data, kept as it updates
 // them, is a backup the restore takes: of that version, without the cache,
-// and the last one only (M9.3). A rollback's refusal names it.
+// and the last one only. A rollback's refusal names it.
 func TestSnapshotKeepsTheLastOneAsABackup(t *testing.T) {
 	devHome(t)
 	a := openDev(t, fmt.Sprintf("t%d", time.Now().UnixNano()%1_000_000))

@@ -23,7 +23,7 @@ import (
 // failure, so it doesn't start a service the lifecycle state won't let run.
 // Any other error ends the process without reporting the stop. The SCM
 // takes that for a crash, the only failure its recovery actions answer, and
-// restarts the service, as systemd's Restart=on-failure does (M8).
+// restarts the service, as systemd's Restart=on-failure does.
 func RunService(ctx context.Context, name string, fn RunFunc) error {
 	isService, err := svc.IsWindowsService()
 	if err != nil {

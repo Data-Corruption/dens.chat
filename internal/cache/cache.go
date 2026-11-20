@@ -29,8 +29,8 @@ import (
 // Format is the cache's format, kept as its database's user_version. A
 // cache of another format starts again from empty: it holds nothing that
 // can't be fetched again. Format 3 keeps the files of the den's named
-// files, as its emoji's images (M15.2), and format 4 when a disappearing
-// message goes (M16.4).
+// files, as its emoji's images, and format 4 when a disappearing
+// message goes.
 const Format = 4
 
 // The cache's size, which the member chooses in the settings.
@@ -69,7 +69,7 @@ type Store struct {
 	dens    map[string]int64
 	guards  map[int64]*guards
 	closed  bool
-	// dis lets disappearing messages go at their time (M16.4).
+	// dis lets disappearing messages go at their time.
 	dis disappearing
 }
 

@@ -1,4 +1,4 @@
-// Touch in place of hover (M13.2): whether the page's pointer is a
+// Touch in place of hover: whether the page's pointer is a
 // finger's, a long press, and when a sheet swiped down closes; and from
 // M13.4 a press held for as long as it acts, as on the call's button. The
 // ways of working the page follow the primary pointer, a long press,
@@ -30,7 +30,7 @@ export function useCoarse() {
     return is;
 }
 
-// useHoldsButton says whether the page has the call's button (M13.4): with
+// useHoldsButton says whether the page has the call's button: with
 // a touch screen, and with no keys, as in Android's app, where a mouse
 // could leave push to talk nothing to hold.
 export function useHoldsButton() {
@@ -99,7 +99,7 @@ export function createPress({ onLong, wait = LONG_PRESS, slop = SLOP, timers = g
 }
 
 // createHold follows the presses on a button that acts while it's held,
-// as the call's button does (M13.4): a press calls onPress, and onRelease
+// as the call's button does: a press calls onPress, and onRelease
 // once it ends, however it ends, so nothing it holds stays held: lifted,
 // taken over by the browser or the system (pointercancel), its pointer's
 // capture lost, or, through away, the page hidden or out of focus. Its

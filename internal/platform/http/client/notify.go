@@ -13,7 +13,7 @@ func (rt *router) mountNotify(r chi.Router) {
 }
 
 // handleMute mutes a den's notifications, or with channel one of its
-// channels', DMs among them, or unmutes it (M12.3). The settings are the
+// channels', DMs among them, or unmutes it. The settings are the
 // service's, so every browser paired with it shares them.
 func (rt *router) handleMute(w http.ResponseWriter, r *http.Request) {
 	var body struct {

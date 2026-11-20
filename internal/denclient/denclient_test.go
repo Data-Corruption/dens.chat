@@ -44,7 +44,7 @@ func TestMain(m *testing.M) {
 
 // store is one install's database, vault and log, and its media module,
 // which its den and client share; and its client's cache, when the test
-// gives it one (M6).
+// gives it one.
 type store struct {
 	db      *sql.DB
 	v       *vault.Vault
@@ -109,8 +109,8 @@ type denHost struct {
 	handler  http.Handler
 	// files counts the requests for files and previews the den answers,
 	// history those for pages of history, and changes those for what
-	// changed since a version (M6); requests counts every request but
-	// those for the member's record, which records counts (M16.1);
+	// changed since a version; requests counts every request but
+	// those for the member's record, which records counts;
 	// upgrades are the members cursors the socket upgrades named.
 	files, history, changes, requests, records atomic.Int64
 	upgradeMu                                  sync.Mutex
@@ -418,7 +418,7 @@ func TestRenewalKeepsTheSocket(t *testing.T) {
 }
 
 // A sleeping phone's monotonic clock stops, and Go's timers with it, while
-// its wall clock goes on (M14.1). With the renewal's timer held, set for 50
+// its wall clock goes on. With the renewal's timer held, set for 50
 // minutes on the monotonic clock, the session is renewed at the den's next
 // ping once the wall clock passes the renewal's time, and not before; and
 // the connection's log says how long it lasted by the wall clock.
@@ -765,7 +765,7 @@ func TestChatEditsAndMentions(t *testing.T) {
 }
 
 // The dens list marks each den with its channels unread and the mentions
-// waiting in them (M13.1), and the pages hear as messages and reading move
+// waiting in them, and the pages hear as messages and reading move
 // them.
 func TestStatusMarksWhatWaits(t *testing.T) {
 	_, owner, member, denID, channelID := chatDen(t)

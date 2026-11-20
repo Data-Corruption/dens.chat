@@ -15,8 +15,8 @@ import (
 )
 
 // logsCommand saves the newest logs into a file, as the settings' Logging
-// card downloads them, or sets how much they say, as the card's level does
-// (M11), so a server needs the page for neither.
+// card downloads them, or sets how much they say, as the card's level does,
+// so a server needs the page for neither.
 func logsCommand(bi build.BuildInfo) *cli.Command {
 	return &cli.Command{
 		Name:  "logs",

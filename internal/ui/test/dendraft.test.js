@@ -1,4 +1,4 @@
-// The owner's edits to a den in its Manage dialog (M8.3).
+// The owner's edits to a den in its Manage dialog.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -50,7 +50,7 @@ test('a field out of range stops the save with what to fix', () => {
     assert.equal(changed({ ...base, file: '2000' }, base), true);
 });
 
-// A den's soundboard has its limits among the draft's fields (M14.3); a
+// A den's soundboard has its limits among the draft's fields; a
 // den older than it has none, as the first test's.
 test("the soundboard's limits are the draft's too, where the den has a soundboard", () => {
     assert.equal(hasBoard(draftOf(den, view)), false);
@@ -67,7 +67,7 @@ test("the soundboard's limits are the draft's too, where the den has a soundboar
     assert.equal(problem({ wait: '601' }), "The wait between a member's sounds is 0 to 600 seconds.");
 });
 
-// A den's limit for its emoji is the draft's too (M15.2), at 0 as well,
+// A den's limit for its emoji is the draft's too, at 0 as well,
 // which turns them off; a den older than emoji has none.
 test("the den's limit for emoji is the draft's too, where the den has emoji", () => {
     assert.equal(hasEmoji(draftOf(den, view)), false);

@@ -32,7 +32,7 @@ type fakeFlatpakPortals struct {
 	status         string
 	notified       []string
 	// noNotifications leaves the Notification portal out, and removed and
-	// actions are what its notifications asked of it (M12.3).
+	// actions are what its notifications asked of it.
 	noNotifications bool
 	removed         []string
 	actions         []string
@@ -218,7 +218,7 @@ func (m *fakeMonitor) Close() *dbus.Error { return nil }
 // The Secret portal's answer comes through a pipe, once its interface is
 // there, which at sign-in may be some seconds in; a prompt turned down is
 // a cancel; and with no desktop portal on the bus there's no keyring at
-// once, rather than after the wait (M9.3).
+// once, rather than after the wait.
 func TestRetrieveSecret(t *testing.T) {
 	conn := sessionBus(t)
 	ctx := context.Background()
@@ -269,7 +269,7 @@ func TestRetrieveSecret(t *testing.T) {
 }
 
 // Starting at sign-in, the line under the app, notifications and starting
-// a sandbox of the newest build each go through their portal (M9.3).
+// a sandbox of the newest build each go through their portal.
 func TestBackgroundSpawnAndNotify(t *testing.T) {
 	conn := sessionBus(t)
 	f := startFlatpakPortals(t, conn)
@@ -356,7 +356,7 @@ func TestUpdateMonitor(t *testing.T) {
 }
 
 // The app's name on the session bus takes Background Apps' quit, and only
-// one process holds it (M9.3).
+// one process holds it.
 func TestAppNameQuits(t *testing.T) {
 	conn := sessionBus(t)
 	quit := make(chan struct{}, 1)
@@ -383,7 +383,7 @@ func TestAppNameQuits(t *testing.T) {
 }
 
 // From a sandbox the shortcuts portal is tried under X11 too, and the app
-// doesn't register, which a sandboxed one can't (M9.3).
+// doesn't register, which a sandboxed one can't.
 func TestDesktopKeysFromASandbox(t *testing.T) {
 	conn := sessionBus(t)
 	t.Setenv("WAYLAND_DISPLAY", "")
@@ -401,7 +401,7 @@ func TestDesktopKeysFromASandbox(t *testing.T) {
 }
 
 // A descriptor is taken for a launch's pipe only if it's a pipe: one that
-// nothing passed may be the process's own (M9.3).
+// nothing passed may be the process's own.
 func TestInheritedPipeIsOnlyAPipe(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {

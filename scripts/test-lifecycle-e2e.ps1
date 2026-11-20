@@ -5,7 +5,7 @@ fixture releases, once run as text, as the guide's line runs it, and
 otherwise as a file, as dens update runs it, and runs the Linux harness's
 flows but its DM from the first release and an older release's refusal:
 host a den with Dens's first release and update it to this one, which
-still hosts it (M9.1); then refuse v1.0's den option, pair a browser, set
+still hosts it; then refuse v1.0's den option, pair a browser, set
 the password, turn hosting on and off with dens den hosting, refuse another
 account, back up, restart the service, update, add a second instance that
 hosts a den, restore, and uninstall.
@@ -58,7 +58,7 @@ $RunId = [Guid]::NewGuid().ToString("N").Substring(0, 8)
 $Work = Join-Path $env:ProgramData "dens-e2e-$RunId"
 $TaskName = "dens-e2e-$RunId"
 $WerKey = "HKLM:\SOFTWARE\Microsoft\Windows\Windows Error Reporting\ExcludedApplications"
-# The shortcut helper's task for the desktop user, this account (M7).
+# The shortcut helper's task for the desktop user, this account.
 $HelperTask = "Dens shortcuts-" + [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
 $script:CurrentStep = "setup"
 $script:Session = $null
@@ -342,7 +342,7 @@ try {
 
     # Dens's first release hosts a den, as its installer's den option did,
     # and this one, installed over it, still hosts it: the switch takes the
-    # den role it had (M9.1). Then it goes, for the fresh install after it.
+    # den role it had. Then it goes, for the fresh install after it.
     $First = Join-Path $Release "first"
     $FirstVersion = ([IO.File]::ReadAllText((Join-Path $First "version"))).Trim()
     Step "host a den with $FirstVersion"
@@ -478,7 +478,7 @@ try {
             Fail "the rule $($rule.DisplayName) lets in $program on $($filter.Protocol) $($filter.LocalPort)"
         }
     }
-    # dens den hosting turns it on and off, as the page's switch does (M10).
+    # dens den hosting turns it on and off, as the page's switch does.
     $wrongOn = Invoke-Dens @("den", "hosting", "on", "--password-stdin") -Stdin "wrong wrong wrong" -AllowFailure
     if ($wrongOn.Code -eq 0) { Fail "hosting turned on with the wrong password" }
     $on = Invoke-Dens @("den", "hosting", "on", "--password-stdin") -Stdin $Password
@@ -526,7 +526,7 @@ try {
         ContentType = "application/json"; TimeoutSec = 30 }
     $pairing = (Invoke-Dens @("open", "--print", "--instance", "second")).Output.Trim()
     Invoke-WebRequest @secondPost -Uri "$secondUrl/api/pair" -Body (@{ token = ($pairing -split "#token=")[-1] } | ConvertTo-Json -Compress) | Out-Null
-    # The local password from the command line, as a server sets it (M10).
+    # The local password from the command line, as a server sets it.
     Invoke-Dens @("password", "--password-stdin", "--instance", "second") -Stdin $Password | Out-Null
     Invoke-Dens @("den", "hosting", "on", "--password-stdin", "--instance", "second") -Stdin $Password | Out-Null
     Assert-Status "second" "den:\s+hosting a den"
@@ -550,7 +550,7 @@ try {
         $stillPaired = $false
     }
     if ($stillPaired) { Fail "a browser paired before the restore is still paired" }
-    # Hosting is the machine's choice, not the backup's (M9.1).
+    # Hosting is the machine's choice, not the backup's.
     Assert-Status "second" "den:\s+not hosting a den"
     if (Test-DenAnswers) { Fail "the den listener answers after the restore" }
     if ($Backup) {
@@ -562,7 +562,7 @@ try {
     }
 
     Step "uninstall both instances"
-    # Uninstall asks for its phrase, which a y doesn't give (M10).
+    # Uninstall asks for its phrase, which a y doesn't give.
     $asked = Invoke-Dens @("uninstall", "--instance", "second") -Stdin "y" -AllowFailure
     if ($asked.Code -eq 0) { Fail "a y uninstalled the second instance" }
     if ($asked.Output -notmatch 'Type "perm delete data" to uninstall instance second') { Fail "the uninstall didn't ask for its phrase" }

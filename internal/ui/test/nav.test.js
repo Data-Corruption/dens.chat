@@ -339,7 +339,7 @@ test('an entry from before the page kept trails shows its address', async () => 
 });
 
 // Something the page plays full screen takes the screen's size, as a phone
-// turned sideways does, and the layout holds under it (M13.4), so the
+// turned sideways does, and the layout holds under it, so the
 // share docked on the phone layout isn't taken away as it goes full
 // screen.
 test('the layout follows the window, but holds while the page plays something full screen', async () => {

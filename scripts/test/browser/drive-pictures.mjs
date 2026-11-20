@@ -321,7 +321,7 @@ try {
     }, "bob's profile playing", 5000).catch(() => null);
     await A.b.shot(`${HOME}/shot-pictures-profile.png`);
     report(profile, `alice's page plays bob's picture and banner in his profile, open: ${JSON.stringify(profile)}`);
-    // Beside its click, the card has no ✕, and Escape closes it (M22.4).
+    // Beside its click, the card has no ✕, and Escape closes it.
     await A.b.eval(CLOSE_CARD);
     await waitFor(async () => !(await A.b.eval(`!!${dialog('Profile')}`)), "bob's profile closed");
     // A finger's tap is no hover.

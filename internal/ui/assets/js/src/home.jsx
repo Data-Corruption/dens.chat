@@ -1,10 +1,10 @@
-// The home page, a launcher (M8.3): the dens this install has joined, each
-// a row that opens it, its Manage dialog or Add device's code (M22.6),
+// The home page, a launcher: the dens this install has joined, each
+// a row that opens it, its Manage dialog or Add device's code,
 // under a header with Add a den and the settings' cog; sign-ins waiting on
 // this device above them; adding a den, by scanning another device's
 // code, from its address or from an invite; and setting up the den this
-// install hosts, once hosting is on (M9.1), while it has no owner (M10).
-// With no den, it's the mark and Add a den alone (M22.4).
+// install hosts, once hosting is on, while it has no owner.
+// With no den, it's the mark and Add a den alone.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -176,12 +176,12 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
 }
 
 // DenRow is one den in the launcher: a dot for its state, named in words
-// when it isn't connected, what waits there (M13.1), who the member is
-// there, and Open, Manage and Add device (M22.6), or, for a den that let
+// when it isn't connected, what waits there, who the member is
+// there, and Open, Manage and Add device, or, for a den that let
 // this device or its member go, signing in again or forgetting it; on the
-// phone layout they sit under the den's name, which keeps the row's width
-// (M13.3). The den this computer hosts, with hosting off, says so, with
-// note, and leads to the switch (M9.1), or to Hosting once it's exported
+// phone layout they sit under the den's name, which keeps the row's width.
+// The den this computer hosts, with hosting off, says so, with
+// note, and leads to the switch, or to Hosting once it's exported
 // (M10).
 function DenRow({ den, note, navigate, onChanged, onSignIn }) {
     const [dot, label] = note ? ['bg-base-content/40', note.label] : STATES[den.state] || ['bg-base-content/40', den.state];
@@ -237,7 +237,7 @@ function DenRow({ den, note, navigate, onChanged, onSignIn }) {
     );
 }
 
-// AddDevice shows Add device's code for a den (M22.6): its address and the
+// AddDevice shows Add device's code for a den: its address and the
 // member's username there, which a new device scans in Add a den, and
 // both as text under it, for one with no camera.
 function AddDevice({ den, onClose }) {
@@ -322,8 +322,8 @@ function Or() {
     return <div class="divider my-0 text-sm text-base-content/60">or</div>;
 }
 
-// AddDen adds a den, a screen at a time (M8.3), from one of three ways in
-// (M22.6): Scan, where the page has a camera, which reads Add device's
+// AddDen adds a den, a screen at a time, from one of three ways in:
+// Scan, where the page has a camera, which reads Add device's
 // code from another of the member's devices, then signs in; the den's
 // address, which signs in; or an invite, which shows its den and then
 // joins it as someone new or signs in to an account there. A sign-in
@@ -332,7 +332,7 @@ function Or() {
 // the den's name where it's known, from an invite or a den signed in to
 // before, or else its address's host, the address small under it. Where
 // this install could host a den and doesn't, offerHosting, it leads there
-// too (M13.3).
+// too.
 function AddDen({ start, signIns, dens, offerHosting, onJoined, onClose, onPending }) {
     const again = !!start.den;
     const [step, setStep] = useState(again ? 'signin' : 'paste');

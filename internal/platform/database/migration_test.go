@@ -187,7 +187,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if err := db.QueryRow(`SELECT max(id) FROM den_channels`).Scan(&channel); err != nil || channel != 1700000000000001 {
 					t.Errorf("%s gave a new channel ID %d, %v, not one past the counter", what, channel, err)
 				}
-				// And again with a member's notes among them (M17.3), one each,
+				// And again with a member's notes among them, one each,
 				// and naming their member alone.
 				if _, err := db.Exec(`INSERT INTO den_channels (name, kind, position, created_at, notes_of) VALUES ('', 'notes', 0, 9, 1)`); err != nil {
 					t.Errorf("%s takes no notes after the migration: %v", what, err)
@@ -204,7 +204,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 						t.Errorf("%s took %s", what, q)
 					}
 				}
-				// Nothing disappears until a member sets a time (M16.4).
+				// Nothing disappears until a member sets a time.
 				var timed, expiring int
 				if err := db.QueryRow(`SELECT
 					(SELECT count(*) FROM den_channels WHERE expires_after != 0 OR expires_by IS NOT NULL OR expires_set_at IS NOT NULL),
@@ -224,7 +224,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if _, err := db.Exec(`UPDATE den_files SET spoiler = 2 WHERE id = 1`); err == nil {
 					t.Errorf("%s takes a spoiler other than 0 or 1", what)
 				}
-				// Events are staff's until the owner says otherwise (M17.4),
+				// Events are staff's until the owner says otherwise,
 				// and each is to come, live or ended, ending no sooner than
 				// it starts.
 				var memberEvents int
@@ -237,7 +237,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					t.Errorf("%s takes nobody's interest after the migration: %v", what, err)
 				}
 				// A badge is an event's, its picture a named file, and an award
-				// one member's, once (M17.5).
+				// one member's, once.
 				var event int64
 				if err := db.QueryRow(`SELECT max(id) FROM den_events`).Scan(&event); err != nil {
 					t.Fatal(err)
@@ -258,7 +258,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					(released.version < 14 && staffEvents != 0) {
 					t.Errorf("%s holds %d staff-only events of its own after the migration, %v", what, staffEvents, err)
 				}
-				// An award starts shown, and its member hides it or not (M17.6).
+				// An award starts shown, and its member hides it or not.
 				var hidden int
 				if err := db.QueryRow(`SELECT hidden FROM den_badge_awards WHERE event_id = ?`, event).Scan(&hidden); err != nil || hidden != 0 {
 					t.Errorf("%s's award starts with hidden %d, %v", what, hidden, err)
@@ -279,7 +279,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 						t.Errorf("%s took %s", what, q)
 					}
 				}
-				// No name has a style until its member sets one (M19.5).
+				// No name has a style until its member sets one.
 				var styled int
 				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE name_style IS NOT NULL`).Scan(&styled); err != nil ||
 					(released.version < 16 && styled != 0) {
@@ -288,8 +288,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if _, err := db.Exec(`UPDATE den_members SET name_style = '{"font":"pacifico"}' WHERE id = 1`); err != nil {
 					t.Errorf("%s takes no name style after the migration: %v", what, err)
 				}
-				// No voice channel has a record until a call there ends
-				// (M21.2), and only a voice channel takes one, longer than 0.
+				// No voice channel has a record until a call there ends,
+				// and only a voice channel takes one, longer than 0.
 				var records int
 				if err := db.QueryRow(`SELECT count(*) FROM den_channels WHERE call_record IS NOT NULL`).Scan(&records); err != nil || records != 0 {
 					t.Errorf("%s holds %d call records after the migration, %v", what, records, err)
@@ -418,14 +418,14 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 		`UPDATE den_members SET avatar_id = 1, banner_id = 1 WHERE id = 1`,
 		`INSERT INTO den_dm_keys (id, channel_id, started_by, started_at, stage, offer, answer, reveal) VALUES (1, 3, 1, 1, 'revealed', x'51', x'52', x'53')`,
 		`INSERT INTO den_dm_key_members (key_id, member_id, state, sealed, checked_at) VALUES (1, 1, x'54', x'55', 2)`,
-		// A DM both members checked, whose key stays (M16.1).
+		// A DM both members checked, whose key stays.
 		`INSERT INTO den_members (id, username, display_name, role, verifier_hash, joined_at, seal_check) VALUES (3, 'carol', 'Carol', 'member', x'17', 3, x'18')`,
 		`INSERT INTO den_channels (id, name, kind, position, dm_low, dm_high, created_at) VALUES (4, '', 'dm', 0, 1, 3, 2)`,
 		`INSERT INTO den_dm_keys (id, channel_id, started_by, started_at, stage) VALUES (2, 4, 3, 2, 'revealed')`,
 		`INSERT INTO den_dm_key_members (key_id, member_id, sealed, checked_at) VALUES (2, 1, x'56', 3), (2, 3, x'57', 4)`,
 		`INSERT INTO den_changes (id, kind, ref, channel_id, at) VALUES (1, 'message', 1, 1, 2)`,
 		`INSERT INTO den_read_states (member_id, channel_id, message_id, closed) VALUES (1, 1, 1, 0)`,
-		// A restore moved the channels' counter past their IDs (M11).
+		// A restore moved the channels' counter past their IDs.
 		`UPDATE sqlite_sequence SET seq = 1700000000000000 WHERE name = 'den_channels'`,
 	}
 	if version >= 3 {

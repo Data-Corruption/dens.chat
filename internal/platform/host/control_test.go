@@ -161,7 +161,7 @@ func TestControlReadDeadlineAndListenerClose(t *testing.T) {
 
 // TestControlListenerOutlivesAClientThatLeaves checks that a client that
 // opens the endpoint and closes it before the server accepts doesn't stop
-// the listener: the next client is served (M8). On Windows that leaves the
+// the listener: the next client is served. On Windows that leaves the
 // pipe's instance with ERROR_NO_DATA, which once failed every accept after
 // it, as the audit's probe showed.
 func TestControlListenerOutlivesAClientThatLeaves(t *testing.T) {

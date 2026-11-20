@@ -71,7 +71,7 @@ type Config struct {
 	Keys bool
 	// Sound is Share this computer's sound, as the settings keep it, and
 	// CanSound whether this install shares its sound at all, as a
-	// computer's helper reads it (M20.2); every install listens.
+	// computer's helper reads it; every install listens.
 	Sound, CanSound bool
 	// AsksLocal has the install link with nothing until SetLocal says the
 	// system lets it reach its network, which Android 17 asks the member.
@@ -135,7 +135,7 @@ type Relay struct {
 	relaying bool
 	// held is the den of the call this install held when last evaluated.
 	held string
-	// Sound (M20.2): listening is this install's listening to another
+	// Sound: listening is this install's listening to another
 	// device's sound, and listenAsk its hello waiting for an answer;
 	// listener is the device this install's sound goes to, capturing
 	// whether the helper reads it, and captureWhy why none comes.
@@ -357,7 +357,7 @@ func (r *Relay) SetKeys(on bool) {
 }
 
 // SetSound turns Share this computer's sound on or off, as the settings
-// do, and tells the member's other devices (M20.2). Off, whoever listens
+// do, and tells the member's other devices. Off, whoever listens
 // hears that it stopped.
 func (r *Relay) SetSound(on bool) {
 	r.mu.Lock()
@@ -538,7 +538,7 @@ func (r *Relay) handle(in inbox) {
 // answer answers a hello from another of the member's devices that this
 // install can serve: for keys, where it holds the call in the den the
 // hello came through and has Keybind relay on; for sound, where it shares
-// its sound (M20.2). A device asks only while it has no link here, so a
+// its sound. A device asks only while it has no link here, so a
 // link this side holds from that device's earlier hello went stale, as
 // when it started again before the link here failed, and the new one
 // replaces it. A hello that crossed this side's own, which the other

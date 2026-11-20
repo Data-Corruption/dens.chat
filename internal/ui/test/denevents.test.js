@@ -1,4 +1,4 @@
-// Events (M17.4), checked without a browser: an event's times in the
+// Events, checked without a browser: an event's times in the
 // member's time zone, across zones and the clocks' changes, as the form
 // takes them in and the pane shows them; the form's limits and what it
 // sends; who may make and change one; the den's events applied to the

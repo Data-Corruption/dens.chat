@@ -62,7 +62,7 @@ func TestDescribeMoved(t *testing.T) {
 }
 
 // TestUnknownCodesArentShown checks that a den's error code reaches the
-// member only when it's one of the protocol's (M8): the code is the den's
+// member only when it's one of the protocol's: the code is the den's
 // own text, which could say anything.
 func TestUnknownCodesArentShown(t *testing.T) {
 	for body, want := range map[string]string{
@@ -80,7 +80,7 @@ func TestUnknownCodesArentShown(t *testing.T) {
 }
 
 // TestLoggedErrors checks that a network error goes into a log line without
-// the address Go's error names (M8), and any other error as it is.
+// the address Go's error names, and any other error as it is.
 func TestLoggedErrors(t *testing.T) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 )
 
 // A call's length reaches the page as when it began on this computer's
-// clock, the frame's arrival less elapsed_ms (M21.2): a later frame moves
+// clock, the frame's arrival less elapsed_ms: a later frame moves
 // the start only earlier, and one later by more than startSlack is a new
 // call; a call that empties takes its start with it, a full state keeps
 // the start of a call going on, and a den older than M21.2 gives none. A

@@ -1,4 +1,4 @@
-// The geometry of the player shares play in (M4.2), apart from its
+// The geometry of the player shares play in, apart from its
 // component so the tests can check it: where it sits and how large it is,
 // which the browser keeps, kept inside the window; resizing from a corner;
 // and how its shares lay out. From M13.4, which share the phone layout's
@@ -70,8 +70,8 @@ export function tileLayout(n, width, height) {
     return wide ? { cols: 3, rows: 2 } : { cols: 2, rows: 3 };
 }
 
-// dockedShown is the share the phone layout's docked player shows
-// (M13.4), of keys, the shares it holds, in order: one that's new since
+// dockedShown is the share the phone layout's docked player shows,
+// of keys, the shares it holds, in order: one that's new since
 // it held known, the newest of them, as the member just began to watch
 // it; otherwise shown, while it's there, or else the first.
 export function dockedShown(keys, known, shown) {

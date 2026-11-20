@@ -9,8 +9,8 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/notify"
 )
 
-// Notices hears what the dens' events say of the member's notifications
-// (M12.3): each message another member sends, as it arrives, and what
+// Notices hears what the dens' events say of the member's notifications:
+// each message another member sends, as it arrives, and what
 // takes a notification back, the member reading the channel, from any of
 // their devices, or the message, its channel or its den going; and from
 // M17.4 each event the member is interested in as it starts, and its end.
@@ -27,8 +27,8 @@ type Notices interface {
 
 // noticeLocked is what a message that just arrived may notify the member
 // of, or nil for one of their own, one already read, as when the den sends
-// it again after the connection drops, or one whose time to disappear came
-// (M16.4). locked is a DM's message this device couldn't open. The caller
+// it again after the connection drops, or one whose time to disappear came.
+// locked is a DM's message this device couldn't open. The caller
 // holds c.mu.
 func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 	me := c.profile.Member
@@ -52,7 +52,7 @@ func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 		DM: isSealed(ch), ID: m.ID, Author: author, Text: m.Text, Files: len(m.Attachments)}
 	if ch.Kind == denproto.KindGroupDM {
 		// A group's notifies as a DM's, under Direct messages, naming the
-		// group (M16.3).
+		// group.
 		n.Group = c.groupTitleLocked(m.ChannelID)
 	}
 	if locked {
@@ -66,7 +66,7 @@ func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 
 // tellNotices passes on what an event the den sent, now applied, says of
 // the member's notifications: notice, a message that may notify them,
-// start, an event they're interested in that started (M17.4), and what
+// start, an event they're interested in that started, and what
 // takes one back.
 func (c *conn) tellNotices(e denproto.Event, out denproto.Event, notice *notify.Message, own *denproto.Message, start *notify.Start) {
 	n := c.m.Notices

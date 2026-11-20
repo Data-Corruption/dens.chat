@@ -63,7 +63,7 @@ func ExplainStatus(e *denproto.Error) (string, bool) {
 
 // ShownCode gives a den's error code as a member may see it: the code when
 // it's one of the protocol's, and otherwise the HTTP status alone, since a
-// den's code is its own text (M8).
+// den's code is its own text.
 func ShownCode(e *denproto.Error) string {
 	if denproto.KnownCode(e.Code) {
 		return e.Code
@@ -72,7 +72,7 @@ func ShownCode(e *denproto.Error) string {
 }
 
 // unreached says why reaching a den failed, for the log, naming no address
-// and none of the den's own text (M11).
+// and none of the den's own text.
 func unreached(err error) string {
 	var perr *denproto.Error
 	var dns *net.DNSError
@@ -107,7 +107,7 @@ func unreached(err error) string {
 
 // logged gives an error for a log line. A network error goes as Explain
 // describes it, since Go's name the address they failed to reach, and logs
-// carry no addresses (M8); any other goes as it is.
+// carry no addresses; any other goes as it is.
 func logged(err error) any {
 	var netErr net.Error
 	var urlErr *url.Error

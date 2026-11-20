@@ -81,14 +81,14 @@ func (linuxSystem) Preflight() error {
 }
 
 // flatpakGuide is the install guide's page for the Flatpak, which runs on
-// the distributions the installer refuses (M9.4). Releases before M17.1
+// the distributions the installer refuses. Releases before M17.1
 // link /docs/install/#the-flatpak, which lands on the guide's choice of
 // platform, the Flatpak among them.
 const flatpakGuide = "https://dens.chat/docs/install/flatpak/"
 
 // checkDistribution refuses the distributions an install would fail on
 // halfway, on a path it writes that they keep read-only, before anything
-// changes (M8), and names the Flatpak, which runs there.
+// changes, and names the Flatpak, which runs there.
 func checkDistribution(root string) error {
 	id, err := osReleaseID(root)
 	if err != nil {
@@ -122,7 +122,7 @@ func osReleaseID(root string) (string, error) {
 }
 
 // checkLXCDropIn refuses to go on in a container where LXC's drop-in for
-// every service is in effect (M8). It turns off the unit's sandbox and its
+// every service is in effect. It turns off the unit's sandbox and its
 // encrypted credential, which carries the data key, so the service would
 // fail to start past the point of no return. A file of the same name in
 // /etc takes its place, as a link to /dev/null does.

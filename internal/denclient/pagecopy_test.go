@@ -17,7 +17,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 )
 
-// Copies the page makes (M5.5), with a page stood in for: it takes the
+// Copies the page makes, with a page stood in for: it takes the
 // offer, asks for the video's packets a window at a time and checks them,
 // and sends back AV1 packets the media module encoded, as Chrome's
 // WebCodecs would.
@@ -324,7 +324,7 @@ func TestVideoCopiedByThePage(t *testing.T) {
 }
 
 // A WebM's VP9, which the module doesn't decode, goes as the page's copy,
-// and a copy over the den's limit is offered again, lower (M5.5).
+// and a copy over the den's limit is offered again, lower.
 func TestPageCopyRules(t *testing.T) {
 	if raceOn {
 		t.Skip("encoding in the module under the race detector takes minutes")

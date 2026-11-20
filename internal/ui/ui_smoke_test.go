@@ -28,7 +28,7 @@ func TestAppShellRenders(t *testing.T) {
 		t.Fatal(err)
 	}
 	out := buf.String()
-	// The page's sounds' addresses go as JSON in an attribute (M14.2), and
+	// The page's sounds' addresses go as JSON in an attribute, and
 	// the names' fonts'.
 	for _, want := range []string{"<!DOCTYPE html>", `<div id="app"`, `data-version="v0.0.0-dev"`, `src="/assets/js/output.js"`, "</html>",
 		`data-sounds="{&#34;joined&#34;:&#34;/assets/sounds/joined.a1b2.ogg&#34;}"`,

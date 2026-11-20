@@ -9,11 +9,11 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/types"
 )
 
-// LogsLimit is how much of the newest logs a download holds (M11).
+// LogsLimit is how much of the newest logs a download holds.
 const LogsLimit = 32 << 20
 
 // Logs returns the newest logs, up to LogsLimit and oldest first, for the
-// member to send with a problem, with the name they download as (M11): an
+// member to send with a problem, with the name they download as: an
 // installed Dens keeps them in the service's data directory, out of its
 // desktop user's reach.
 func (a *App) Logs() (name string, logs []byte, err error) {

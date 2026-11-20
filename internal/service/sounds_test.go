@@ -67,7 +67,7 @@ func (p *pageStream) lastStatus(holds func(notify.Status) bool) notify.Status {
 	}
 }
 
-// A member's own sounds (M14.2): a file of audio, of at most 1 MiB, in
+// A member's own sounds: a file of audio, of at most 1 MiB, in
 // place of one of the page's sounds, kept by the service and served to the
 // page alone, sandboxed and never cached; the sounds' switches and volumes
 // kept with the notifications' settings; Reset bringing the default back;

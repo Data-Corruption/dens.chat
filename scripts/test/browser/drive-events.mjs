@@ -22,12 +22,12 @@
 // Copy link gives the event's link, which she sends in #general and in
 // their DM, where bob's page shows it as a chip naming the event and as its
 // card under the message, from which bob marks Interested, colored while
-// it asks and plain with a tick once marked (M21.1). Once it's live,
+// it asks and plain with a tick once marked. Once it's live,
 // alice joins its call from her card and stays a stretch, the few seconds
 // a development instance's den takes, and earns its badge; bob joins and
 // leaves at once, and doesn't. Alice's profile card on bob's page shows
 // the badge, with its tip; once she hides it in her Edit profile, its eye
-// struck (M17.6), his card of her shows it no more. Once the event ends,
+// struck, his card of her shows it no more. Once the event ends,
 // bob's card in #general says so. The den's database holds alice's award
 // alone, marked hidden, and the badge's title sealed.
 //

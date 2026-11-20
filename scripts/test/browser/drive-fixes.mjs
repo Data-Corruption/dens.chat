@@ -6,11 +6,11 @@
 // what was unread when a channel opened; the message box's focus; Enter in
 // a code block; the composer's + bordered as its box is; folding a channel
 // group; a video whose sound starts late playing it in time; a thin video
-// keeping its full screen button as the rest give way (M14.3); and from
+// keeping its full screen button as the rest give way; and from
 // M15, an unread channel told from a read one at a glance, and a video's
 // seek bar drawn thin; and from M19.2, the crown and the shield at one
 // height beside their names in the member list, a card and a message, the
-// last with Staff marks on (M21.1), a
+// last with Staff marks on, a
 // long name scrolling to its end under the pointer and back, and a right
 // click opening a message's menu and a member's at the pointer, and a
 // link's the browser's own; and from M19.5, the den's name with no arrow
@@ -143,7 +143,7 @@ try {
     await send(general, "Bob's message 5");
     await send(general, "Bob's message 6");
     await sleep(1000);
-    // A channel waiting to be read stands out at a glance (M15): its name
+    // A channel waiting to be read stands out at a glance: its name
     // bold, at full strength, and a pill at its row's left; one read is a
     // little fainter, but the one open, which is as the rest of the text.
     const marks = JSON.parse(await b.eval(`(() => {
@@ -311,7 +311,7 @@ try {
 
     step("the seek bar's track and its played part are thin, and its thumb small");
     // Measured in the bar's box, 24 pixels tall for a finger, at a width
-    // with room for it (M15).
+    // with room for it.
     await controls(300);
     const bar = JSON.parse(await b.eval(`(() => {
         const seek = (${clip}).parentElement.querySelector('input[aria-label=Seek]');

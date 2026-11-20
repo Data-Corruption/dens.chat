@@ -7,7 +7,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Staff read and reset a voice channel's record over HTTP (M21.2), and a
+// Staff read and reset a voice channel's record over HTTP, and a
 // member gets 403 for either.
 func TestCallRecordOverHTTP(t *testing.T) {
 	f := newFixture(t)

@@ -9,7 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Notes to self (M17.3). A member's notes are a channel of kind notes
+// Notes to self. A member's notes are a channel of kind notes
 // naming them alone, made as they first open it, which only they see. Its
 // messages come sealed, as a DM's do, under a key their Dens makes from
 // their seal, which the den never holds: each names it by the channel's

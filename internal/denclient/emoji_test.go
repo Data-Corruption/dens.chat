@@ -50,7 +50,7 @@ func emojiNames(v denclient.View) []string {
 
 // An animated GIF or WebP becomes an emoji as a GIF this service makes, at
 // most 128 pixels on its longer side, its shape kept, never enlarged, and
-// at most 512 KiB (M15.2).
+// at most 512 KiB.
 func TestAnimatedEmoji(t *testing.T) {
 	_, owner, _, denID, _ := chatDen(t)
 	ctx := context.Background()

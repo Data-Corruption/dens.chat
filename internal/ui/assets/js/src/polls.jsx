@@ -1,4 +1,4 @@
-// Polls on the page (M15.4): the editor the composer's + opens above its
+// Polls on the page: the editor the composer's + opens above its
 // box, where a reply and files stand, whose question is the message's
 // text; and a message's poll, under its question, as the member may see it.
 

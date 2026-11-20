@@ -1,5 +1,5 @@
 // Staff dragging channels and groups into order, and members from one call
-// to another, on a desktop (M17.2), by HTML's drag and drop, as the message
+// to another, on a desktop, by HTML's drag and drop, as the message
 // pane takes files. A channel's drop sends what Move up and Move down in
 // its menu and Group in its settings send, its place in its list, which
 // the den already takes; a group's, its place among the groups; and a member's,

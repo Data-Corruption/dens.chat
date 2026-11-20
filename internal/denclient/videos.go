@@ -16,7 +16,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// Smaller copies of videos (M5.4). A video added to a message goes as a
+// Smaller copies of videos. A video added to a message goes as a
 // smaller copy, as a photo does, unless its sender sends it full size: this
 // service strips it, which is its full size, and makes its copy with the
 // media module, in chunks side by side (media.MakeVideoCopy), with a
@@ -45,8 +45,8 @@ type following struct {
 	full     chan struct{}
 	once     sync.Once
 	// page says the page makes a video's copy itself when it can, copy is
-	// the one on offer to it, and socket says a page follows the upload
-	// (M5.5). closed is closed when the upload ends.
+	// the one on offer to it, and socket says a page follows the upload.
+	// closed is closed when the upload ends.
 	page   bool
 	copy   *pageCopy
 	socket bool
@@ -263,7 +263,7 @@ func forDM(c *conn, channelID string) bool {
 	if channelID == "" {
 		return false
 	}
-	// A DM's or a group's (M16.3).
+	// A DM's or a group's.
 	return c.private(channelID)
 }
 
@@ -302,7 +302,7 @@ func (m *Manager) stripVideo(ctx context.Context, body io.Reader) (*version, err
 
 // videoCopy makes the smaller copy of a video's full size, fitted to over
 // bytes when the full size is over the den's limit, and the copy's preview
-// from the full size. The page makes the copy when it can (M5.5), and the
+// from the full size. The page makes the copy when it can, and the
 // module otherwise.
 func (m *Manager) videoCopy(ctx context.Context, full *version, over int64, f *following) (*version, *media.Thumb, error) {
 	p, err := m.Media.Probe(ctx, full.file)
@@ -387,7 +387,7 @@ func (m *Manager) copyByModule(ctx context.Context, full *version, v ffmpeg.Stre
 	}
 }
 
-// copyByPage has the page make a video's copy (M5.5): the video's packets
+// copyByPage has the page make a video's copy: the video's packets
 // demuxed for it, offered with what decoding them takes and the plan, and
 // the AV1 packets it sends back put together with the video's sound. A
 // copy that comes out over the den's limit is offered once more, lower.

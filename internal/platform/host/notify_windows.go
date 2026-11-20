@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The desktop's notifications on Windows are toasts (M12.3), through
+// The desktop's notifications on Windows are toasts, through
 // Windows Runtime, which Windows shows only for an app ID that a Start
 // menu shortcut carries: the installer makes it. A toast's click opens the
 // page's address itself, through the browser, so nothing of Dens needs to

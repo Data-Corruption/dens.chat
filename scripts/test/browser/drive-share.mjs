@@ -150,7 +150,7 @@ try {
     }
     for (const s of [A, B, C]) await waitFor(async () => (await s.b.eval(`!!document.querySelector('button[aria-label="Share your screen"]')`)) && (await s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`)), `${s.name} in the call`, 30000);
     // The share button sits in the call's row, just before mute, after the
-    // soundboard where the member has one (M14.3).
+    // soundboard where the member has one.
     const row = await A.b.eval(`(() => { const b = document.querySelector('button[aria-label="Share your screen"]'); const all = [...b.parentElement.children].map((x) => x.getAttribute('aria-label') || x.querySelector('button')?.getAttribute('aria-label') || x.tagName); return JSON.stringify(all); })()`);
     const order = JSON.parse(row);
     const at = order.indexOf('Share your screen');
@@ -208,7 +208,7 @@ try {
     report(v1.decoded > 10 && v1.w * v1.h <= 1920 * 1080 && v1.fps <= 31, `bob decodes alice's share: ${JSON.stringify(v1)}; alice encodes ${JSON.stringify(e1)}`);
     await B.b.shot(`${HOME}/shot-share-bob-player.png`);
 
-    // What arrives of the share's sound (M18): carol's Chromium watches
+    // What arrives of the share's sound: carol's Chromium watches
     // too, and both watchers decode it, samples with energy in them, while
     // their workers open its frames and drop none, as alice's seals them.
     await waitFor(() => C.b.eval(`[...document.querySelectorAll('button')].some((x) => x.textContent.trim() === 'LIVE')`), 'carol sees LIVE');
@@ -336,7 +336,7 @@ try {
     }, 'the call at 48 kbps', 15000).catch((e) => e.message);
     report(rates.startsWith('['), `both members' next offers ask for 48 kbps: ${rates}`);
 
-    // A browser that sends the share's sound around its seal (M18): alice
+    // A browser that sends the share's sound around its seal: alice
     // stops sharing, leaves, and joins again, so her share's sections come
     // afresh, with a preload that sets the sound's transform a task late, as
     // the page did; her page stops the sound within a second of its track

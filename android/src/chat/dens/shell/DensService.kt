@@ -27,13 +27,13 @@ import java.util.concurrent.Executors
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
 
-// DensService is the foreground service Dens runs under (M12): it starts
+// DensService is the foreground service Dens runs under: it starts
 // Dens with its data key, starts it again when it ends, but for a start
 // Dens refuses, and keeps the shell's stream with it, which says where the
-// page is, and carries the member's notifications, which the shell posts
-// (M12.3), the updates Dens readies, which it hands to Android's
-// installer (M12.4), the page's background, which the bars take (M13.3),
-// and what Relay wants of Android (M20.3). A foreground service of the
+// page is, and carries the member's notifications, which the shell posts,
+// the updates Dens readies, which it hands to Android's
+// installer, the page's background, which the bars take,
+// and what Relay wants of Android. A foreground service of the
 // specialUse type holds the dens' connections while the app isn't on
 // screen, of the microphone's type too while the page has the microphone,
 // as in a call, whose sound it routes, and of media playback's while the
@@ -75,7 +75,7 @@ class DensService : Service() {
             private set
 
         // notifying is whether the member turned any notifications on, as
-        // Dens last said (M12.3), which the activity asks Android to let it
+        // Dens last said, which the activity asks Android to let it
         // post; front is whether the page's activity shows, which Dens
         // hears, since the activity holds the page as shown through a call.
         @Volatile
@@ -85,7 +85,7 @@ class DensService : Service() {
         // relaying is whether the member wants Relay here, as Dens last
         // said, which the activity asks Android for the network on;
         // listening is whether the page plays another of the member's
-        // devices' sound, which the activity holds the page for (M20.3).
+        // devices' sound, which the activity holds the page for.
         @Volatile
         var relaying = false
             private set
@@ -98,13 +98,13 @@ class DensService : Service() {
         private var front = false
 
         // bars is the page's background, which the activity paints the
-        // status and navigation bars with, once Dens has said it (M13.3).
+        // status and navigation bars with, once Dens has said it.
         @Volatile
         var bars: Int? = null
             private set
 
         // isFront is whether the page's activity shows, which Android needs
-        // of an app that starts its installer's confirmation (M12.4).
+        // of an app that starts its installer's confirmation.
         val isFront get() = front
 
         // The shell's stream with Dens, while it's open.
@@ -127,7 +127,7 @@ class DensService : Service() {
             ctx.startForegroundService(Intent(ctx, DensService::class.java))
         }
 
-        // inFront tells Dens whether the page's activity shows (M12.3): a
+        // inFront tells Dens whether the page's activity shows: a
         // page held as shown for a call isn't on screen otherwise, and
         // Dens notifies the member of what it shows only while it isn't.
         fun inFront(on: Boolean) {
@@ -140,7 +140,7 @@ class DensService : Service() {
         fun tellAllowed(ctx: Context) = tell("notifies", JSONObject().put("on", Notes.allowed(ctx)))
 
         // tellLocal tells Dens whether Android lets the app reach its
-        // network, and whether the member refused it when asked (M20.3).
+        // network, and whether the member refused it when asked.
         fun tellLocal(ctx: Context) {
             val on = Local.allowed(ctx)
             tell("local", JSONObject().put("on", on).put("refused", !on && Local.asked(ctx)))
@@ -304,7 +304,7 @@ class DensService : Service() {
         )
         // Android 14 and later need the service's type said; the
         // microphone's keeps the page's recording going off screen, and
-        // media playback's its playing another device's sound (M20.3).
+        // media playback's its playing another device's sound.
         val base = if (Build.VERSION.SDK_INT >= 34) ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE else 0
         val mic = if (calling) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE else 0
         val media = if (listening) ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK else 0
@@ -324,7 +324,7 @@ class DensService : Service() {
     }
 
     // listen holds what playing another device's sound takes while Dens
-    // says the page plays it (M20.3): media playback's type, and a Wi-Fi
+    // says the page plays it: media playback's type, and a Wi-Fi
     // lock for low latency, which Android honours while the app is in
     // front.
     private fun listen(on: Boolean) {
@@ -497,7 +497,7 @@ class DensService : Service() {
                             Updates.forget(this)
                             Dens.log(this, "service: Dens ${d?.optString("version")} is up")
                             // What Dens needs to know to notify the member
-                            // where it should, and to relay (M20.3).
+                            // where it should, and to relay.
                             inFront(front)
                             tellAllowed(this)
                             tellLocal(this)
@@ -518,11 +518,11 @@ class DensService : Service() {
                             bars = 0xFF000000.toInt() or it.substring(1).toInt(16)
                             changed()
                         }
-                        // An update Dens downloaded and checked (M12.4), and
+                        // An update Dens downloaded and checked, and
                         // the member asking the page to install it.
                         "update" -> if (d != null) Updates.offer(this, d.optString("version"), d.optString("apk"))
                         "install" -> if (d != null) Updates.install(this, d.optString("version"), d.optString("apk"))
-                        // What Relay wants of Android (M20.3).
+                        // What Relay wants of Android.
                         "relay" -> {
                             val on = d?.optBoolean("on") == true
                             val playing = d?.optBoolean("listening") == true

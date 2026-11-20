@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// Approving new devices (M1.7). A password alone doesn't add a device to a
+// Approving new devices. A password alone doesn't add a device to a
 // den: one of the member's other devices approves it. The two run the
 // exchange a DM's key starts with, through the den, and the member types
 // each device's digits into the other; neither goes on unless its own
@@ -40,7 +40,7 @@ type RequestView struct {
 	Half        string `json:"half,omitempty"`
 	Approved    bool   `json:"approved,omitempty"`
 	// KeyID is the new device's, whose first connection ends an approved
-	// one (M22.6).
+	// one.
 	KeyID denproto.Bytes `json:"-"`
 }
 

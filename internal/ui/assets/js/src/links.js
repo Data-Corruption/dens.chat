@@ -1,9 +1,9 @@
-// How the page shows links (M3). The den, and a DM's sender, write every
+// How the page shows links. The den, and a DM's sender, write every
 // link to a Reddit post as https://www.reddit.com/comments/…, so showing
 // it on old.reddit.com, for a browser that prefers it, takes only another
 // host. Every YouTube link is written as https://www.youtube.com/watch?v=…,
 // or a Short's as https://www.youtube.com/shorts/…, which is all a
-// browser that turned YouTube's players on (M4.1) needs to find the video
+// browser that turned YouTube's players on needs to find the video
 // to play, and its shape.
 
 const OLD_REDDIT = 'DENS_OLD_REDDIT';
@@ -37,7 +37,7 @@ export function setOldReddit(on) {
 
 // YouTube's players and Steam's cards each show their site the member's
 // IP address. A browser new to Dens asks whether to show them as it opens
-// Dens (M22.7), and keeps the answer, '1' or '0', for each; one that had
+// Dens, and keeps the answer, '1' or '0', for each; one that had
 // opened Dens before keeps what it had, nothing being off.
 const PLAYERS = 'DENS_YOUTUBE';
 const STEAM = 'DENS_STEAM';
@@ -83,7 +83,7 @@ const playersListeners = new Set();
 let players = null;
 
 // youTubePlayers reports whether this browser plays YouTube videos where
-// they're linked (M4.1).
+// they're linked.
 export function youTubePlayers() {
     if (players === null) {
         try {
@@ -117,7 +117,7 @@ const steamListeners = new Set();
 let steam = null;
 
 // steamCards reports whether this browser shows Steam's cards where games
-// are linked (M22.2).
+// are linked.
 export function steamCards() {
     if (steam === null) {
         try {
@@ -192,7 +192,7 @@ export function startSeconds(t) {
     return Number.isSafeInteger(n) ? n : 0;
 }
 
-// A link to a message (M11) is its den's address, then the den's ID and
+// A link to a message is its den's address, then the den's ID and
 // the message's channel and ID in the fragment, as Copy link writes it:
 // https://den.example.com/#m/<den ID>/41/90210. It opens by the den's ID,
 // which the den's identity key proves on every connection, so it still
@@ -222,7 +222,7 @@ export function linkTo(denURL, denID, channelID, messageID) {
     return `${denURL}/#m/${denID}/${channelID}/${messageID}`;
 }
 
-// A link to an event (M17.5) is its den's address, then the den's ID and
+// A link to an event is its den's address, then the den's ID and
 // the event's in the fragment, as an event's Copy link writes it:
 // https://den.example.com/#e/<den ID>/12. It opens by the den's ID, as a
 // link to a message does, and the den never learns from the address which
@@ -252,7 +252,7 @@ export function shownLink(url, preferOld = oldReddit()) {
 // punctuation at the end, and a ) there that closes no ( in the link, so a
 // link in parentheses loses the closing one but a Wikipedia article's
 // title keeps its own. denproto's trimLink is the same rule. It counts the
-// parentheses once, so a link ending in many takes no longer (M8).
+// parentheses once, so a link ending in many takes no longer.
 export function trimLink(url) {
     const opens = count(url, '(');
     let closes = count(url, ')');

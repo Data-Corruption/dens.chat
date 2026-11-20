@@ -15,7 +15,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/media"
 )
 
-// Smaller copies of videos (M5.4), from an iPhone's video of 568 × 320,
+// Smaller copies of videos, from an iPhone's video of 568 × 320,
 // turned a quarter, four seconds long; and a 60-frame video of 640 × 360,
 // six seconds long and 1.3 MB, over a den's smallest limit.
 
@@ -99,7 +99,7 @@ func openVersion(t *testing.T, m *denclient.Manager, denID, id string, which den
 // A phone's video goes as a smaller copy, AV1 in an MP4 with a preview made
 // from its full size, while the page follows how far it is; its sender
 // compares the two and switches to full size and back; and the owner gets
-// the copy, which the den strips again, with its preview (M5.4).
+// the copy, which the den strips again, with its preview.
 func TestVideoGoesSmaller(t *testing.T) {
 	if raceOn {
 		t.Skip("encoding in the module under the race detector takes minutes")
@@ -184,7 +184,7 @@ func TestVideoGoesSmaller(t *testing.T) {
 }
 
 // A DM's video goes as a smaller copy too, sealed with the preview made
-// from its full size, and opens for the other member (M5.4).
+// from its full size, and opens for the other member.
 func TestDMVideoGoesSmaller(t *testing.T) {
 	if raceOn {
 		t.Skip("encoding in the module under the race detector takes minutes")
@@ -228,7 +228,7 @@ func TestDMVideoGoesSmaller(t *testing.T) {
 // setting, and can't switch to full size, nor go full size while it's
 // made. Within the limit, the member can have it go full size instead of
 // waiting for its copy, and one sent full size by the setting gets none. A
-// video the module can't copy, and audio, go full size (M5.4).
+// video the module can't copy, and audio, go full size.
 func TestVideoCopyRules(t *testing.T) {
 	if raceOn {
 		t.Skip("encoding in the module under the race detector takes minutes")

@@ -27,7 +27,7 @@ import (
 const retryEvery = 30 * time.Second
 
 // hosting serves the den this instance holds while the switch in the
-// settings is on (M9.1). Turning it on binds the den listener and the
+// settings is on. Turning it on binds the den listener and the
 // media ports, starts the den and serves it, under a context of its own;
 // turning it off cancels that and stops the den as a service stop does,
 // keeping everything it holds. It's the App's Hosting.
@@ -116,7 +116,7 @@ func (h *hosting) Set(_ context.Context, on bool) error {
 	return nil
 }
 
-// WhileOff runs f with hosting held off (M10): it refuses while hosting is
+// WhileOff runs f with hosting held off: it refuses while hosting is
 // on, as when its den can't start, and turning hosting on waits for f.
 func (h *hosting) WhileOff(f func() error) error {
 	h.mu.Lock()

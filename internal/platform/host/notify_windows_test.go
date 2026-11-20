@@ -12,7 +12,7 @@ import (
 )
 
 // A toast's content is its text, escaped as XML, a member's text included,
-// with the address a click opens (M12.3).
+// with the address a click opens.
 func TestToastXML(t *testing.T) {
 	got := toastXML(DesktopNotification{Title: `Alice · <Den & "co">`, Body: "</text><text>injected", Open: "http://localhost:8484/den/d1/7#message=10&x=\"1\""})
 	for _, want := range []string{
@@ -62,7 +62,7 @@ func (n *Notifier) showing(appID string) (int, error) {
 }
 
 // A toast shows under the app ID a Start menu shortcut carries, and goes
-// when it's taken back (M12.3). It shows on the desktop of whoever runs it,
+// when it's taken back. It shows on the desktop of whoever runs it,
 // for a moment, so it runs only where DENS_TOAST_TEST is set, as from WSL:
 //
 //	GOOS=windows go test -c -o host.test.exe ./internal/platform/host

@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// The den's emoji (M15.2): staff add emoji, rename and delete them.
+// The den's emoji: staff add emoji, rename and delete them.
 
 func (h *handler) addEmoji(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {

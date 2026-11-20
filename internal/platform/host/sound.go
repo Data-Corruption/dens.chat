@@ -6,7 +6,7 @@ import (
 )
 
 // The computer's sound, which Relay plays on another of the member's
-// devices (M20.2): the shortcut helper reads it, since it runs in the
+// devices: the shortcut helper reads it, since it runs in the
 // desktop session where the sound plays. Windows reads its default
 // output's loopback through WASAPI, and Linux its default output's
 // monitor over PulseAudio's protocol, which PipeWire speaks too. Each

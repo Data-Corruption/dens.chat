@@ -20,8 +20,8 @@ func writeUnder(t *testing.T, root, path, data string) {
 }
 
 // TestPreflightRefusesDistributions checks that NixOS and SteamOS are
-// refused before anything changes, saying why (M8), and naming the
-// Flatpak's guide (M9.4).
+// refused before anything changes, saying why, and naming the
+// Flatpak's guide.
 func TestPreflightRefusesDistributions(t *testing.T) {
 	for _, tc := range []struct {
 		name, file, osRelease, want string
@@ -53,7 +53,7 @@ func TestPreflightRefusesDistributions(t *testing.T) {
 
 // TestPreflightRefusesLXCDropIn checks that an install in a container
 // refuses to go on while LXC's drop-in for every service is in effect,
-// saying how to mask it, and goes on once it's masked (M8).
+// saying how to mask it, and goes on once it's masked.
 func TestPreflightRefusesLXCDropIn(t *testing.T) {
 	root := t.TempDir()
 	if err := checkLXCDropIn(root); err != nil {

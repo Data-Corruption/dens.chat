@@ -1,4 +1,4 @@
-// Appearance's File names on hover (M22.7): a photo's or a video's name as
+// Appearance's File names on hover: a photo's or a video's name as
 // the browser's tooltip while the pointer rests on it, on until the member
 // turns it off. The browser keeps the choice, as it keeps Density.
 

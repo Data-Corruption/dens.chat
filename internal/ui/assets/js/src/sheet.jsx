@@ -1,4 +1,4 @@
-// Sheets (M13.2): the phone layout's menus, which open from the screen's
+// Sheets: the phone layout's menus, which open from the screen's
 // foot over the page, dimmed, with rows a finger fits. A tap above one
 // closes it, as do a swipe down, Back, Escape and a row's action. Wider
 // windows keep their menus, touch or not.
@@ -60,7 +60,7 @@ export function useDragDown(onClose, grab) {
 
 // Sheet frames a sheet: label names it, and title, if given, heads it,
 // under the handle, staying at its top as a long sheet scrolls, as the
-// emoji picker's search does (M15.2). Its rows are SheetRows, or anything
+// emoji picker's search does. Its rows are SheetRows, or anything
 // else as tall. The focus starts on its first row, and goes back to where
 // it was once the sheet closes.
 export function Sheet({ label, title, onClose, children }) {

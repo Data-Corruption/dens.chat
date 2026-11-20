@@ -18,7 +18,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// shortcutsCommand is the shortcut helper (M7): it runs as the desktop user
+// shortcutsCommand is the shortcut helper: it runs as the desktop user
 // in their session, for every instance that answers them, and carries the
 // voice keys to the page's call from other programs, and from M20.2 the
 // computer's sound to Relay while it shares it.
@@ -38,7 +38,7 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 					}
 					return client.Open(control.Request{Op: control.OpShortcuts})
 				},
-				// The computer's sound, which Relay shares (M20.2).
+				// The computer's sound, which Relay shares.
 				OpenSound: func(name string) (*control.Stream, error) {
 					client, _, err := controlClient(bi, name)
 					if err != nil {
@@ -57,7 +57,7 @@ func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 				h.Restart = func() error { return host.ReplaceProcess(l.Binary, shortcuts.Command) }
 			}
 			// Notifications show as the desktop's own where it has something
-			// to show them with (M12.3), and a click opens the page paired,
+			// to show them with, and a click opens the page paired,
 			// as dens open opens it. They open beside the helper's run, which
 			// a notification service that hangs would otherwise hold up.
 			h.OpenNotifier = func() (shortcuts.Notifier, error) {

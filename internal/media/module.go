@@ -22,7 +22,7 @@ const (
 	posterQuality = 5
 )
 
-// Smaller copies (M5). A photo goes as a copy that fits CopySide, at
+// Smaller copies. A photo goes as a copy that fits CopySide, at
 // CopyQuality, unless its sender sends it full size: about as many pixels
 // as the viewer shows on a 4K screen, and several times smaller than a
 // phone's photo.

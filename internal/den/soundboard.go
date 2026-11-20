@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/media"
 )
 
-// The den's soundboard (M14.3): sounds staff add, each one of the den's
+// The den's soundboard: sounds staff add, each one of the den's
 // named files, which a member in a call plays for everyone in it (see
 // voice.go). A sound takes its file as a profile takes its picture, so
 // retention never removes it, and the file counts toward the den's space,

@@ -1,4 +1,4 @@
-// Copies the page makes (M5.5). In Chrome and Edge, the page makes a
+// Copies the page makes. In Chrome and Edge, the page makes a
 // video's smaller copy itself with WebCodecs, often on the graphics card
 // and many times faster than the local service's media module. The service
 // offers the copy on the socket the page follows the upload by: what
@@ -290,7 +290,7 @@ export function makeCopy(socket, offer) {
 
 // followUpload follows an upload over a socket of its own: how far the
 // local service has come with it, which onFollow hears, and in Chrome and
-// Edge, the copy of a video it offers the page to make (M5.4, M5.5). A
+// Edge, the copy of a video it offers the page to make. A
 // socket, unlike a request, doesn't wait behind the browser's few
 // connections to the service, which uploads hold while copies are made. It
 // returns how to stop following.

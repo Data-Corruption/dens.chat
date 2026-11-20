@@ -1,13 +1,13 @@
-// Desk in the Android walk's call (M13.4): Chromium in the browser checks'
+// Desk in the Android walk's call: Chromium in the browser checks'
 // container as the den's owner, its fake microphone speaking, in Lounge,
 // answering the walk in the Android container over HTTP, on PORT at this
 // container's address, with what desk's page shows of the call:
 //
 //   GET  /call    who is in it, by name, and whether each rings or is
-//                 muted, and its length on Lounge's row (M21.2)
+//                 muted, and its length on Lounge's row
 //   POST /share   shares desk's screen, its fake capture
-//   POST /rejoin  leaves the call and joins it again, for its sounds (M14.2)
-//   POST /mute    mutes desk, so its ring lights for its sound alone (M14.3)
+//   POST /rejoin  leaves the call and joins it again, for its sounds
+//   POST /mute    mutes desk, so its ring lights for its sound alone
 //   POST /sound?name=NAME  plays one of the den's sounds from desk's soundboard
 //   GET  /board   what desk's page receives on the call's soundboard
 //   POST /quit    hangs up, and ends
@@ -22,7 +22,7 @@ import { launch, paired, token, waitFor } from './browsers.mjs';
 
 const [, , portArg, secondsArg] = process.argv;
 const port = Number(portArg);
-// Each peer connection's tracks, by the stream they come in (M14.3).
+// Each peer connection's tracks, by the stream they come in.
 const RECORD = `() => {
     window.__tracks = [];
     const Orig = window.RTCPeerConnection;

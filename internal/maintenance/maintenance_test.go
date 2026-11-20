@@ -99,11 +99,11 @@ func devLayout(t *testing.T) layout.Layout {
 	return l
 }
 
-// A session form decides how to start from the state it finds (M9.3): a
+// A session form decides how to start from the state it finds: a
 // development instance migrates whichever way its version moves, and the
 // Flatpak only forward, keeping a snapshot as it updates, refusing a
 // rollback, and taking over only a transition to its version or older; a
-// development build migrates data its own version left (M14.2).
+// development build migrates data its own version left.
 func TestSessionStart(t *testing.T) {
 	type want struct {
 		mode     StartMode
@@ -158,7 +158,7 @@ func TestSessionStart(t *testing.T) {
 	}
 	// Every development build is build.DevVersion, so data its version
 	// left may be another tree's, a schema behind: it migrates, the Android
-	// app's development APK too (M14.2).
+	// app's development APK too.
 	for _, form := range []layout.Form{layout.Development, layout.Android} {
 		plan, err := SessionStart(form, NewState(PhaseReady, build.DevVersion, ""), true, build.DevVersion)
 		want := fmt.Sprintf("updating %s>%s", build.DevVersion, build.DevVersion)

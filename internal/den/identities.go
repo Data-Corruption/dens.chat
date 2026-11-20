@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Identities, signed DM keys and members' records (M16.1). The den keeps
+// Identities, signed DM keys and members' records. The den keeps
 // each member's identity as their Dens published it and hands it to any
 // member who asks; it relays the keys of DMs sealed to their members'
 // identities, each signed by its maker, with each member's copy; and it
@@ -29,7 +29,7 @@ var errRecordConflict = denproto.Errorf(http.StatusConflict, denproto.CodeEditCo
 // PublishIdentity sets the session's member's identity, as their Dens
 // publishes it as it signs in, where the den has none for them or holds
 // another. A change reaches everyone as member.updated, and clients that
-// kept the list of members get it with their next snapshot (M6.2).
+// kept the list of members get it with their next snapshot.
 func (d *Den) PublishIdentity(ctx context.Context, s *Session, id denproto.Identity) (denproto.Member, error) {
 	if err := id.Check(); err != nil {
 		return denproto.Member{}, invalid("identity: %v", err)
@@ -149,7 +149,7 @@ func loadSignedKeys(ctx context.Context, q querier, member int64, where string, 
 
 // memberSignedKeys lists the signed keys of every DM a member is in, for
 // their snapshot, and with groups those of the group DMs they're in that
-// they hold a copy of (M16.3).
+// they hold a copy of.
 func memberSignedKeys(ctx context.Context, q querier, member int64, groups bool) ([]denproto.SignedKey, error) {
 	return loadSignedKeys(ctx, q, member, `(k.channel_id IN (SELECT id FROM den_channels
 		WHERE kind = 'dm' AND (dm_low = ?2 OR dm_high = ?2)) OR ?3 AND k.channel_id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?2)
@@ -157,7 +157,7 @@ func memberSignedKeys(ctx context.Context, q querier, member int64, groups bool)
 }
 
 // SignedKeys lists a DM's signed keys, oldest first, as the session's
-// member sees them, or a group's they hold a copy of (M16.3).
+// member sees them, or a group's they hold a copy of.
 func (d *Den) SignedKeys(ctx context.Context, s *Session, channelID string) (denproto.SignedKeyList, error) {
 	_, cid, _, err := d.keyChannel(ctx, s, channelID, false)
 	if err != nil {
@@ -185,7 +185,7 @@ func publishedIdentity(ctx context.Context, q querier, member int64) (published,
 
 // MakeSignedKey makes a DM's key from its maker's statement and a copy
 // for each member, sealed to their identities, or a group DM's for its
-// members as they are (M16.3). A DM has one live key: a key both members
+// members as they are. A DM has one live key: a key both members
 // checked before M16.1 stays live, as does a signed key that names the
 // identities its members have now, and a second made at once gets 409
 // key_exists, so the slower takes the live one. A signed key that names an

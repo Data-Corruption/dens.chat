@@ -1,4 +1,4 @@
-// Link previews at the first run (M22.7): a browser new to Dens is asked,
+// Link previews at the first run: a browser new to Dens is asked,
 // one switch on for both, opening into one each once off, and keeps its
 // answer.
 

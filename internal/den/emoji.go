@@ -10,8 +10,8 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// The den's emoji (M15.2): images staff add, which members write by name,
-// each one of the den's named files, as a sound is (M14.3). An emoji takes
+// The den's emoji: images staff add, which members write by name,
+// each one of the den's named files, as a sound is. An emoji takes
 // its file as a profile takes its picture, so retention never removes it,
 // and the file counts toward the den's space, not its uploader's. Unlike a
 // sound's, its file opens to every member, since every page draws it.
@@ -19,7 +19,7 @@ import (
 // The page of the staff member adding an emoji draws a still one into a
 // PNG of at most MaxEmojiSide pixels on its longer side, and the member's
 // local service makes an animated one into a GIF of that size, as it makes
-// an animated picture (M15.1); the den checks the sides and the size.
+// an animated picture; the den checks the sides and the size.
 // Members write an emoji by its name, which the den never looks for in
 // what they write.
 
@@ -213,7 +213,7 @@ func (d *Den) RenameEmoji(ctx context.Context, s *Session, id string, req denpro
 
 // DeleteEmoji deletes one of the den's emoji, and its image, at staff's
 // word. The messages that wrote it show its name as text, and its
-// reactions go with it (M15.3): the members' pages drop them as they hear
+// reactions go with it: the members' pages drop them as they hear
 // it went, and the change log has their messages fetched again by an
 // install that was away.
 func (d *Den) DeleteEmoji(ctx context.Context, s *Session, id string) error {

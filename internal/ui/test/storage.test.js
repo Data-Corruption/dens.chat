@@ -1,4 +1,4 @@
-// How the settings show the client's cache (M6).
+// How the settings show the client's cache.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

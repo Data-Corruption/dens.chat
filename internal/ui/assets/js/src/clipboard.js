@@ -1,6 +1,6 @@
 // Copying to the clipboard: through the Clipboard API where the browser
 // allows it, and otherwise the old way, which Android's WebView allows
-// while it refuses the API, even after a tap (M12).
+// while it refuses the API, even after a tap.
 
 // copyText puts text on the clipboard, or throws saying it couldn't. doc
 // and nav are the page's, or stand-ins in the tests.

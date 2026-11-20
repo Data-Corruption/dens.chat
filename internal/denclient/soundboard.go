@@ -8,7 +8,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// The den's soundboard (M14.3): staff's page adds a sound by an upload its
+// The den's soundboard: staff's page adds a sound by an upload its
 // page prepared, which went up as any upload does, and names it; staff
 // rename and delete sounds; and members play them in calls (voice.go).
 

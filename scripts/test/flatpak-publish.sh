@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The Flatpak's publisher (M9.4), tested as root in a container from the
+# The Flatpak's publisher, tested as root in a container from the
 # Flatpak e2e's image: ./scripts/ci.sh --flatpak, through
 # flatpak-release.sh, against a release host in a directory, served over
 # HTTP, as members' Flatpaks read it. The builds are small scripts, which

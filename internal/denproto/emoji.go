@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// The den's emoji (M15.2): images staff add, which members write by name in
+// The den's emoji: images staff add, which members write by name in
 // the markdown subset, as :name:, and pick beside Unicode's. Each is one of
-// the den's named files, as a sound is (M14.3), its file open to every
+// the den's named files, as a sound is, its file open to every
 // member, since every page draws it. The den never parses a message for
 // them: the page shows a name the den has as its emoji, and any other as
 // the text it is.
@@ -74,7 +74,7 @@ func CheckEmojiLimits(l EmojiLimits) error {
 // An emoji shows at 48 pixels at most, so its image is at most 128 on its
 // longer side, for dense screens: a still image, which the page draws as a
 // PNG of that size, or an animated GIF, which the member's local service
-// makes as it makes an animated picture (M15.1), of a size of its own.
+// makes as it makes an animated picture, of a size of its own.
 const (
 	MaxEmojiSide         = 128
 	MaxEmojiSize         = 256 << 10

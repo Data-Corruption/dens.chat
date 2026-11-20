@@ -62,7 +62,7 @@ const LOUDEST = `(async () => {
     }
     return Math.round(most);
 })()`;
-// The members' elements: the call's soundboard track (M14.3) plays in one
+// The members' elements: the call's soundboard track plays in one
 // of its own, which isn't a member's.
 const ELEMENTS = `JSON.stringify(window.__audios.filter((a) => a.srcObject && a.srcObject.id !== 'soundboard').map((a) => (a.paused ? 'paused' : a.muted ? 'muted' : 'playing')))`;
 const button = (label) => `[...document.querySelectorAll('button')].find((x) => x.getAttribute('aria-label') === ${JSON.stringify(label)})`;
@@ -81,7 +81,7 @@ try {
         await pair(s.b, s);
         await s.b.go(`http://localhost:${s.port}/den/${den}`);
         await waitFor(() => s.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), `${s.name}'s voice channel`);
-        // As the service says to the app's page (M12).
+        // As the service says to the app's page.
         await s.b.eval(`(document.getElementById('app').dataset.autoplay = 'true', true)`);
         await s.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
     }

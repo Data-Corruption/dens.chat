@@ -1,6 +1,6 @@
 // A den's chat: the sidebar of channels and DMs, the open channel, and the
 // member list. Below 768 pixels they're three panes in a row, one on screen
-// at a time (M13.1): the list, the channel, and the members or a DM's
+// at a time: the list, the channel, and the members or a DM's
 // profile, which the browser's own scrolling swipes between, snapping to
 // each, and the page's history walks.
 
@@ -45,25 +45,25 @@ const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
 const LIST_TAB = 'DENS_LIST_TAB:';
 // The text channel last open in each den, which its Den tab opens, and the
-// DM, which its Direct messages tab opens (M11).
+// DM, which its Direct messages tab opens.
 const LAST_TEXT = 'DENS_LAST_TEXT:';
 const LAST_DM = 'DENS_LAST_DM:';
-// The groups folded in each den's channel list (M11).
+// The groups folded in each den's channel list.
 const FOLDED = 'DENS_FOLDED:';
 // The address's place for a channel holds this for the Direct messages tab
-// with no DM open, as when there are none (M11).
+// with no DM open, as when there are none.
 export const NO_DM = 'dms';
 // What the den's state dot says, as Home's rows name each state, where the
-// state has no error to say why (M13.2).
+// state has no error to say why.
 const STATE_WORDS = { connecting: 'Connecting', offline: 'Offline', revoked: 'Signed out', removed: 'Not a member' };
 // A typing notice shows this long unless another arrives; senders repeat
 // theirs while they type.
 const TYPING_SHOWN = 6000;
 // The notice of a device just signed in to this member's account shows a
-// minute (M22.6).
+// minute.
 const NEW_DEVICE_SHOWN = 60000;
 // Changes to these reload the den's state rather than being applied here,
-// the den's emoji among them (M15.2).
+// the den's emoji among them.
 const STRUCTURAL = new Set([
     'den.updated', 'member.joined', 'member.updated', 'member.left', 'channel.created', 'channel.updated', 'channel.deleted',
     'channels.reordered', 'group.created', 'group.updated', 'group.deleted', 'groups.reordered',
@@ -106,7 +106,7 @@ export function listed(view) {
     };
 }
 
-// denChannel is the text channel the Den tab opens (M11): the one last
+// denChannel is the text channel the Den tab opens: the one last
 // open in the den, unless it's gone or out of sight, else the list's first.
 export function denChannel(view, lastID) {
     const { ungrouped, groups } = listed(view);
@@ -114,17 +114,17 @@ export function denChannel(view, lastID) {
     return text.find((c) => c.id === lastID) || text[0] || null;
 }
 
-// recentDMs is a den's DMs and group DMs (M16.3) as their list shows
+// recentDMs is a den's DMs and group DMs as their list shows
 // them, the most recently active first: one closed since keeps out until
 // it has a new message, unless it's the one open. The member's notes keep
-// a place of their own, above them (M17.3).
+// a place of their own, above them.
 export function recentDMs(view, reads, open) {
     return view.channels
         .filter((c) => isPrivate(c) && !isNotes(c) && (!reads.get(c.id)?.closed || c.id === open))
         .sort((a, b) => compareIds(reads.get(b.id)?.last_message_id, reads.get(a.id)?.last_message_id) || compareIds(b.id, a.id));
 }
 
-// lastDM is the DM the Direct messages tab opens (M11): the one last open
+// lastDM is the DM the Direct messages tab opens: the one last open
 // in the den, unless it's gone or was closed since. Otherwise none, rather
 // than one the member didn't pick, whom they might write to unawares.
 export function lastDM(view, reads, lastID) {
@@ -227,7 +227,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
         ? null : { kind: 'profile', member: m, from }));
     const narrow = useNarrow();
     // In a wider window the member list starts open where it fits beside
-    // the channel, until the member closes it (M8.3); on the phone layout
+    // the channel, until the member closes it; on the phone layout
     // it's a pane of its own.
     const [membersOpen, setMembersOpen] = useState(() => {
         const kept = stored(MEMBERS_OPEN);
@@ -238,16 +238,16 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     const [visible, setVisible] = useState(document.visibilityState === 'visible');
     const [live, setLive] = useState(true);
     const { call: myCall } = useCall();
-    // The call's button floats in the screen's corner (M13.4), where the
+    // The call's button floats in the screen's corner, where the
     // phone layout's list keeps clear of it.
     const button = useCallButton() && narrow;
     // What the member muted here, which the bells show once they turned
-    // notifications on (M12.3).
+    // notifications on.
     const notifications = useNotifications();
     const muted = mutedIn(notifications, denID);
     const bells = notifying(notifications);
     // newDevice is a device that just signed in to this member's account,
-    // whose notice goes after a minute (M22.6); Devices marks it longer.
+    // whose notice goes after a minute; Devices marks it longer.
     const [newDevice, setNewDevice] = useState(null);
     useEffect(() => {
         if (!newDevice) return undefined;
@@ -256,7 +256,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     }, [newDevice]);
     // status is the den's status on this computer: its sign-ins waiting
     // for approval, and whether this device holds the DM seal. dens are
-    // every den's, which links to messages find theirs among (M11).
+    // every den's, which links to messages find theirs among.
     const [status, setStatus] = useState(null);
     const [dens, setDens] = useState([]);
     // tab is the list the sidebar shows: the den's channels, or DMs.
@@ -341,11 +341,11 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                 else if (e.t === 'message.created') setTyping((cur) => withTyper(cur, e.d.channel_id, e.d.author_id, 0));
                 else if (e.t === 'device.added') setNewDevice(e.d);
                 else if (e.t === 'dm.key') setView((v) => (v ? withKey(v, e.d) : v));
-                // What this member's Dens kept of identities here (M16.1).
+                // What this member's Dens kept of identities here.
                 else if (e.t === 'identities') setView((v) => (v ? { ...v, identities: e.d } : v));
-                // The member's groups, as their changes make them (M16.3).
+                // The member's groups, as their changes make them.
                 else if (e.t === 'groups') setView((v) => (v ? { ...v, group_dms: e.d } : v));
-                // The den's events (M17.4).
+                // The den's events.
                 else if (e.t.startsWith('event.')) setView((v) => (v ? { ...v, events: withEvent(v.events, e.t, e.d) } : v));
             }
             // The local service counts unread messages and mentions.
@@ -372,11 +372,11 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     // noDM is the Direct messages tab open with no DM, as the address says,
     // or the phone layout's list, at its own address, left it.
     const noDM = channelID === NO_DM || (!channelID && !!view && stored(LAST_CHANNEL + denID) === NO_DM);
-    // The den's events show in the channel's place (M17.4), from the Den
+    // The den's events show in the channel's place, from the Den
     // tab's list, while the den has them.
     const eventsOpen = channelID === EVENTS && !!view?.event_limits;
     // The den sends typing only where this member is looking, and the
-    // service notifies them of nothing there (M12.3); this page takes back
+    // service notifies them of nothing there; this page takes back
     // its own notification of what it shows, which the service may have
     // lost track of, as when the page's stream reconnected.
     const shown = visible && channel ? channel.id : '';
@@ -394,11 +394,11 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     // shownID is the channel shown, for the page's history: its ID, NO_DM,
     // EVENTS, or '' for none.
     const shownID = channel ? channel.id : noDM ? NO_DM : eventsOpen ? EVENTS : '';
-    // The member's notes (M17.3), which have nobody else to show beside
+    // The member's notes, which have nobody else to show beside
     // them.
     const notes = isNotes(channel);
     // The members' place: the member list, or beside a DM the other
-    // member's profile (M11); with no DM open, the notes or the events,
+    // member's profile; with no DM open, the notes or the events,
     // there's none.
     const hasSide = !noDM && !notes && !eventsOpen;
     // at is the pane on screen on the phone layout, '' in a wider window.
@@ -406,7 +406,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     const toPane = (next) => nav().den(denID, shownID, next);
     // A swipe that settles on another pane goes there in the history too.
     const row = usePaneRow(at, !!view, (near) => near !== at && toPane(near));
-    // The den's emoji, for every text the den's page shows (M15.2).
+    // The den's emoji, for every text the den's page shows.
     const emoji = useDenEmoji(denID, view?.emoji, view?.emoji_limits);
 
     if (error && !view) return <div class="p-6"><ErrorText message={error} /></div>;
@@ -420,7 +420,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     const staff = isStaff(view.role);
     const partner = (c) => members.get(c.members.find((id) => id !== view.me.id));
     const dm = channel?.kind === 'dm' ? partner(channel) : null;
-    // A group DM, as its changes make it (M16.3).
+    // A group DM, as its changes make it.
     const group = channel?.kind === 'group_dm' ? view.group_dms?.[channel.id] || { members: [], changes: [], syncing: true } : null;
     const title = (c) => groupTitle(view.group_dms?.[c.id], members, view.me.id);
     const gone = view.state === 'removed' || view.state === 'revoked';
@@ -452,11 +452,11 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
 
     // pickTab shows a tab's list, and opens what's in it, so a den channel
     // never sits open beside the DM list, nor a DM beside the channels:
-    // nobody writes in a channel thinking it's a DM (M11). Each opens what
+    // nobody writes in a channel thinking it's a DM. Each opens what
     // was last open in it, so going to the den to copy something and back
     // returns to the same DM; Direct messages opens none when there's no
     // DM to return to. The den's events, open in the Den tab, stay open as
-    // it's picked again (M17.4). The phone layout's list stays on screen,
+    // it's picked again. The phone layout's list stays on screen,
     // with what the tab opens behind it.
     function pickTab(next) {
         store(LIST_TAB + denID, next);
@@ -483,7 +483,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     }
 
     // openNotes opens the member's notes, which the den makes the first
-    // time (M17.3).
+    // time.
     async function openNotes() {
         let mine = ownNotes(view);
         if (!mine) {
@@ -495,7 +495,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     }
 
     // makeGroup makes a group DM of this member and those picked, and opens
-    // it (M16.3).
+    // it.
     async function makeGroup(picked, name) {
         const made = await api.post(`/api/dens/${denID}/group-dms`, { members: picked, name });
         await load();
@@ -504,7 +504,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     }
 
     // closeDM closes a DM; closing the one open opens no other in its place,
-    // as the tab wouldn't (M11).
+    // as the tab wouldn't.
     async function closeDM(c) {
         await api.post(`/api/dens/${denID}/dms/${c.id}/close`);
         if (c.id !== channel?.id) return;
@@ -523,8 +523,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
         api.post(`/api/dens/${denID}/notifications`, { channel, muted: on }).catch(() => {});
     }
 
-    // A link to a message opens it here, or in the den it points into (M11),
-    // and a link to an event opens it in its den's events (M17.5).
+    // A link to a message opens it here, or in the den it points into,
+    // and a link to an event opens it in its den's events.
     const links = {
         denID, view, dens,
         open: (den, channelID, messageID) => {
@@ -538,7 +538,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     };
     // On the phone layout the call shows across the top of the channel's
     // pane, under its header, with the shares the member watches docked
-    // under it (M13.4); a wider window has them beside the channel.
+    // under it; a wider window has them beside the channel.
     const callTop = narrow && (
         <>
             <CallBar denID={denID} />
@@ -723,7 +723,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                         {at && at !== 'chan' && <div class="pointer-events-none absolute inset-0 z-30 bg-black/40"></div>}
                     </section>
                     {/* Beside a DM, the member list's place shows the other member's
-                        profile (M11); with no DM open, it shows nothing. */}
+                        profile; with no DM open, it shows nothing. */}
                     {hasSide && (at || membersOpen) && (
                         <aside data-pane="side" inert={!!at && at !== 'side'} class="flex w-[85%] shrink-0 snap-end flex-col overflow-y-auto bg-base-200 md:w-60">
                             <div class="flex items-center justify-between border-b border-base-300 p-3">
@@ -782,7 +782,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                 {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} nameStyles={!!view.name_styles}
                     onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
-                {/* Group DMs (M16.3): making one, from the DM list or a DM's
+                {/* Group DMs: making one, from the DM list or a DM's
                     profile, which leaves the DM as it is; adding to one; and
                     naming it. */}
                 {dialog?.kind === 'new-group' && (
@@ -813,7 +813,7 @@ function withKey(view, key) {
 
 // ListTabs switches the sidebar between the den's channels and DMs, and
 // shows whether the other has anything waiting: a channel or DM unread,
-// which nothing in the member's own notes is (M17.3).
+// which nothing in the member's own notes is.
 function ListTabs({ tab, onTab, view, reads, open, add }) {
     const waits = (c) => unread(reads.get(c.id));
     const waiting = (dms) => view.channels.some((c) => isPrivate(c) === dms && !isNotes(c) && c.id !== open && hasMessages(c) && waits(c) && !reads.get(c.id)?.closed);
@@ -1063,9 +1063,9 @@ function applyReads(view, reads) {
 }
 
 // muted holds the channels the member muted, or is null while no kind of
-// notification is on (M12.3).
-// events, while the den has them, puts its events' row at the list's top
-// (M17.4), open while their pane shows, which events.onOpen opens.
+// notification is on.
+// events, while the den has them, puts its events' row at the list's top,
+// open while their pane shows, which events.onOpen opens.
 function ChannelList({ denID, view, reads, members, open, staff, gone, muted, onOpen, onDialog, events }) {
     const { ungrouped, groups } = listed(view);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
@@ -1078,13 +1078,13 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
     }
     const { call, speaking, sounding, volumes, watched, share } = useCall();
     const watching = new Set(watched.map((w) => w.member));
-    // Staff reach each channel's and group's menu from a ⋯ beside it
-    // (M4.2), which shows on hover or focus, and stays while its menu is
+    // Staff reach each channel's and group's menu from a ⋯ beside it,
+    // which shows on hover or focus, and stays while its menu is
     // open. It shows once its row has the focus, since Tab passes over
-    // what's hidden (M11). With a mouse a right click opens the menu at
+    // what's hidden. With a mouse a right click opens the menu at
     // the pointer, as one on the list's empty space opens a new channel or
     // group. A touch screen has no ⋯ there: a long press on the row opens
-    // its menu, as one on a message opens its actions (M13.4).
+    // its menu, as one on a message opens its actions.
     const settings = 'btn btn-ghost btn-xs btn-square group-hover:visible group-focus-within:visible pointer-coarse:hidden touch-room';
     const touch = useCoarse();
     // menu is the menu open: its row's key, channel:ID, group:ID or list,
@@ -1174,7 +1174,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         },
     } : {};
     // With a mouse, staff drag channels and groups into order, and members
-    // from one call onto another voice channel (M17.2); touch screens and
+    // from one call onto another voice channel; touch screens and
     // keyboards keep the settings' Move up and Move down, and Move to in
     // the member's menu. held is what this list's drag carries, which only
     // a drag it started does, and drop where it would land.
@@ -1288,7 +1288,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         const voice = c.kind === 'voice';
         const inCall = voice && call?.den === denID && call.channel === c.id;
         // The page's call shows how it stands on its channel's speaker:
-        // green once connected, and yellow until then (M14.3).
+        // green once connected, and yellow until then.
         const state = inCall ? callState(call.status) : '';
         const label = { den: view.name, channel: c.name };
         const managed = staff && !gone;
@@ -1297,7 +1297,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         return (
             <li key={c.id}>
                 {/* The row's button reaches across it, under its marks, whose
-                    tips say on a tap what they mean (M13.2). */}
+                    tips say on a tap what they mean. */}
                 <div class={`${ROW} ${managed ? 'pr-8 pointer-coarse:pr-1' : ''} ${rowShade(c.id === open || inCall)} ${dropMark(c.id)}`}
                     data-channel-row={c.id} {...presses(`channel:${c.id}`)} {...rowDrag(c)}>
                     <button
@@ -1317,7 +1317,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
-                    {/* The call's length, to everyone who sees the channel (M21.2). */}
+                    {/* The call's length, to everyone who sees the channel. */}
                     {voice && <CallLength call={calls.get(c.id)} />}
                     {managed && dots(`channel:${c.id}`, `Options for ${c.name}`, 'Channel options', 'absolute right-1 top-1/2 -translate-y-1/2')}
                 </div>
@@ -1344,7 +1344,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
             <ul class={`flex flex-col rounded ${dragging === 'channel' ? 'min-h-4' : ''} ${dropMark('ungrouped')}`} data-ungrouped {...looseDrag}>{ungrouped.map(item)}</ul>
             {groups.map(({ group: g, channels }) => {
                 // A folded group keeps what's open or busy in sight, and its
-                // row says what waits in the rest (M11).
+                // row says what waits in the rest.
                 const isFolded = folded.has(g.id);
                 const shown = isFolded ? foldedShows(channels, open, calls) : channels;
                 const marks = isFolded ? hiddenMarks(channels.filter((c) => !shown.includes(c)), reads) : null;
@@ -1376,9 +1376,9 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
 // waiting for this member to compare codes says so.
 // dms are as recentDMs lists them.
 // muted holds the DMs the member muted, or is null while no kind of
-// notification is on (M12.3).
+// notification is on.
 // notes, while the den has notes for this Dens, puts the member's at the
-// list's top (M17.3), open while they show, which onNotes opens.
+// list's top, open while they show, which onNotes opens.
 function DMList({ dms, notes, reads, open, partner, online, identities, muted, title, onOpen, onClose, onNotes }) {
     const notesRow = notes && <NotesRow open={notes.open} onOpen={onNotes} />;
     if (dms.length === 0) {
@@ -1443,7 +1443,7 @@ function DMList({ dms, notes, reads, open, partner, online, identities, muted, t
     );
 }
 
-// GroupRow is a group DM in the DM list (M16.3): its name, or its other
+// GroupRow is a group DM in the DM list: its name, or its other
 // members', and what waits in it.
 function GroupRow({ c, r, open, title, muted, onOpen, onClose }) {
     const isUnread = unread(r) && c.id !== open;
@@ -1482,7 +1482,7 @@ function PeopleIcon() {
 // ChannelHeader names the channel or the DM's other member. A channel's
 // description shows its first line, which opens the rest when there is
 // more than fits. Its bell mutes the channel's notifications, once the
-// member turned some on (M12.3): muted is null until then.
+// member turned some on: muted is null until then.
 export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
@@ -1506,7 +1506,7 @@ export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere,
                 {dm !== null && channel.kind === 'dm' ? (
                     <>
                         {/* The member and their verified mark are one row, which
-                            the mark shows on hover over (M16.4). */}
+                            the mark shows on hover over. */}
                         <HoverRow as="span" class="flex min-w-0 items-center gap-1">
                             <button type="button" class="flex min-w-0 items-center gap-2 rounded text-left hover:bg-base-200" onClick={(e) => dm && onProfile(dm, e.currentTarget)}>
                                 <Avatar member={dm} size="sm" online={dm && !dm.left_at ? online : undefined} />
@@ -1516,7 +1516,7 @@ export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere,
                             {verified && <VerifiedMark id={`header-verified-${channel.id}`} name={dm.display_name} />}
                         </HoverRow>
                         {/* The lock says the DM is end-to-end encrypted, and
-                            opens comparing codes (M16.1). */}
+                            opens comparing codes. */}
                         <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onCompare}
                             title="End-to-end encrypted: only the two of you can read it. Compare codes to check nobody sits between you."
                             aria-label="End-to-end encrypted: compare codes">
@@ -1531,7 +1531,7 @@ export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere,
                             <NotesIcon />
                             <span class="truncate font-semibold">Notes</span>
                         </span>
-                        {/* Only the member's devices open them (M17.3). */}
+                        {/* Only the member's devices open them. */}
                         <Tip id={`header-notes-${channel.id}`} label="Encrypted" trigger={
                             <span class="flex shrink-0 items-center gap-1 text-xs text-base-content/60"><LockIcon size="h-3 w-3" />Encrypted</span>
                         }>
@@ -1545,7 +1545,7 @@ export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere,
                             <span class="truncate font-semibold" data-group-header>{grouped}</span>
                         </button>
                         {/* The lock says the group is end-to-end encrypted, and
-                            opens its members, where each compares codes (M16.3). */}
+                            opens its members, where each compares codes. */}
                         <button type="button" class="btn btn-ghost btn-xs shrink-0 gap-1 font-normal text-base-content/60" onClick={onMembers}
                             title="End-to-end encrypted: only the group's members can read it. Compare codes with each to check nobody sits between you."
                             aria-label="End-to-end encrypted: the group's members">

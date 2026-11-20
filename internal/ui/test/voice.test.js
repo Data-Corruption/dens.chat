@@ -35,7 +35,7 @@ test("a call that never connected names the den's ports, when the page has them"
 
 test("a microphone that won't open says why", () => {
     assert.match(micProblem({ name: 'NotAllowedError' }, false), /Allow it for this page in your browser's site settings/);
-    // In the Android app, the app holds the page's microphone (M13.3).
+    // In the Android app, the app holds the page's microphone.
     assert.match(micProblem({ name: 'NotAllowedError' }, true), /Allow it for Dens in Android's settings, under Apps/);
     assert.match(micProblem({ name: 'NotFoundError' }), /No microphone/);
     assert.match(micProblem({ name: 'NotReadableError' }), /in use/);
@@ -185,7 +185,7 @@ test('the keys and the helper come from the service, kept to what they can be', 
     assert.deepEqual(desk.names, { ptt: 'Press F8' });
     // Without a helper the desktop says nothing, but the member's use of it stays.
     assert.deepEqual(readKeyStatus({ helper: false, confirms: true, names: { ptt: 'F8' }, desktop: true, notifies: true }), { ...none, desktop: true });
-    // A helper says whether it shows notifications (M12.3).
+    // A helper says whether it shows notifications.
     assert.equal(readKeyStatus({ helper: true, notifies: true }).notifies, true);
 });
 
@@ -238,7 +238,7 @@ test("a call's members show by name, whatever order they joined in", () => {
     assert.deepEqual(joined.map((m) => m.id), ['4', '2', '3', '99', '10'], 'the den\'s order is left as it was');
 });
 
-// The call's button's role (M13.4) sets how the member sends where the
+// The call's button's role sets how the member sends where the
 // button is, and the role and the way of sending never disagree.
 test("the call's button's role sets how the member sends", () => {
     const read = (kept) => readVoice(JSON.stringify(kept));
@@ -294,7 +294,7 @@ test("each role's press and its letting go", () => {
     assert.equal(talking(ptt, pressed('ptt', muted).held, true), false, 'never while muted');
 });
 
-// Push to talk lights its ring for everyone in the call (M11): the den
+// Push to talk lights its ring for everyone in the call: the den
 // tells the others, and this page's member rings at once here.
 test('push to talk rings while held, through the den for the others, and never for a muted member', () => {
     const ptt = readVoice(JSON.stringify({ mode: 'ptt' }));
@@ -315,7 +315,7 @@ test('push to talk rings while held, through the den for the others, and never f
     assert.equal(rings({ id: '2' }, '1', null), false, 'outside the call, nobody rings');
 });
 
-// The page's notes for the log sum its connection's statistics up (M11).
+// The page's notes for the log sum its connection's statistics up.
 test("a call's statistics sum up for the log, as Chromium and Firefox give them", () => {
     const report = (stats) => new Map(stats.map((x) => [x.id, x]));
     const chromium = report([
@@ -352,7 +352,7 @@ test("a call's statistics sum up for the log, as Chromium and Firefox give them"
 });
 
 // The notes say what a call sent a second since the last, and how far its
-// voice processor's clock fell behind the page's (M12).
+// voice processor's clock fell behind the page's.
 test('a call sends at the rate its bytes went since the last summary', () => {
     assert.equal(sendRate({ bytes: 1000, at: 1000 }, 51000, 11000), 40, '50 kB in 10 s is 40 kbit/s');
     assert.equal(sendRate(null, 51000, 11000), 0, 'without a summary before');
@@ -368,7 +368,7 @@ test("a voice processor falls behind by the time its context didn't render", () 
 });
 
 // Chromium pauses a frozen page's media elements, and the page plays them
-// again as it thaws (M12).
+// again as it thaws.
 test("the call's elements play again, those stopped with a stream", () => {
     const played = [];
     const el = (name, paused, stream = {}) => ({ name, paused, srcObject: stream, play: () => (played.push(name), Promise.resolve()) });
@@ -378,7 +378,7 @@ test("the call's elements play again, those stopped with a stream", () => {
     assert.doesNotThrow(() => playAgain([refused]), 'a browser that refuses waits for the next');
 });
 
-// The call's volume turns everyone down at once (M12), and the browser
+// The call's volume turns everyone down at once, and the browser
 // keeps it.
 test("a call plays at full volume unless chosen, and the kept volume makes sense or is ignored", () => {
     assert.equal(readCallVolume(''), 1, 'nothing kept');
@@ -390,7 +390,7 @@ test("a call plays at full volume unless chosen, and the kept volume makes sense
 });
 
 // A member playing a sound is often muted, and their ring lights all the
-// same, by the den's word (M14.3).
+// same, by the den's word.
 test("a muted member's ring lights while their sound plays", () => {
     const quiet = new Set();
     assert.equal(rings({ id: '2', muted: true }, '1', quiet, '2'), true);

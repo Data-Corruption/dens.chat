@@ -255,7 +255,7 @@ func animatedGIF(t *testing.T, w, h, frames int) []byte {
 
 // An animated GIF or WebP becomes a picture as a GIF this service makes, of
 // the part framed, at its size within a picture's, and the den and the
-// other members see it as animated (M15.1).
+// other members see it as animated.
 func TestAnimatedPicture(t *testing.T) {
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()

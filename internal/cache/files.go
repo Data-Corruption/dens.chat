@@ -43,7 +43,7 @@ type Source interface {
 }
 
 // Owner is what a cached file is on: a message, in its channel, a member's
-// picture, or one of the den's named files, as an emoji (M15.2), by its ID.
+// picture, or one of the den's named files, as an emoji, by its ID.
 // It says which files go when the message changes or goes, the channel
 // goes, the picture is replaced or the emoji is deleted.
 type Owner struct {
@@ -792,7 +792,7 @@ func (s *Store) Pictures(denID []byte) (map[int64]int64, error) {
 }
 
 // Whole reports whether the cache holds every chunk of a file of a den, or
-// of its preview, as a file fetched ahead of its use is held (M15.2).
+// of its preview, as a file fetched ahead of its use is held.
 func (s *Store) Whole(denID []byte, id int64, thumb bool) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -820,7 +820,7 @@ func wholeLen(size int64) int64 {
 }
 
 // NamedFiles returns the files of a den's named files the cache holds, as
-// its emoji's images (M15.2): each file's named file.
+// its emoji's images: each file's named file.
 func (s *Store) NamedFiles(denID []byte) (map[int64]int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

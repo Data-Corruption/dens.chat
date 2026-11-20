@@ -1,4 +1,4 @@
-// Emoji on the page (M15.2): the picker beside the composer, which opens
+// Emoji on the page: the picker beside the composer, which opens
 // above it, and on the phone layout as a sheet from the screen's foot, as
 // the page's menus are there; the list completing a name or a mention
 // above the box; and Manage's Emoji section, where staff add the den's
@@ -44,7 +44,7 @@ function nameOfItem(item) {
 // emoji picked, which onPick's caller puts in. As a sheet, its search and
 // its buttons stay at the sheet's top while the emoji scroll. It opens
 // above the composer's box, or where place, a fixed place in the window,
-// says, beside a message to react to it (M15.3); label names it.
+// says, beside a message to react to it; label names it.
 export function EmojiPicker({ emoji, onPick, onClose, sheet, place, label = 'Emoji' }) {
     // The list, where the page fetched it already, shows from the start.
     const [list, setList] = useState(emojiList);

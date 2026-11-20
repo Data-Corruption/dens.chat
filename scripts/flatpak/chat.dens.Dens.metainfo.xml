@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Dens's AppStream data, which software centers list it by (M9.3).
+<!-- Dens's AppStream data, which software centers list it by.
      scripts/flatpak.sh fills in the release. -->
 <component type="desktop-application">
   <id>chat.dens.Dens</id>

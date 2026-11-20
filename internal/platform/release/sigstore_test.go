@@ -186,7 +186,7 @@ func TestVerifyRefuses(t *testing.T) {
 
 // TestReleaseChecksOutForTheApp checks a new release's signed checksums as
 // the Android app's updater will, for the release pipeline, once cosign has
-// signed them and before anything is published (M12.4). It runs only when
+// signed them and before anything is published. It runs only when
 // DENS_CHECK_RELEASE names the release's directory; DENS_CHECK_IDENTITY
 // and DENS_CHECK_ISSUER are who signed it.
 func TestReleaseChecksOutForTheApp(t *testing.T) {

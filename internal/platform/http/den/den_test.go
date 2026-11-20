@@ -33,7 +33,7 @@ import (
 )
 
 // The test binary is its own media worker, as ffmpeg.TestWorkerEnv says:
-// the soundboard's sounds are audio, which the den strips (M14.3).
+// the soundboard's sounds are audio, which the den strips.
 func TestMain(m *testing.M) {
 	if os.Getenv(ffmpeg.TestWorkerEnv) == "1" {
 		os.Exit(ffmpeg.Work(os.Stdin, os.Stdout))
@@ -189,7 +189,7 @@ func TestVersionAndCreation(t *testing.T) {
 	wantError(t, f.post("/api/invites", denproto.InviteCreateRequest{}, nil), http.StatusUnauthorized, denproto.CodeUnauthorized)
 }
 
-// The den's address answers a browser with what it is (M11), under the
+// The den's address answers a browser with what it is, under the
 // den's security headers, and a path that's no route still answers 404.
 func TestRootSaysWhatItIs(t *testing.T) {
 	f := newFixture(t)
@@ -212,7 +212,7 @@ func TestRootSaysWhatItIs(t *testing.T) {
 	wantError(t, resp, http.StatusNotFound, denproto.CodeNotFound)
 }
 
-// A member's own sounds stay on their install (M14.2): the client's router
+// A member's own sounds stay on their install: the client's router
 // serves them, and the den's, which Caddy puts on the internet, knows none
 // of their routes, for an owner's own sounds either.
 func TestOwnSoundsAreNotTheDens(t *testing.T) {
@@ -332,7 +332,7 @@ func (f *fixture) logged(want string) {
 }
 
 // TestSocketClosesAreLogged checks that the den logs why each member's
-// socket closed, and how long it was open (M11): as its client closed it,
+// socket closed, and how long it was open: as its client closed it,
 // with a code or without, and as the den closed it, with its own.
 func TestSocketClosesAreLogged(t *testing.T) {
 	f := newFixture(t)
@@ -578,7 +578,7 @@ func TestSigningOutClosesThatDevicesSockets(t *testing.T) {
 				break
 			}
 			// The desktop hears that the laptop is gone, and stays connected,
-			// once it heard that the laptop connected (M22.6).
+			// once it heard that the laptop connected.
 			events := read(t, desktop)
 			if len(events) == 1 && events[0].T == denproto.EventDeviceConnected {
 				events = read(t, desktop)

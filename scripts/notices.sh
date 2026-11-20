@@ -2,7 +2,7 @@
 
 # Writes the third-party notices the binary carries, internal/build/notices.txt:
 # the license of everything a release binary includes besides Dens's own
-# code, and of what the Android app's APK carries beside it (M12). dens
+# code, and of what the Android app's APK carries beside it. dens
 # licenses prints it, and the page links to it.
 #
 # The Go modules are those the binary links on every platform it's released

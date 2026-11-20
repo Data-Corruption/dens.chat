@@ -34,7 +34,7 @@ func (h *handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 // setBadgeHidden hides a badge the member earned from their profile card,
-// or shows it again (M17.6).
+// or shows it again.
 func (h *handler) setBadgeHidden(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return
@@ -92,7 +92,7 @@ func (h *handler) removeMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// disconnectMember ends a member's call at staff's word (M3).
+// disconnectMember ends a member's call at staff's word.
 func (h *handler) disconnectMember(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return
@@ -105,7 +105,7 @@ func (h *handler) disconnectMember(w http.ResponseWriter, r *http.Request) {
 }
 
 // moveMember moves a member's call to another voice channel at staff's
-// word (M17.2).
+// word.
 func (h *handler) moveMember(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return
@@ -121,7 +121,7 @@ func (h *handler) moveMember(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// voiceMute mutes a member in calls, or lifts it, at staff's word (M3).
+// voiceMute mutes a member in calls, or lifts it, at staff's word.
 func (h *handler) voiceMute(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return
@@ -168,7 +168,7 @@ func (h *handler) closeDM(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setExpiry sets how long a DM's or a group's messages stay (M16.4).
+// setExpiry sets how long a DM's or a group's messages stay.
 func (h *handler) setExpiry(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

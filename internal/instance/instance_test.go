@@ -52,7 +52,7 @@ func TestValidateRejectsBadConfigs(t *testing.T) {
 		}
 	}
 	// A test release's host may be plain http on loopback, as the Android
-	// e2e's is (M12).
+	// e2e's is.
 	for _, url := range []string{"http://127.0.0.1:18480/", "http://localhost:18480/", "http://[::1]:18480/"} {
 		c := validConfig()
 		c.ReleaseURL = url

@@ -40,7 +40,7 @@ import (
 //	DENS_PROBE_NETWORK  udp or tcp, the one path the call may take: tcp as on
 //	                    a network that blocks UDP
 //	DENS_PROBE_READY    a file to create once the member is heard, which the
-//	                    harness waits for before it acts (M3)
+//	                    harness waits for before it acts
 //	DENS_PROBE_THEN     after that: "ride", the den's connection drops, as
 //	                    when its proxy restarts, and the call is taken back
 //	                    and heard again without a new call; "restart", the
@@ -140,10 +140,10 @@ func TestVoiceProbe(t *testing.T) {
 	version, firstAfterResume := 0, 0
 	answer := ""
 	away, offline := false, false
-	// keys are the call's keys as the service last gave them (M16.2).
+	// keys are the call's keys as the service last gave them.
 	var keys *denclient.CallKeys
 	// relayed takes the presses of another of the member's installs that
-	// reach the page (M20.1).
+	// reach the page.
 	relayed := make(chan string, 16)
 	read := func(ws *websocket.Conn) {
 		for {

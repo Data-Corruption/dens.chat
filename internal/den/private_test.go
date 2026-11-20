@@ -65,7 +65,7 @@ func (f *fixture) openDM(k testKey, m denproto.Message) string {
 }
 
 // keyFor returns a DM's key, first making it from a, sealed to both
-// members' identities, as a's client does (M16.1).
+// members' identities, as a's client does.
 func (f *fixture) keyFor(a, b, channel int64) testKey {
 	f.t.Helper()
 	if k, ok := f.keys[denproto.FormatID(channel)]; ok {
@@ -307,7 +307,7 @@ func (f *fixture) signIn(approver *Session, username, password string, dev devic
 }
 
 // A DM's key is sealed to its members' identities and signed by its
-// maker's (M16.1). The den takes one only when it names the identities
+// maker's. The den takes one only when it names the identities
 // its members publish now, checks against its maker's, and has a copy for
 // each of the two; a second made at once is refused, so the slower takes
 // the live one; one made after an identity changed replaces the live key.

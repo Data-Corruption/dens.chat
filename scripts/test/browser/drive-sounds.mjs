@@ -245,7 +245,7 @@ try {
     await expect(B, b, ['left'], 'with Joined off, alice joining plays nothing');
 
     await soundsTab();
-    // Reset is in the row's ⋯ (M22.3).
+    // Reset is in the row's ⋯.
     await B.b.eval(`${row('joined')}.querySelector('button[aria-label="More for Joined"]').click(), true`);
     await waitFor(() => B.b.eval(`!!document.querySelector('[data-menu-item=reset]')`), "Joined's Reset");
     await B.b.eval(`document.querySelector('[data-menu-item=reset]').click(), true`);
@@ -304,7 +304,7 @@ try {
     lib('send', 'alice', dm, 'while muted');
     await expect(B, b, [], 'the DM muted, it plays nothing');
     // The muted bell's tip stays within the DM list, which scrolls, and
-    // would cut off what ran past its edge (M14.3).
+    // would cut off what ran past its edge.
     await B.b.go(`http://localhost:18486/den/${den}/dms`);
     const bell = `document.querySelector('[data-pane=list] button[aria-label=Muted]')`;
     await waitFor(() => B.b.eval(`!!${bell}`), "the DM's muted bell", 10000);

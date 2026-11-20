@@ -1,4 +1,4 @@
-// A sealed call's frames (M16.2), in the worker the page runs them
+// A sealed call's frames, in the worker the page runs them
 // through: RFC 9605's own cases, both ways, for the header, the key and
 // salt a key ID derives, and a frame under AES_128_GCM_SHA256_128; then
 // the worker's rules: a track's key, a counter seen again, a key it lacks,
@@ -164,7 +164,7 @@ test("a frame in the clear, a key the page lacks, the soundboard's, and a page w
     assert.equal(await bob.openFrame({ member: '', track: VOICE }, clear), clear);
     assert.equal(await bob.openFrame(undefined, theirs), null);
     // A frame in the clear on the share's sound, as Chromium sent one
-    // around its seal (M18), counts there.
+    // around its seal, counts there.
     assert.equal(await bob.openFrame({ member: '1', track: SOUND }, Uint8Array.from([0xfc, 0xff, 0xfe, 0x01, 0x02])), null);
     assert.deepEqual(counted(bob), { unnamed: 1, voice: { dropped: { clear: 2, lacking: 3 } }, sound: { dropped: { clear: 1 } } });
     // A page without a key of its own yet sends nothing, but its sender's
@@ -187,7 +187,7 @@ test('an empty frame, as DTX leaves between its packets of silence, goes on empt
     const { alice, bob } = pair({ t: 0 });
     const empty = new Uint8Array(0);
     assert.equal(await alice.sealFrame(VOICE, empty), empty);
-    // The worker saw it, which says the sender's transform runs (M18).
+    // The worker saw it, which says the sender's transform runs.
     assert.deepEqual(counted(alice), { voice: { seen: 1 } });
     // It took no counter: the next frame is the key's first.
     assert.equal(decodeHeader(await alice.sealFrame(VOICE, text('a'))).ctr, 0n);

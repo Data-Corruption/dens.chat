@@ -38,14 +38,14 @@ func (rt *router) mountFiles(r chi.Router) {
 // handleUpload passes a file from the page to a den. The page sends the
 // file's bytes as they are; images lose their metadata on the way. The
 // page names the channel the file is for, since a DM's goes sealed, and
-// the file it replaces, if any (M5). A file for a message says which
+// the file it replaces, if any. A file for a message says which
 // version of a photo or video it sends, smaller or full, and it then goes
-// with both kept for the page to compare (M5), and names the key the page
-// follows its progress by while a video's copy is made (M5.4). An animated
+// with both kept for the page to compare, and names the key the page
+// follows its progress by while a video's copy is made. An animated
 // GIF or WebP for a profile names its picture, and comes as it is, with
 // the part of it the member framed, which this service makes into a GIF of
-// the picture's size (M15.1); one for the den's emoji names "emoji", and
-// becomes a GIF of an emoji's size (M15.2).
+// the picture's size; one for the den's emoji names "emoji", and
+// becomes a GIF of an emoji's size.
 func (rt *router) handleUpload(w http.ResponseWriter, r *http.Request) {
 	name, err := url.PathUnescape(r.Header.Get(denproto.HeaderFilename))
 	if err != nil {
@@ -144,7 +144,7 @@ func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 }
 
 // handleVersion serves one of the two versions kept of a photo or video
-// waiting to be sent, smaller or full, for the page to compare them (M5).
+// waiting to be sent, smaller or full, for the page to compare them.
 // Each is a JPEG, a PNG or an MP4 this service made or stripped, served as
 // any file is, with byte ranges for a player.
 func (rt *router) handleVersion(w http.ResponseWriter, r *http.Request) {
@@ -158,7 +158,7 @@ func (rt *router) handleVersion(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSwitchVersion switches a photo or video waiting to be sent to its
-// other version, and answers with the upload that takes its place (M5).
+// other version, and answers with the upload that takes its place.
 func (rt *router) handleSwitchVersion(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		To string `json:"to"`
@@ -176,8 +176,8 @@ func (rt *router) handleSwitchVersion(w http.ResponseWriter, r *http.Request) {
 
 // handleFollowUpload serves the socket of the page following an upload by
 // its key: how far the upload has come, making a video's smaller copy and
-// sending it to the den (M5.4), and in Chrome and Edge, the copy the page
-// makes itself (M5.5).
+// sending it to the den, and in Chrome and Edge, the copy the page
+// makes itself.
 func (rt *router) handleFollowUpload(w http.ResponseWriter, r *http.Request) {
 	// Accept checks the Origin against the Host, which the Host guard has
 	// already pinned to this listener, so other sites can't open it.
@@ -214,7 +214,7 @@ func (s pageSocket) Write(ctx context.Context, text bool, data []byte) error {
 }
 
 // handleSendFullSize has an upload making a video's copy send the video
-// full size instead, which the upload then answers with (M5.4).
+// full size instead, which the upload then answers with.
 func (rt *router) handleSendFullSize(w http.ResponseWriter, r *http.Request) {
 	if err := rt.a.Dens.SendFullSize(chi.URLParam(r, "den"), chi.URLParam(r, "key")); err != nil {
 		rt.denError(w, r, err)
@@ -265,7 +265,7 @@ func (rt *router) handleStorage(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleOwnFiles lists a page of this member's files on a den, largest
-// first (M5).
+// first.
 func (rt *router) handleOwnFiles(w http.ResponseWriter, r *http.Request) {
 	page, err := rt.a.Dens.Files(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("after"))
 	if err != nil {

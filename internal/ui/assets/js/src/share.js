@@ -1,4 +1,4 @@
-// Screen share's rules (M4.2), apart from the page's call so the tests can
+// Screen share's rules, apart from the page's call so the tests can
 // check them: what the page asks the browser to capture and send, within
 // the den's limits and the member's choices; which sections of the den's
 // offers carry the page's screen and its sound; who shares and watches in
@@ -201,17 +201,17 @@ export function refusalText(what, reason, limits) {
     return "The den couldn't show you that share.";
 }
 
-// SOUND_BITRATE is the bitrate of a den's soundboard's sounds (M14.3).
+// SOUND_BITRATE is the bitrate of a den's soundboard's sounds.
 export const SOUND_BITRATE = 64000;
 
-// SEALING is what sealing a voice costs it (M16.2): SFrame's header and
+// SEALING is what sealing a voice costs it: SFrame's header and
 // tag, about 22 bytes on each frame, 50 a second.
 export const SEALING = 9000;
 
 // shareCost is what a den's limits cost its upload at most, in bits a
 // second: video, every share at its bitrate to every viewer it may have;
 // voice, a full call at bitrate while two members talk, each sealed; and
-// with a soundboard (M14.3), a sound to everyone in that call; with about
+// with a soundboard, a sound to everyone in that call; with about
 // a fifth more for the packets' headers.
 export function shareCost(limits, voiceBitrate, soundboard = false) {
     const video = limits.shares * limits.share_viewers * limits.share_bitrate * 1.05;
@@ -228,14 +228,14 @@ export function mbps(bits) {
 
 // uploadNeeded is the upload a den's calls take at full load, video and
 // voice together, and from M14.3 the soundboard's sounds, which the
-// owner's settings show as the limits change (M8.3).
+// owner's settings show as the limits change.
 export function uploadNeeded(limits, voiceBitrate, soundboard = false) {
     const cost = shareCost(limits, voiceBitrate, soundboard);
     return cost.video + cost.voice + cost.sounds;
 }
 
 // CALL_PRESETS are the call limits an owner chooses from before setting
-// each one (M8.3): a new den's, for a small group, and room for a large
+// each one: a new den's, for a small group, and room for a large
 // one, which takes a fast upload.
 export const CALL_PRESETS = {
     small: { members: 15, callers: 30, shares: 1, share_viewers: 8, share_bitrate: 2_000_000, share_height: 1080, share_fps: 30 },
@@ -250,7 +250,7 @@ export function presetOf(limits) {
     return 'custom';
 }
 
-// shareAudio says what Share audio does in a browser on a system (M8.3):
+// shareAudio says what Share audio does in a browser on a system:
 // a Chromium-based browser shares a tab's sound, and on Windows the whole
 // computer's, without the call's voices; Firefox shares none.
 export function shareAudio(browser, system) {

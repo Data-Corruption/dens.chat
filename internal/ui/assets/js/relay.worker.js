@@ -1,12 +1,12 @@
 // Holds the socket of a page's listening to another of the member's
-// devices' sound (M20.2), off the page's thread: the service sends the
+// devices' sound, off the page's thread: the service sends the
 // packets several to a message, each under its length, 4 bytes
 // little-endian, and the worker hands each to the player's worklet, on
 // the port the page gives it. As the listening ends the service says why,
 // which the worker tells the page, as it does the socket closing.
 //
 // The page posts {port}, then {url} to start, {port} again as the player
-// moves to another context (M20.3), and {stop} to close the socket.
+// moves to another context, and {stop} to close the socket.
 
 // split cuts a message into its packets.
 export function split(buf) {

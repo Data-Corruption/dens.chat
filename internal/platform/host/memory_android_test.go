@@ -7,7 +7,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// Android lets an app lock 64 KiB (M12): past it, keys go in ordinary
+// Android lets an app lock 64 KiB: past it, keys go in ordinary
 // memory rather than failing to open the vault. The test holds itself to
 // an app's limit, which a process adb starts doesn't have.
 func TestAllocLockedGoesPastAndroidsLimit(t *testing.T) {

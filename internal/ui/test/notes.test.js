@@ -1,4 +1,4 @@
-// Notes to self (M17.3): what they are, their row at the top of the DM
+// Notes to self: what they are, their row at the top of the DM
 // list, what stands in their composer's place, and how a file in them and
 // a link to one of them read.
 

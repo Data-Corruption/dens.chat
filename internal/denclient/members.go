@@ -18,8 +18,8 @@ func gone(c *conn) bool {
 }
 
 // Profile returns a member of a den with their bio, and the badges they
-// earned whose events this member sees (M17.5): those they hid on this
-// member's own profile alone, marked (M17.6).
+// earned whose events this member sees: those they hid on this
+// member's own profile alone, marked.
 func (m *Manager) Profile(ctx context.Context, denID, memberID string) (denproto.MemberProfile, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -60,7 +60,7 @@ func cleanBadges(badges []denproto.MemberBadge, own bool) bool {
 }
 
 // SetBadgeHidden hides a badge this member earned from their profile card
-// in a den, or shows it again (M17.6).
+// in a den, or shows it again.
 func (m *Manager) SetBadgeHidden(ctx context.Context, denID, eventID string, hidden bool) error {
 	c, err := m.find(denID)
 	if err != nil {
@@ -144,7 +144,7 @@ func (m *Manager) RemoveMember(ctx context.Context, denID, memberID string, req 
 	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/remove", req, nil)
 }
 
-// DisconnectFromCall ends a member's call, as staff (M3).
+// DisconnectFromCall ends a member's call, as staff.
 func (m *Manager) DisconnectFromCall(ctx context.Context, denID, memberID string) error {
 	c, err := m.find(denID)
 	if err != nil {
@@ -156,8 +156,8 @@ func (m *Manager) DisconnectFromCall(ctx context.Context, denID, memberID string
 	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/disconnect", struct{}{}, nil)
 }
 
-// MoveMember moves a member's call to another voice channel, as staff
-// (M17.2): the den tells their page, which joins it.
+// MoveMember moves a member's call to another voice channel, as staff:
+// the den tells their page, which joins it.
 func (m *Manager) MoveMember(ctx context.Context, denID, memberID, channelID string) error {
 	c, err := m.find(denID)
 	if err != nil {
@@ -172,7 +172,7 @@ func (m *Manager) MoveMember(ctx context.Context, denID, memberID, channelID str
 	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/move", denproto.MoveRequest{ChannelID: channelID}, nil)
 }
 
-// SetStaffMute mutes a member in calls, as staff, or lifts it (M3).
+// SetStaffMute mutes a member in calls, as staff, or lifts it.
 func (m *Manager) SetStaffMute(ctx context.Context, denID, memberID string, muted bool) error {
 	c, err := m.find(denID)
 	if err != nil {
@@ -214,7 +214,7 @@ func (m *Manager) Bans(ctx context.Context, denID string) ([]Ban, error) {
 
 // Ban is a ban as the page shows it, with the role whoever placed it has
 // now, as the client last heard: staff lift the bans of their rank or
-// below (M8).
+// below.
 type Ban struct {
 	denproto.Ban
 	BannedByRole string `json:"banned_by_role,omitempty"`
@@ -267,7 +267,7 @@ func (m *Manager) CloseDM(ctx context.Context, denID, channelID string) error {
 }
 
 // SetExpiry sets how long a DM's or a group's messages stay after they're
-// sent, for those sent from now on, or with 0 keeps them (M16.4). The den
+// sent, for those sent from now on, or with 0 keeps them. The den
 // says which times it takes.
 func (m *Manager) SetExpiry(ctx context.Context, denID, channelID string, after int) error {
 	c, err := m.find(denID)
@@ -300,7 +300,7 @@ func (m *Manager) Leave(ctx context.Context, denID string) error {
 
 // Forget deletes a den from this install without telling the den: one
 // that no longer accepts this device, or one this computer can't reach,
-// as when its server is gone for good (M10), whoever the member is there.
+// as when its server is gone for good, whoever the member is there.
 // A den that answers is left with Leave, and the den this computer hosts
 // goes only by moving it.
 func (m *Manager) Forget(ctx context.Context, denID string) error {

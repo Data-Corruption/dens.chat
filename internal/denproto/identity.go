@@ -15,7 +15,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// Identities (M16.1).
+// Identities.
 //
 // Each member has one identity in each den: two key pairs made from their
 // DM seal by HKDF, salted with the den's ID, each under a label of its
@@ -314,7 +314,7 @@ func VerifyStatement(sigKey []byte, s KeyStatement, signature []byte) bool {
 	return ed25519.Verify(ed25519.PublicKey(sigKey), s.bytes(), signature)
 }
 
-// The record (M16.1): the identities a member's Dens kept, and those they
+// The record: the identities a member's Dens kept, and those they
 // verified, sealed with their seal and kept on the den, which each of
 // their devices writes every hour. It's padded to a power of four from 16
 // KiB, so the den learns little from its size.

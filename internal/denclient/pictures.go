@@ -13,7 +13,7 @@ import (
 )
 
 // UploadAnimated makes an animated GIF or WebP into this member's picture
-// or banner (M15.1), or one of the den's emoji (M15.2), which picture
+// or banner, or one of the den's emoji, which picture
 // names, and uploads it for their profile or the emoji to use, as Upload
 // does; replaces is the picture it takes the place of, if any. The page
 // sends the file as it is, with the part of it the member framed, in its
@@ -75,7 +75,7 @@ func (m *Manager) UploadAnimated(ctx context.Context, denID, picture string, cro
 	return m.uploadTo(ctx, c, "", name, int64(len(gif)), bytes.NewReader(gif), replaces)
 }
 
-// animatedEmoji is what an animated emoji names as its picture (M15.2).
+// animatedEmoji is what an animated emoji names as its picture.
 const animatedEmoji = "emoji"
 
 // animatedPicture is what an animated picture's GIF is to be: the part

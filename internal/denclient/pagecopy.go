@@ -15,7 +15,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// Copies the page makes (M5.5). In Chrome and Edge, the page makes a
+// Copies the page makes. In Chrome and Edge, the page makes a
 // video's copy itself with WebCodecs, often on the graphics card. It says
 // so as it uploads the video, and follows the upload over a socket of its
 // own, which carries the upload's progress either way. Once this service

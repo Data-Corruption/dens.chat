@@ -74,7 +74,7 @@ type ControlServer struct {
 	ServiceName string
 }
 
-// DesktopAction is a shortcut the helper binds with the desktop (M7.2): its
+// DesktopAction is a shortcut the helper binds with the desktop: its
 // ID, what it does, and the trigger it would like, in the XDG shortcuts
 // format, or none.
 type DesktopAction struct {
@@ -91,7 +91,7 @@ type DesktopPress struct {
 var ErrDesktopCancelled = errors.New("cancelled")
 
 // DesktopNotification is a notification the helper shows as the desktop's
-// own (M12.3): its heading and text, which are plain text, and the address
+// own: its heading and text, which are plain text, and the address
 // a click opens where the desktop opens it itself, as Windows' toasts do.
 // Elsewhere a click comes back to the helper, which opens it paired.
 type DesktopNotification struct {

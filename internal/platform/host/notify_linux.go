@@ -10,7 +10,7 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// The desktop's notifications (M12.3): the helper shows the member's
+// The desktop's notifications: the helper shows the member's
 // through the freedesktop notification service, and the Flatpak's service,
 // in its sandbox, through the desktop's Notification portal, which knows
 // the app by its Flatpak ID.

@@ -10,9 +10,9 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// TestEventsOverHTTP checks the events' routes (M17.4): staff make one,
+// TestEventsOverHTTP checks the events' routes: staff make one,
 // answered with it and their own mark; a member reads it by its ID, as a
-// link's card does (M17.5), marks Interested and takes it back, answered
+// link's card does, marks Interested and takes it back, answered
 // with the count and their mark; a member who isn't its maker or above
 // them can't change, cancel or end it; and its maker changes and cancels
 // it.
@@ -34,7 +34,7 @@ func TestEventsOverHTTP(t *testing.T) {
 		t.Fatalf("alice making an event: %d, %+v", status, e)
 	}
 	path := "/api/events/" + e.ID
-	// A link's card reads it by its ID (M17.5), and nothing that isn't one.
+	// A link's card reads it by its ID, and nothing that isn't one.
 	var read denproto.DenEvent
 	if status := f.call(http.MethodGet, path, bob, nil, &read); status != http.StatusOK || read.ID != e.ID || read.Mine == nil || *read.Mine {
 		t.Fatalf("bob reading the event: %d, %+v", status, read)
@@ -72,7 +72,7 @@ func TestEventsOverHTTP(t *testing.T) {
 }
 
 // TestBadgeHiddenOverHTTP checks a member hides a badge they earned from
-// their card and shows it again (M17.6), answered with 204: their own
+// their card and shows it again, answered with 204: their own
 // profile carries it marked, and another's leaves it out; and a badge they
 // didn't earn is 404.
 func TestBadgeHiddenOverHTTP(t *testing.T) {

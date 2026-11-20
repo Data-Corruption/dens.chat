@@ -8,7 +8,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Relay (M20) links this install with the member's others across their
+// Relay links this install with the member's others across their
 // network, and the dens only introduce them: the boxes between the
 // member's devices are sealed and opened here, with their seal, and what's
 // in them is Relay's.

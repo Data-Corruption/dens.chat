@@ -154,7 +154,7 @@ send() {
 
 # open_dm A B opens a DM from A to B, and prints its ID once both their
 # Dens have published their identities and kept each other's, so either's
-# first message makes its key, with nothing to type (M16.1).
+# first message makes its key, with nothing to type.
 open_dm() {
     local a b dm
     a=$(api "$1" GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
@@ -173,8 +173,8 @@ open_dm() {
 }
 
 # laptop signs bob in on his laptop, m2e, with his den password, and has
-# his first device approve it, each typing the other's digits as he would
-# (M1.7), so the laptop holds his seal.
+# his first device approve it, each typing the other's digits as he would,
+# so the laptop holds his seal.
 laptop() {
     local id req="" a="" b=""
     start m2e --port "${PORT[laptop]}"

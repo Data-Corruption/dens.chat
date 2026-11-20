@@ -1,4 +1,4 @@
-// How long a den keeps messages (M5), in the words the page uses for it.
+// How long a den keeps messages, in the words the page uses for it.
 
 import { formatSize } from './files.jsx';
 

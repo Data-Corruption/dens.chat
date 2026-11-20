@@ -16,7 +16,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
 
-// The page's socket for a copy it makes (M5.5), without the module: an
+// The page's socket for a copy it makes, without the module: an
 // offer, the video's packets a window at a time, the copy's records back,
 // and the offer declined or withdrawn. Quick enough for the race detector.
 

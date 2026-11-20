@@ -1,4 +1,4 @@
-// Sign-in codes (M22.6) on the page: a scanned code's text read as Add
+// Sign-in codes on the page: a scanned code's text read as Add
 // device's, a den's address and a username, or as an approving device's
 // digits, by the rules denproto.ReadSignInCode reads by and against the
 // same cases; and the codes the service makes, checked and drawn.

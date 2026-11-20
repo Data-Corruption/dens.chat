@@ -138,7 +138,7 @@ type SessionOptions struct {
 	// Wait is how long a start waits for the lifecycle lock another
 	// process holds: none for a development instance, whose developer
 	// wants to know at once, and LifecycleLockTimeout for the Flatpak, whose
-	// restart hands the lock from an older build to the newest (M9.3).
+	// restart hands the lock from an older build to the newest.
 	Wait time.Duration
 	// Snapshot keeps a copy of the data an older version left, before this
 	// version migrates it. It runs under the lock and before the transition
@@ -157,7 +157,7 @@ type SessionPlan struct {
 }
 
 // RolledBackError is a session form's data from a newer version than the
-// binary, as when Flatpak rolls an app back (M9.3).
+// binary, as when Flatpak rolls an app back.
 type RolledBackError struct {
 	Data, Binary string
 }
@@ -172,10 +172,10 @@ func (e *RolledBackError) Error() string {
 // instance migrates whichever way its version moves, since its data is
 // disposable; and every development build, of any form, migrates data the
 // same version left, since all of them are build.DevVersion, so the
-// version can't say whether another tree's build left it (M14.2): the
+// version can't say whether another tree's build left it: the
 // migrations run what the data lacks, and refuse a schema newer than the
-// build's. The Flatpak's versions move only forward (M9.3), as the
-// Android app's do (M12): data an older version left is an update, which
+// build's. The Flatpak's versions move only forward, as the
+// Android app's do: data an older version left is an update, which
 // the plan says to keep a snapshot of first; data a newer one wrote, a
 // rollback, which it refuses; and a transition another build began, it
 // resumes or takes over where the target is its version or older, since

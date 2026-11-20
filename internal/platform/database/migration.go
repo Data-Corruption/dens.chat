@@ -520,7 +520,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 	// takes foreign keys off for: dropping the old table with them on would
 	// take every message, key and read position with it. Its counter stays
 	// where it was, since a channel's ID is never given out twice, even past
-	// the channels a restore moved it beyond (M11). A group DM keeps its
+	// the channels a restore moved it beyond. A group DM keeps its
 	// maker and its name, sealed under one of its keys, by that key's ID;
 	// its members, in the order they joined, each with the change that took
 	// them in, from which they get its changes, and the group's last message
@@ -805,7 +805,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 
 // keepChannelCounter puts back the channels' counter as it was before
 // den_channels was made again, since a channel's ID is never given out
-// twice, even past the channels a restore moved it beyond (M11).
+// twice, even past the channels a restore moved it beyond.
 func keepChannelCounter(ctx context.Context, tx *sql.Tx, seq sql.NullInt64) error {
 	if !seq.Valid {
 		return nil

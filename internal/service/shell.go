@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/types"
 )
 
-// The stream between the Android app's shell and the service (M12). The
+// The stream between the Android app's shell and the service. The
 // shell opens it once the service answers, and again whenever it closes,
 // as when the shell starts the service again. Lines on it, besides pings:
 // the service sends hello first, saying what the shell needs to show the
@@ -75,7 +75,7 @@ type shellLocal struct {
 	Refused bool `json:"refused"`
 }
 
-// shellPlace is the shell, as a place notifications show (M12.3).
+// shellPlace is the shell, as a place notifications show.
 type shellPlace struct{ s *control.Stream }
 
 func (p shellPlace) Show(n notify.Notification) bool { return p.s.Send(msgShellNotify, n) == nil }
@@ -88,11 +88,11 @@ func (p shellPlace) Settings(s types.Notifications) {
 	_ = p.s.Send(msgShellNotifying, shellSwitch{On: s.DMs || s.Mentions})
 }
 
-// The shell, as the updater tells it of an update (M12.4).
+// The shell, as the updater tells it of an update.
 func (p shellPlace) UpdateReady(u app.UpdateReady)   { _ = p.s.Send(msgShellUpdate, u) }
 func (p shellPlace) InstallUpdate(u app.UpdateReady) { _ = p.s.Send(msgShellInstall, u) }
 
-// The shell, as it paints its bars with the page's background (M13.3).
+// The shell, as it paints its bars with the page's background.
 func (p shellPlace) Bars(color string) { _ = p.s.Send(msgShellBars, shellBars{Color: color}) }
 
 // The shell, as it hears what Relay wants of Android.

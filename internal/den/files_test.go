@@ -322,7 +322,7 @@ func TestAttachments(t *testing.T) {
 // A channel's file sent as a spoiler keeps it on the den, for everyone
 // who sees the message, through its edits and in the file that takes its
 // place; only the message's own uploads go as spoilers, and a DM's go
-// inside its seal, never to the den (M17.2).
+// inside its seal, never to the den.
 func TestSpoilers(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()
@@ -532,7 +532,7 @@ func TestProfilePictures(t *testing.T) {
 	}
 
 	// An animated picture is a GIF of half a still's sides at most, and a
-	// size of its own (M15.1).
+	// size of its own.
 	anim := f.mustUpload(member, "anim.gif", testGIF(t, 64, 64, 2, false))
 	wide := f.mustUpload(member, "wide.gif", testGIF(t, 600, 200, 3, false))
 	m, err = f.d.UpdateProfile(ctx, member, denproto.ProfileRequest{Avatar: &anim.ID, Banner: &wide.ID})
@@ -633,7 +633,7 @@ func TestRemovalDeletesFiles(t *testing.T) {
 
 // TestHeldFiles checks that while a backup holds the den's files, deleting
 // them takes their rows but leaves them on the disk until the last hold
-// ends (M8).
+// ends.
 func TestHeldFiles(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()

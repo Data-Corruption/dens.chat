@@ -12,7 +12,7 @@ import (
 )
 
 // TestHelperProbe stands in for the shortcut helper of an installed
-// instance, for the den e2e (M20.1): once the service says a call is on,
+// instance, for the den e2e: once the service says a call is on,
 // as it does while it links to another of the member's installs holding
 // one, it holds push to talk, until the file DENS_HELPER_UNTIL names
 // exists, then lets go. It runs only when DENS_HELPER_PROBE names the

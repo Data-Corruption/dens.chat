@@ -11,7 +11,7 @@ import (
 )
 
 // An uninstall goes ahead only on its phrase typed out, more than the y a
-// reflex gives (M10). Its question says what the instance holds where that
+// reflex gives. Its question says what the instance holds where that
 // could be read, points to a backup first and to stopping the service for
 // someone who only wants Dens off; any other answer cancels, and input
 // that ends says to use --yes in scripts.

@@ -80,7 +80,7 @@ func New(
 
 // Open opens (creating if needed) the SQLite database at path, with the
 // connection behavior New describes, in WAL mode, and leaves its schema to
-// the caller: the client's cache keeps a format of its own (M6).
+// the caller: the client's cache keeps a format of its own.
 func Open(path string) (*sql.DB, error) {
 	dsn := "file:" + filepath.ToSlash(path) +
 		"?_txlock=immediate" +
@@ -146,7 +146,7 @@ func Snapshot(ctx context.Context, db *sql.DB, path string) error {
 // IsDenTable reports whether a table holds the den's rows rather than the
 // client's: the den's tables are den and den_*, and the client's the rest,
 // so a den's export keeps the den's alone, and removing the den empties
-// them (M10).
+// them.
 func IsDenTable(name string) bool { return name == "den" || strings.HasPrefix(name, "den_") }
 
 // Querier runs queries: a *sql.DB or a *sql.Tx.
@@ -173,8 +173,8 @@ func Tables(ctx context.Context, q Querier) ([]string, error) {
 }
 
 // SnapshotDen writes a copy of the open database to path, as Snapshot does,
-// that holds the den alone: its export, which moves it to another computer
-// (M10). The den's tables stay as they are, and so do the data key sealed
+// that holds the den alone: its export, which moves it to another computer.
+// The den's tables stay as they are, and so do the data key sealed
 // under the local password and its check value; every other table empties,
 // the joined dens with their device keys and DM seals and the paired
 // browsers among them, the vault forgets the DM seal new dens start with,
@@ -250,7 +250,7 @@ func OpenReadOnly(path string) (*sql.DB, error) {
 // OpenImmutable opens the database file at path as a file nothing changes:
 // SQLite reads it alone, taking no lock and making no WAL or index beside
 // it. A maintenance command reads a stopped instance's database this way,
-// as root, so it leaves no file there the service account can't open (M10).
+// as root, so it leaves no file there the service account can't open.
 func OpenImmutable(path string) (*sql.DB, error) {
 	return openReadOnly("file:" + filepath.ToSlash(path) + "?mode=ro&immutable=1")
 }

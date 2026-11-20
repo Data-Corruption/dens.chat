@@ -1,4 +1,4 @@
-// The Android e2e's steps in the app's page (M12.1), a command each, which
+// The Android e2e's steps in the app's page, a command each, which
 // the harness runs in the Android container, beside adb: what a member
 // does, done as they do it, through the page.
 //
@@ -9,7 +9,7 @@
 //   node check.mjs SERIAL photo FILE      sends the photo at FILE, a path the app reads, as its smaller copy
 //   node check.mjs SERIAL download        saves the newest photo there, from the viewer's Download
 //   node check.mjs SERIAL at DEN/CHANNEL/MESSAGE   waits for the page open at a message, as a
-//                                         notification's tap opens it (M12.3)
+//                                         notification's tap opens it
 //
 // Each prints what it found, or fails saying what it waited for.
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -37,7 +37,7 @@ const chips = `[...document.querySelectorAll('ul[aria-label="Files to send"] li'
 const composer = `document.querySelector('textarea[placeholder^="Message #"]')`;
 
 // send sends what the composer holds with its button, as a finger does:
-// a touch screen's ↵ starts a line (M13.2).
+// a touch screen's ↵ starts a line.
 async function send() {
     const at = await waitFor(() => b.eval(`(() => {
         const button = document.querySelector('button[aria-label="Send"]');

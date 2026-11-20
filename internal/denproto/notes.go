@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// Notes to self (M17.3).
+// Notes to self.
 //
 // Each member has notes in each den: a channel of kind notes naming them
 // alone, which only they see, made as they first open it. Its messages

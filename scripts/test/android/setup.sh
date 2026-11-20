@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# Sets up the Android e2e's Incus container, or brings one up to date
-# (M12): Debian 13 with /dev/kvm and the emulator's libraries; the SDK's
+# Sets up the Android e2e's Incus container, or brings one up to date:
+# Debian 13 with /dev/kvm and the emulator's libraries; the SDK's
 # platform tools (adb), the emulator and its system images, from the
 # downloads vendor.sh verified; the emulator's devices, a17 on Android 17
 # and a12 on Android 12, the oldest the app runs on; the pinned Node.js;
 # and this directory's drivers; and a user, loopden, for the development
-# instance whose den the release's app joins (M21.1), which won't run as
+# instance whose den the release's app joins, which won't run as
 # root. Its adb is also how phone.sh reaches a phone over wireless
 # debugging, which keeps its pairing.
 #

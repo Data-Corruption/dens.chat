@@ -1,7 +1,7 @@
-// A member's own sections of a den (M22.3), which the settings hold as that
+// A member's own sections of a den, which the settings hold as that
 // den's group, above the app's, on its page or opened for it: their
 // devices there, their den password, recovery codes and DM recovery key,
-// their code for others to compare (M16.1), their files, and leaving it.
+// their code for others to compare, their files, and leaving it.
 // Manage keeps what staff manage.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -82,14 +82,14 @@ export function YourDen({ den, view, at, onClose, navigate }) {
 
 // labelParts splits a device's label into its name and, from the
 // parentheses at its end, what it is: a computer's system or a phone's
-// model, which shows under the name (M13.3). A label with none is all
+// model, which shows under the name. A label with none is all
 // name.
 export function labelParts(label) {
     const m = /^(.*\S)\s*\(([^()]+)\)$/.exec(label || '');
     return m ? { name: m[1], detail: m[2] } : { name: label || '', detail: '' };
 }
 
-// A device added in the last day shows as new (M22.6).
+// A device added in the last day shows as new.
 const NEW_FOR = 24 * 60 * 60 * 1000;
 
 // Devices lists this member's devices in the den, each by its name with
@@ -195,7 +195,7 @@ function PasswordAndRecovery({ den, onCodes, onKey }) {
     );
 }
 
-// YourCode shows the member's code in this den (M16.1), which others
+// YourCode shows the member's code in this den, which others
 // compare with what their Dens shows for them, from a DM, a profile or a
 // call, to check nobody sits between them. A phone shows it a size
 // smaller, which holds it on one line.
@@ -338,7 +338,7 @@ function NewCodes({ den, left, onCodes }) {
 }
 
 // Files lists this member's files in a den, largest first, with what uses
-// each, and deletes or swaps them (M5): a member at their limit frees
+// each, and deletes or swaps them: a member at their limit frees
 // space here. A swap is a new upload that takes the old file's place.
 function Files({ den, navigate }) {
     const [shown, setShown] = useState(null);
@@ -392,7 +392,7 @@ function Files({ den, navigate }) {
         if (!file || !f) return;
         const kind = shown.view.channels.find((c) => c.id === f.channel_id)?.kind;
         const dm = kind === 'dm' || kind === 'group_dm' || kind === 'notes';
-        // The row follows the upload while a video's copy is made (M5.4).
+        // The row follows the upload while a video's copy is made.
         const key = progressKey();
         const track = (sent) => setProgress((cur) => ({ ...cur, [f.id]: { ...cur[f.id], sent } }));
         const follow = (following) => setProgress((cur) => ({ ...cur, [f.id]: { ...cur[f.id], following } }));
@@ -400,7 +400,7 @@ function Files({ den, navigate }) {
         act.run(async () => {
             try {
                 // A photo or video swapped in goes compressed like any
-                // other, unless the member turned that off (M5).
+                // other, unless the member turned that off.
                 const send = sendSmaller() ? 'smaller' : 'full';
                 let up = await upload(den.den_id, dm ? f.channel_id : '', file, file.name || 'file', track, f.id, send, key, follow).done;
                 if (needsPreview(up)) up = await addPreview(den.den_id, up);
@@ -506,7 +506,7 @@ function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, o
 // Leave takes this member out of a den and forgets it on this computer.
 // A den Dens can't reach, as one whose server is gone for good, can't hear
 // of a leave, so it's removed from this computer alone, as one that let
-// this device go is (M10).
+// this device go is.
 function Leave({ den, onLeft }) {
     const act = useAction();
     const offer = leaveOffer(den);

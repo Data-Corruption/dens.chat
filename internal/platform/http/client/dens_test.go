@@ -17,7 +17,7 @@ import (
 
 // A den's refusal reaches the page in the page's own words, never the
 // den's, since dens are other people's servers; a sound's or an emoji's
-// taken name says so, rather than that a detail was wrong (M14.3, M15.2).
+// taken name says so, rather than that a detail was wrong.
 func TestADensRefusalIsSaidInThePagesWords(t *testing.T) {
 	for code, want := range map[string]string{
 		denproto.CodeSoundNameTaken: "Another sound in this den has that name.",

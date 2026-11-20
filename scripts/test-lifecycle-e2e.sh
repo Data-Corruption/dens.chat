@@ -4,7 +4,7 @@
 # Incus system containers and runs the lifecycle's flows on each distro (the
 # steps are in scripts/test/lifecycle-guest.sh): host a den with Dens's first
 # release, with a DM between two of its members, and update it to this one,
-# which still hosts it and reads and sends the DM (M9.1); then refuse v1.0's
+# which still hosts it and reads and sends the DM; then refuse v1.0's
 # den option, install as a sudo user, pair a browser, set the password, turn
 # hosting on and off with dens den hosting, refuse another local user, back
 # up, reboot, update, add a second instance that hosts, restore, and

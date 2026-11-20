@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Disappearing messages (M16.4): a DM's or a group's message sent under a
+// Disappearing messages: a DM's or a group's message sent under a
 // time keeps when it goes, and the cache keeps that beside it. The cache
 // lets it go then, with the files on it and the replies' quotes of it,
 // whether the den can be reached or not, so a den offline shows none of

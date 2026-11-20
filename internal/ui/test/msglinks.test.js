@@ -1,4 +1,4 @@
-// Links to messages (M11): reading one, what its chip reads, and where a
+// Links to messages: reading one, what its chip reads, and where a
 // click leads, or why it can't, against a fake local service.
 
 import './dom.js';

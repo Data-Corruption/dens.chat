@@ -97,7 +97,7 @@ func TestPageSecurityHeaders(t *testing.T) {
 	if den := csp(SecurityHeaders); strings.Contains(den, "wasm") {
 		t.Errorf("the den's CSP allows WebAssembly: %q", den)
 	}
-	// The page's one frame is YouTube's player (M4.1); the den frames
+	// The page's one frame is YouTube's player; the den frames
 	// nothing.
 	if !strings.Contains(page, "; frame-src https://www.youtube-nocookie.com;") || strings.Count(page, "frame-src") != 1 {
 		t.Errorf("the page's CSP should frame YouTube's player alone: %q", page)

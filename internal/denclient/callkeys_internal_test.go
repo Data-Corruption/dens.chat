@@ -51,7 +51,7 @@ func identityOf(t *testing.T, denID []byte, seal byte) *denproto.IdentityKeys {
 // A call's key made by one member's Dens opens on another's only once its
 // statement names that member's own identity, its signature checks against
 // the identity kept for its maker, and its copy opens to the key it
-// commits to (M16.2).
+// commits to.
 func TestCallKeyChecks(t *testing.T) {
 	ctx := context.Background()
 	den := bytes.Repeat([]byte{9}, denproto.IDSize)

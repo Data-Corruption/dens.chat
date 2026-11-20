@@ -240,7 +240,7 @@ func TestCheckingSignedKeys(t *testing.T) {
 }
 
 // A member's own identities before they started over join from every
-// device's record, each once, the latest eight kept (M16.3).
+// device's record, each once, the latest eight kept.
 func TestRecordKeepsOwnPast(t *testing.T) {
 	ours := identityRecord{Members: map[string]*keptIdentity{}, Own: []denproto.Bytes{hashOf(1)}}
 	theirs := identityRecord{Members: map[string]*keptIdentity{}, Own: []denproto.Bytes{hashOf(1), hashOf(2)}}

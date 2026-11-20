@@ -1,4 +1,4 @@
-// The den's soundboard (M14.3): the Ogg file the page writes a sound in,
+// The den's soundboard: the Ogg file the page writes a sound in,
 // whose file for a fixed set of packets the Go tests read too, loudness
 // evened, and the soundboard's search, waits and refusals.
 

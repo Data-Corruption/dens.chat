@@ -53,7 +53,7 @@ func (rt *router) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSetBadgeHidden hides a badge the member earned from their profile
-// card, or shows it again (M17.6).
+// card, or shows it again.
 func (rt *router) handleSetBadgeHidden(w http.ResponseWriter, r *http.Request) {
 	var req denproto.BadgeHiddenRequest
 	if !decodeJSON(w, r, &req) {
@@ -91,7 +91,7 @@ func (rt *router) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleMoveMember moves a member's call to another voice channel, as
-// staff (M17.2).
+// staff.
 func (rt *router) handleMoveMember(w http.ResponseWriter, r *http.Request) {
 	var req denproto.MoveRequest
 	if !decodeJSON(w, r, &req) {
@@ -155,7 +155,7 @@ func (rt *router) handleOpenDM(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleOpenNotes answers with the member's notes, which the den makes
-// the first time (M17.3).
+// the first time.
 func (rt *router) handleOpenNotes(w http.ResponseWriter, r *http.Request) {
 	c, err := rt.a.Dens.OpenNotes(r.Context(), chi.URLParam(r, "den"))
 	if err != nil {
@@ -174,7 +174,7 @@ func (rt *router) handleCloseDM(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleSetExpiry sets how long a DM's or a group's messages stay after
-// they're sent (M16.4).
+// they're sent.
 func (rt *router) handleSetExpiry(w http.ResponseWriter, r *http.Request) {
 	var req denproto.ExpiryRequest
 	if !decodeJSON(w, r, &req) {
@@ -203,8 +203,8 @@ func (rt *router) handleForget(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleCode gives what the page shows to compare codes with a member
-// (M16.1): this member's own code, and whether they verified the other;
+// handleCode gives what the page shows to compare codes with a member:
+// this member's own code, and whether they verified the other;
 // with this member's own ID, their code alone.
 func (rt *router) handleCode(w http.ResponseWriter, r *http.Request) {
 	view, err := rt.a.Dens.Code(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "member"))

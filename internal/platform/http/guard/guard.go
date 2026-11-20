@@ -15,10 +15,10 @@ import (
 func SecurityHeaders(next http.Handler) http.Handler { return securityHeaders(next, "'self'", "") }
 
 // PageSecurityHeaders sets the same policy on the client listener, which
-// serves the page, with WebAssembly allowed (M3): the page compiles RNNoise
+// serves the page, with WebAssembly allowed: the page compiles RNNoise
 // for calls. 'wasm-unsafe-eval' allows WebAssembly but not eval, so a
 // script on the page gains nothing it couldn't already do. Its one frame
-// is YouTube's player, for members who turn players on (M4.1).
+// is YouTube's player, for members who turn players on.
 func PageSecurityHeaders(next http.Handler) http.Handler {
 	return securityHeaders(next, "'self' 'wasm-unsafe-eval'", "https://www.youtube-nocookie.com")
 }
@@ -39,7 +39,7 @@ func securityHeaders(next http.Handler, scriptSrc, frameSrc string) http.Handler
 		h.Set("Cross-Origin-Opener-Policy", "same-origin")
 		h.Set("Cross-Origin-Resource-Policy", "same-origin")
 		// The page takes the microphone for calls, the screen to share in
-		// them (M4.2) and the camera to scan a sign-in's code (M22.6), and
+		// them and the camera to scan a sign-in's code, and
 		// nothing else may, a frame least of all.
 		h.Set("Permissions-Policy", "camera=(self), display-capture=(self), geolocation=(), microphone=(self), payment=(), usb=()")
 		next.ServeHTTP(w, r)
@@ -47,7 +47,7 @@ func securityHeaders(next http.Handler, scriptSrc, frameSrc string) http.Handler
 }
 
 // PageOrigin is where browsers load the page: localhost, never an IP
-// address, since YouTube's player won't play for a page at one (M4.1).
+// address, since YouTube's player won't play for a page at one.
 func PageOrigin(port int) string { return "http://localhost:" + strconv.Itoa(port) }
 
 // LoopbackHosts are the Host header values a browser sends for the client

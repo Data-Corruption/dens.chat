@@ -45,7 +45,7 @@ const (
 	// sound.
 	OpMux Op = "mux"
 	// OpDemux hands a video's packets out, for the page to make its copy
-	// with WebCodecs (M5.5).
+	// with WebCodecs.
 	OpDemux Op = "demux"
 )
 
@@ -181,7 +181,7 @@ type Muxed struct {
 }
 
 // Demuxed describes a video's packets, handed out as records, and what
-// decoding them takes (M5.5).
+// decoding them takes.
 type Demuxed struct {
 	// Codec is FFmpeg's name for it, such as "h264", and Extradata, in
 	// hex, its configuration record, an avcC or hvcC for H.264 and HEVC.

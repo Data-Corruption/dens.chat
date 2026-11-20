@@ -37,7 +37,7 @@ object Dens {
     fun wrappedKey(ctx: Context) = File(control(ctx), "datakey.keystore")
     fun state(ctx: Context) = File(control(ctx), "state.json")
     fun socket(ctx: Context) = File(root(ctx), "run/control.sock")
-    // Where Dens keeps an update it downloaded and checked (M12.4).
+    // Where Dens keeps an update it downloaded and checked.
     fun updateDir(ctx: Context) = File(root(ctx), "update")
 
     // controlDir makes the instance's control directory as the service
@@ -71,7 +71,7 @@ object Dens {
     // otherwise take /sdcard for home; the cache for temporary files; the
     // phone's time zone, which Go reads from TZ alone there; and the
     // phone's name, as its owner knows it from Android's settings, and its
-    // model, which dens list it by among the member's devices (M13.3),
+    // model, which dens list it by among the member's devices,
     // where its hostname says only localhost.
     fun env(ctx: Context): Map<String, String> = mapOf(
         "HOME" to ctx.filesDir.path,

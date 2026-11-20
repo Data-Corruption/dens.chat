@@ -1,4 +1,4 @@
-// Link previews, as a browser new to Dens is asked about them (M22.7): on
+// Link previews, as a browser new to Dens is asked about them: on
 // the first run's local password, or, where that's set, on a screen of
 // their own once the browser is paired. One switch, on, covers YouTube's
 // players and Steam's cards; turned off, it opens into a switch for each.

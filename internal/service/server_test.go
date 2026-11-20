@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// A server sets Dens up from the command line, with no page (M10): the
+// A server sets Dens up from the command line, with no page: the
 // local password, set once and then changed only with the current one;
 // the den, created only while hosting serves, with no account on the
 // server; and its owner invite, which makes another computer's Dens the

@@ -1,4 +1,4 @@
-// The client's cache (M6): what this computer keeps of other dens' files,
+// The client's cache: what this computer keeps of other dens' files,
 // in the words and sizes the settings use for it.
 
 import { formatSize } from './files.jsx';

@@ -30,12 +30,12 @@ const (
 	DefaultMediaTCPPort = 7882
 )
 
-// FlatpakClientPort is the Flatpak's client port (M9.3), apart from an
+// FlatpakClientPort is the Flatpak's client port, apart from an
 // installed Dens's, so neither takes the other's port or cookie.
 const FlatpakClientPort = 8494
 
 // AndroidDevClientPort is the client port of a development build's Android
-// app (M12), which runs beside the release's, on DefaultClientPort, on a
+// app, which runs beside the release's, on DefaultClientPort, on a
 // phone whose apps all share loopback.
 const AndroidDevClientPort = 18484
 
@@ -45,7 +45,7 @@ const maxConfigSize = 16 * 1024
 // listener sits on loopback behind Caddy; the media ports face the
 // internet. Enabled is the den role v1.0's installer gave an instance, which
 // the first start of a later version takes as the hosting switch's first
-// setting (M9.1). Nothing else reads it; it stays because the config decodes
+// setting. Nothing else reads it; it stays because the config decodes
 // strictly.
 type Den struct {
 	Enabled      bool `json:"enabled"`
@@ -138,7 +138,7 @@ func (c Config) validate(denPorts bool) error {
 
 // LoopbackHTTP reports whether u is plain http to this machine's loopback,
 // which only a test release's host is: the Android e2e's, which adb
-// forwards the emulator's loopback to (M12). Nothing on the way can change
+// forwards the emulator's loopback to. Nothing on the way can change
 // what loopback carries, and a release's signature covers it anyway.
 func LoopbackHTTP(u *url.URL) bool {
 	if u.Scheme != "http" {

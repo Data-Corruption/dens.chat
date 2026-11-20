@@ -1,4 +1,4 @@
-// The call timer (M21.2): a call's length as it shows on its channel's row,
+// The call timer: a call's length as it shows on its channel's row,
 // the rainbow while it beats the channel's record, the fireworks once as
 // it passes it, and Appearance's Call timer, which hides it all.
 

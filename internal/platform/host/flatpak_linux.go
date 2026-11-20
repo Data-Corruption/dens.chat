@@ -14,7 +14,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// The portals the Flatpak leans on (M9.3), from inside its sandbox: the
+// The portals the Flatpak leans on, from inside its sandbox: the
 // desktop's Secret, Background and Notification portals, and Flatpak's own,
 // which starts sandboxes and watches for updates.
 const (
@@ -177,7 +177,7 @@ func (p *portalConn) waitForInterface(ctx context.Context, iface string, wait ti
 }
 
 // RetrieveSecret asks the desktop's Secret portal for the secret it keeps
-// for this app in the member's keyring (M9.3), which the portal writes to a
+// for this app in the member's keyring, which the portal writes to a
 // pipe the call hands it. It waits up to wait for the portal's Secret
 // interface before taking its absence for no keyring (errors.ErrUnsupported),
 // and for the answer as long as ctx allows: a locked keyring prompts, and
@@ -230,7 +230,7 @@ func RetrieveSecret(ctx context.Context, wait time.Duration) ([]byte, error) {
 }
 
 // RequestBackground asks the desktop to let the app run with no window
-// (M9.3) and, with autostart, to start commandline at the member's sign-in,
+// and, with autostart, to start commandline at the member's sign-in,
 // which the portal writes an autostart entry for, or without, to stop. It
 // reports whether the desktop allows each; no desktop in the spike asked
 // the member.
@@ -264,7 +264,7 @@ func RequestBackground(ctx context.Context, reason string, autostart bool, comma
 }
 
 // SetBackgroundStatus is the line the desktop shows under the app among
-// its background apps, as GNOME's Background Apps does (M9.3).
+// its background apps, as GNOME's Background Apps does.
 func SetBackgroundStatus(message string) error {
 	p, err := dialPortal(nil)
 	if err != nil {
@@ -275,7 +275,7 @@ func SetBackgroundStatus(message string) error {
 		map[string]dbus.Variant{"message": dbus.MakeVariant(message)}).Err
 }
 
-// Notify shows a desktop notification through the portal (M9.3): how the
+// Notify shows a desktop notification through the portal: how the
 // Flatpak's launch, which has no window, says why Dens didn't start.
 func Notify(id, title, body string) error {
 	p, err := dialPortal(nil)
@@ -290,7 +290,7 @@ func Notify(id, title, body string) error {
 }
 
 // SpawnLatest starts argv as a sandbox of its own, from the newest build of
-// this Flatpak the system has (M9.3), through Flatpak's portal: nothing
+// this Flatpak the system has, through Flatpak's portal: nothing
 // that ran this process holds it, as a terminal would. files become the new
 // process's descriptors from 3 on.
 func SpawnLatest(argv []string, files ...*os.File) error {
@@ -302,7 +302,7 @@ func SpawnLatest(argv []string, files ...*os.File) error {
 }
 
 // SpawnLatestOutput runs argv as SpawnLatest does, and returns what it
-// prints, up to 64 KiB, once it ends or ctx's deadline passes (M9.4).
+// prints, up to 64 KiB, once it ends or ctx's deadline passes.
 func SpawnLatestOutput(ctx context.Context, argv []string) ([]byte, error) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -346,7 +346,7 @@ func spawnLatest(argv []string, files map[uint32]*os.File) error {
 }
 
 // InheritedPipe is the pipe a process was given as descriptor fd, as dens
-// launch gives the service it starts one to say it's ready on (M9.3), or
+// launch gives the service it starts one to say it's ready on, or
 // nil where fd is anything else: a descriptor nothing passed may be the
 // process's own, which must not be closed under it.
 func InheritedPipe(fd int) *os.File {
@@ -357,13 +357,13 @@ func InheritedPipe(fd int) *os.File {
 	return os.NewFile(uintptr(fd), "pipe")
 }
 
-// FlatpakUpdate is what Flatpak's update monitor found (M9.3): the commits
+// FlatpakUpdate is what Flatpak's update monitor found: the commits
 // of the running build, the newest one installed, and the remote's newest.
 type FlatpakUpdate struct {
 	Running, Local, Remote string
 }
 
-// UpdateMonitor is Flatpak's update monitor for this app (M9.3). Flatpak's
+// UpdateMonitor is Flatpak's update monitor for this app. Flatpak's
 // portal checks the app's remote every 30 minutes, the first time 30
 // minutes after the first monitor starts, and reports each update it finds.
 type UpdateMonitor struct {
@@ -489,7 +489,7 @@ func (m *UpdateMonitor) Close() error {
 	return err
 }
 
-// AppName is the app's name on the session bus (M9.3), where it answers
+// AppName is the app's name on the session bus, where it answers
 // org.freedesktop.Application: GNOME's Background Apps quits an app with no
 // window by activating the quit action there.
 type AppName struct {

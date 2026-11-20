@@ -51,13 +51,13 @@ type router struct {
 	// cookieName includes the port: cookies are scoped to a host, not a
 	// port, and several instances can share 127.0.0.1.
 	cookieName string
-	// pageOrigin is where browsers load the page (M4.1).
+	// pageOrigin is where browsers load the page.
 	pageOrigin string
 	youTube    *youtube.Lookup
 	steam      *steam.Lookup
 	backups    backups
-	// sounds are the page's own sounds' addresses, by name, as JSON
-	// (M14.2), and fonts those of the names' fonts.
+	// sounds are the page's own sounds' addresses, by name, as JSON,
+	// and fonts those of the names' fonts.
 	sounds string
 	fonts  string
 }
@@ -136,8 +136,8 @@ const (
 )
 
 // requireThisVersion refuses a request from a page another version of
-// Dens served, as one open across an update that restarted the service
-// (M9.3): it answers 409, which has the page load again, from this version,
+// Dens served, as one open across an update that restarted the service:
+// it answers 409, which has the page load again, from this version,
 // rather than ask in a shape this version may not know. A request that
 // names no version, as a script's, passes.
 func (rt *router) requireThisVersion(next http.Handler) http.Handler {
@@ -153,7 +153,7 @@ func (rt *router) requireThisVersion(next http.Handler) http.Handler {
 }
 
 // requireUnlocked refuses what needs the data key while the Flatpak waits
-// for it (M9.3): the page shows its unlock screen and asks nothing else.
+// for it: the page shows its unlock screen and asks nothing else.
 func (rt *router) requireUnlocked(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if rt.a.Locked() {
@@ -256,14 +256,14 @@ func fontAssets(pages *ui.UI) string {
 
 // autoplays reports whether the page's audio may start without a click,
 // which the Android app's WebView lets it: the page then makes its call's
-// audio once the microphone is open, which Android plays as a call's
-// (M12). A browser's page waits for a click as its browser may.
+// audio once the microphone is open, which Android plays as a call's.
+// A browser's page waits for a click as its browser may.
 func (rt *router) autoplays() bool {
 	return rt.a.Layout.Form == layout.Android
 }
 
 // inApp reports whether the page shows in Dens's own app, the Android
-// app's WebView, rather than a browser (M13.3): the app holds the page's
+// app's WebView, rather than a browser: the app holds the page's
 // permissions, as for the microphone, and pairs it, and the phone has no
 // keys the page's shortcuts may take, so its settings leave them out.
 func (rt *router) inApp() bool {
@@ -272,9 +272,9 @@ func (rt *router) inApp() bool {
 
 // pairCommands are what pair a browser with this instance: open, which
 // opens the page in the default browser, dens open, or none in the
-// Flatpak, which pairs as it's opened from the apps menu (M9.3); and link,
+// Flatpak, which pairs as it's opened from the apps menu; and link,
 // which prints the link to open in any other. The Android app has neither:
-// it pairs the page it shows itself (M12).
+// it pairs the page it shows itself.
 func (rt *router) pairCommands() (open, link string) {
 	name, args := rt.a.BuildInfo().Name, "open"
 	if instance := rt.a.Layout.Instance; instance != layout.DefaultInstance {
@@ -285,7 +285,7 @@ func (rt *router) pairCommands() (open, link string) {
 		return "", fmt.Sprintf("flatpak run --command=%s %s %s --print", name, layout.DesktopID, args)
 	case layout.Android:
 		// The app pairs its own page as it opens it, and no other browser
-		// on the phone may pair (M12).
+		// on the phone may pair.
 		return "", ""
 	}
 	return name + " " + args, name + " " + args + " --print"
@@ -293,7 +293,7 @@ func (rt *router) pairCommands() (open, link string) {
 
 func (rt *router) handlePage(w http.ResponseWriter, r *http.Request) {
 	// A browser loads the page at localhost, since YouTube's player won't
-	// play for a page at an IP address (M4.1). One that loads it at
+	// play for a page at an IP address. One that loads it at
 	// 127.0.0.1 or [::1] goes there, keeping the path, and the pairing
 	// token too: browsers carry a fragment across a redirect. Scripts and
 	// tests don't load the page as a document, and get it where they asked.
@@ -327,17 +327,17 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"cacheUsed":              usage.Used,
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
 		"notifications":          rt.a.Notify.Status(),
-		// What this install relays to the member's others (M20), and
+		// What this install relays to the member's others, and
 		// Keybind relay's switch and from M20.2 Share this computer's
 		// sound.
 		"relay": map[string]any{"can": rt.a.Relay.Can(), "keys": cfg.RelayKeys, "sound": cfg.RelaySound},
 	}
 	// The Android app downloads the updates it finds, for Android's
-	// installer to install (M12.4).
+	// installer to install.
 	if rt.a.Layout.Form == layout.Android {
 		settings["updatesDownload"] = rt.a.ChecksForUpdates()
 	}
-	// What only the Flatpak has (M9.3): its remembered key, starting at
+	// What only the Flatpak has: its remembered key, starting at
 	// sign-in, and updates through Flatpak.
 	if f := rt.a.Flatpak; f != nil {
 		settings["remember"] = rt.a.Remembering()
@@ -349,7 +349,7 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 
 // handleShortcutsDesktop passes what the member asks of a desktop that owns
 // the voice keys to the shortcut helper: to bind them, to show its
-// settings for them, or to stop using them (M7.2).
+// settings for them, or to stop using them.
 func (rt *router) handleShortcutsDesktop(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Do string `json:"do"`
@@ -368,7 +368,7 @@ func (rt *router) handleShortcutsDesktop(w http.ResponseWriter, r *http.Request)
 }
 
 // handleLogs downloads the newest logs as one text file, for the member to
-// send with a problem (M11).
+// send with a problem.
 func (rt *router) handleLogs(w http.ResponseWriter, r *http.Request) {
 	name, logs, err := rt.a.Logs()
 	if err != nil {
@@ -381,7 +381,7 @@ func (rt *router) handleLogs(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(logs)
 }
 
-// handleClearCache empties the client's cache of files (M6).
+// handleClearCache empties the client's cache of files.
 func (rt *router) handleClearCache(w http.ResponseWriter, r *http.Request) {
 	if err := rt.a.Dens.ClearCache(); err != nil {
 		xhttp.Error(r.Context(), w, err)
@@ -472,12 +472,12 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"denEnabled":  rt.a.Hosting.State().On,
 		"locked":      rt.a.Locked(),
 	}
-	// Only the Flatpak remembers its key, and can start locked (M9.3).
+	// Only the Flatpak remembers its key, and can start locked.
 	if rt.a.Layout.Form == layout.Flatpak {
 		status["remember"] = rt.a.Remembering()
 	}
 	// The Android app's notice waits for the update to be downloaded and
-	// checked, which its Install hands to Android's installer (M12.4).
+	// checked, which its Install hands to Android's installer.
 	if rt.a.Layout.Form == layout.Android {
 		if u, ok := rt.a.ReadyUpdate(); ok && cfg.UpdateNotifications {
 			status["updateReady"] = u.Version
@@ -486,9 +486,9 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 		status["updateVersion"] = latest
 		status["updateCommand"] = rt.a.UpdateCommand()
 	}
-	// The Flatpak's notice is Flatpak's update monitor's (M9.3), and what
+	// The Flatpak's notice is Flatpak's update monitor's, and what
 	// the newest build installed says it is, which the page's next look
-	// finds once the software center has installed it (M9.4).
+	// finds once the software center has installed it.
 	if f := rt.a.Flatpak; f != nil && cfg.UpdateNotifications {
 		f.CheckInstalled(r.Context())
 		if u := f.Update(); u.Available || u.Installed {
@@ -500,7 +500,7 @@ func (rt *router) handleStatus(w http.ResponseWriter, r *http.Request) {
 
 // handleSetPassword sets the first local password. Changing it later needs
 // the current one. The Flatpak keeps a copy of its key that opens it
-// without the password where the member asks it to remember (M9.3).
+// without the password where the member asks it to remember.
 func (rt *router) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Password string `json:"password"`
@@ -553,7 +553,7 @@ func (rt *router) handleUnlock(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRemember turns remembering the Flatpak's key on, after the local
-// password, or off, deleting the copy (M9.3).
+// password, or off, deleting the copy.
 func (rt *router) handleRemember(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		On       bool   `json:"on"`
@@ -618,21 +618,21 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		UpdateNotifications    *bool   `json:"updateNotifications"`
 		BackgroundUpdateChecks *bool   `json:"backgroundUpdateChecks"`
 		CacheLimit             *int64  `json:"cacheLimit"`
-		// VoiceKeys replaces the member's keys, all of them (M7).
+		// VoiceKeys replaces the member's keys, all of them.
 		VoiceKeys *map[string]types.VoiceKey `json:"voiceKeys"`
-		// Notifications turns each kind on or off, and the text, as given
-		// (M12.3); mutes go through their den's.
+		// Notifications turns each kind on or off, and the text, as given;
+		// mutes go through their den's.
 		Notifications *struct {
 			DMs      *bool `json:"dms"`
 			Mentions *bool `json:"mentions"`
 			HideText *bool `json:"hideText"`
-			// Everyone turns staff's @everyone on or off (M15.4), and
-			// Events the events the member is interested in (M17.4).
+			// Everyone turns staff's @everyone on or off, and
+			// Events the events the member is interested in.
 			Everyone *bool `json:"everyone"`
 			Events   *bool `json:"events"`
 		} `json:"notifications"`
 		// Sounds turns each of the page's sounds off or on, and sets its
-		// volume in percent, as given (M14.2).
+		// volume in percent, as given.
 		Sounds map[string]struct {
 			Off    *bool `json:"off"`
 			Volume *int  `json:"volume"`
@@ -642,8 +642,8 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		// a message under the pointer does.
 		BackgroundDim   *int `json:"backgroundDim"`
 		BackgroundHover *int `json:"backgroundHover"`
-		// RelayKeys turns Keybind relay on or off (M20), and RelaySound
-		// Share this computer's sound (M20.2).
+		// RelayKeys turns Keybind relay on or off, and RelaySound
+		// Share this computer's sound.
 		RelayKeys  *bool `json:"relayKeys"`
 		RelaySound *bool `json:"relaySound"`
 	}

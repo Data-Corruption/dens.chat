@@ -14,7 +14,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 )
 
-// What changed while away (M6): the den logs each change to a message, by
+// What changed while away: the den logs each change to a message, by
 // ID only, so a client that cached what it sends can ask, after a ready,
 // what changed since it last synced, rather than fetch it all again. A
 // message's text never goes in the log, so deleting one, or a retention
@@ -47,7 +47,7 @@ func logMessage(ctx context.Context, tx *sql.Tx, message, channel int64, at time
 	return logChange(ctx, tx, changeMessage, message, &channel, at)
 }
 
-// logMember records a change to a member's record (M6.2): what ready
+// logMember records a change to a member's record: what ready
 // sends of them, so a client that kept the list gets them again.
 func logMember(ctx context.Context, tx *sql.Tx, member int64, at time.Time) error {
 	return logChange(ctx, tx, changeMember, member, nil, at)
@@ -156,8 +156,8 @@ func (d *Den) Changes(ctx context.Context, s *Session, since, upto int64) (denpr
 	// Only changes in channels the member can see now count; a channel
 	// that's gone is missing from their ready, which drops it whole.
 	// A group's member sees its messages from their joining, and a session
-	// speaking a version before group DMs sees none of them (M16.3), nor
-	// one before notes any of those (M17.3).
+	// speaking a version before group DMs sees none of them, nor
+	// one before notes any of those.
 	seen := map[int64]bool{}
 	from := map[int64]int64{}
 	var wanted []int64
@@ -262,7 +262,7 @@ func (d *Den) NewSyncEpoch(ctx context.Context) error {
 }
 
 // AdvanceIDs moves the den's ID counters on past every ID it gave out, as
-// after a restore from a backup (M11). The backup's counters are where
+// after a restore from a backup. The backup's counters are where
 // they were when it was made, so a message, channel, member or anything
 // else made after the restore could take the ID of one the restore lost,
 // which links in other dens and outside Dens, and members' clients, may
@@ -326,7 +326,7 @@ type pruner struct {
 
 // StartPruning forgets changes older than the den keeps them, now and
 // hourly, until StopPruning. Without it, as in tests, pruning runs only
-// when called. It starts again after StopPruning, as hosting does (M9.1).
+// when called. It starts again after StopPruning, as hosting does.
 func (d *Den) StartPruning() {
 	p := &d.pruner
 	p.mu.Lock()

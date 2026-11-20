@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Group DMs (M16.3). A group's members are what its changes make them,
+// Group DMs. A group's members are what its changes make them,
 // each change checked here as it comes: that it follows the one before by
 // the group's rules, and that its signer, a member who could make it, is
 // the identity this Dens kept for them. Someone the den lists without a
@@ -111,14 +111,14 @@ func (c *conn) isGroup(channel string) bool {
 }
 
 // private reports whether a channel is one of this member's DMs or group
-// DMs, or their notes (M17.3), whose messages and files are sealed here.
+// DMs, or their notes, whose messages and files are sealed here.
 func (c *conn) private(channel string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.den != nil && isSealed(c.den.channels[channel])
 }
 
-// isNotes reports whether a channel is this member's notes (M17.3).
+// isNotes reports whether a channel is this member's notes.
 func (c *conn) isNotes(channel string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()

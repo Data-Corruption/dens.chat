@@ -19,7 +19,7 @@ import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.GCMParameterSpec
 
 // Keys keeps Dens's data key wrapped with an AES key the Keystore holds, in
-// StrongBox where the phone has one, whose material never leaves it (M12).
+// StrongBox where the phone has one, whose material never leaves it.
 // The shell makes the data key as the instance is made, and unwraps it
 // each time it starts the service, which reads it on its standard input.
 object Keys {

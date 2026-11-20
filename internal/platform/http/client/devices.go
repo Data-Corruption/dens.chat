@@ -228,7 +228,7 @@ func (rt *router) handleShowSeal(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"seal": seal})
 }
 
-// handleDeviceCode is Add device's code for a den (M22.6).
+// handleDeviceCode is Add device's code for a den.
 func (rt *router) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 	view, err := rt.a.Dens.DeviceCode(chi.URLParam(r, "den"))
 	if err != nil {
@@ -239,7 +239,7 @@ func (rt *router) handleDeviceCode(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDigitsCode is the code of the digits this device shows for a
-// sign-in it answered (M22.6).
+// sign-in it answered.
 func (rt *router) handleDigitsCode(w http.ResponseWriter, r *http.Request) {
 	code, err := rt.a.Dens.DigitsCode(chi.URLParam(r, "den"), chi.URLParam(r, "id"))
 	if err != nil {

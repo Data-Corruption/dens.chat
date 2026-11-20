@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs in the Android container, as root (M12): the SDK's pieces the e2e
+# Runs in the Android container, as root: the SDK's pieces the e2e
 # needs, unpacked from the downloads setup.sh pushes once vendor.sh has
 # verified them; the emulator's devices; and the emulator.
 #

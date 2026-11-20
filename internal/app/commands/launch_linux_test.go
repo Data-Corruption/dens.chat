@@ -51,7 +51,7 @@ func (f *fakeSpawn) spawn(argv []string, files ...*os.File) error {
 // A launch starts the Flatpak's service through Flatpak's Spawn when none
 // runs, and hears from it that it's ready, or why it stopped; one that
 // finds an older build's service has it quit first, and one that finds
-// its own build's or a newer one starts nothing (M9.3).
+// its own build's or a newer one starts nothing.
 func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
@@ -162,7 +162,7 @@ func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 }
 
 // Two launches at once start one service between them: the second waits
-// for the first, then finds the service it started (M9.3).
+// for the first, then finds the service it started.
 func TestTwoLaunchesStartOneService(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))

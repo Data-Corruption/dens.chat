@@ -61,7 +61,7 @@ func hostingOf(t *testing.T, a *App) *bool {
 
 // The first start of a version with the hosting switch takes it from the
 // den role v1.0.0 gave the instance, and from then on the switch alone
-// decides (M9.1).
+// decides.
 func TestHostingStartsAsV1LeftIt(t *testing.T) {
 	for _, denRole := range []bool{true, false} {
 		t.Run(fmt.Sprintf("den role %v", denRole), func(t *testing.T) {
@@ -128,7 +128,7 @@ func TestRestoredBackupStartsNotHosting(t *testing.T) {
 }
 
 // The Flatpak hosts no den, whatever its data held, as a backup of an
-// instance that hosted does (M9.3).
+// instance that hosted does.
 func TestFlatpakNeverHosts(t *testing.T) {
 	devHome(t)
 	a := openDev(t, fmt.Sprintf("t%d", time.Now().UnixNano()%1_000_000))

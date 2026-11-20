@@ -5,7 +5,7 @@
 // open the push-to-talk gate, and from M19.3 its toggle deafen deafens and
 // hears again. A desktop that bound them and holds none now gets a card
 // that says so, with a way out, rather than a button that can't be
-// pressed (M11).
+// pressed.
 //
 //   run.sh desktop chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';

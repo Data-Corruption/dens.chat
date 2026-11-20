@@ -4,7 +4,7 @@
 #   DEST/        v99.0.1-e2e: version pointer, installer, releases/<version>/
 #   DEST/next/   v99.0.2-e2e, the release the harnesses update to
 #   DEST/first/  Dens's first release, which the harnesses install to host
-#                a den and update from (M9.1); see first-release.sh
+#                a den and update from; see first-release.sh
 # The fixtures' versions sort after every real release, so they install over
 # the first. TARGET is linux-amd64, linux-arm64 or windows-amd64, and picks
 # the installer (install.sh or install.ps1). Install with --skip-verify and

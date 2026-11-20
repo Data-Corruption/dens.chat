@@ -114,7 +114,7 @@ const readyWord = "ready"
 // runService hosts the service under the platform's service manager first,
 // so that even a refused start is reported to it properly, then opens the
 // installation and runs. A launch that started it hears, on the pipe it
-// gave, once it's ready, or why it stopped (M9.3).
+// gave, once it's ready, or why it stopped.
 func runService(ctx context.Context, bi build.BuildInfo, cmd *cli.Command) (err error) {
 	tell := readyPipe(cmd.Int("ready-fd"))
 	defer func() {

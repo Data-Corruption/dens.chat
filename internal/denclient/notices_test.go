@@ -85,7 +85,7 @@ func (n *notices) waitSaid(t *testing.T, what string) {
 	}
 }
 
-// What a member's Dens tells its notifications (M12.3): each message
+// What a member's Dens tells its notifications: each message
 // another member sends, named and opened, a DM's too, and what takes one
 // back: the member's own message, reading the channel, a delete, and
 // leaving the den.

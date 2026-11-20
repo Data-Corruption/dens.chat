@@ -1,5 +1,5 @@
 // A call in the den's voice channel, Lounge, between the app's page and a
-// desktop's (M12): each side joins, and every 5 seconds prints a line of
+// desktop's: each side joins, and every 5 seconds prints a line of
 // JSON saying when, what it sends and hears, and what its page does:
 // whether it shows, whether its browser froze or thawed it, its audio
 // contexts and the elements that play the members.

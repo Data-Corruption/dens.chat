@@ -10,7 +10,7 @@ import (
 	"slices"
 )
 
-// Call keys (M16.2).
+// Call keys.
 //
 // Each member of a call seals what their page sends, frame by frame, with
 // SFrame (RFC 9605) in its AES-128-GCM suite, under a key of their own for

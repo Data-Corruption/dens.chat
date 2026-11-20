@@ -83,8 +83,8 @@ func (v *voiceSocket) keysAmong(channel string, by *voiceSocket) []denproto.Voic
 	return got
 }
 
-// TestCallKeysReachTheirMembersAlone checks the den's part in sealed calls
-// (M16.2): a join that doesn't seal refused; a member's key passed to each
+// TestCallKeysReachTheirMembersAlone checks the den's part in sealed calls:
+// a join that doesn't seal refused; a member's key passed to each
 // other member of the call it holds a copy for, each their copy alone, and
 // to no one outside the call; the latest from each kept while the call
 // lasts, for a member whose call starts or is taken back; and a key for

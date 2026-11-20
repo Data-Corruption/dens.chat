@@ -17,7 +17,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// Identities (M16.1). A member's identity at a den comes from their DM
+// Identities. A member's identity at a den comes from their DM
 // seal, so this service makes it from the seal whenever it needs it, and
 // publishes its public keys as it signs in, where the den lacks them or
 // holds others.
@@ -67,7 +67,7 @@ type keptIdentity struct {
 // identityRecord is the member's record at a den: what their Dens kept for
 // each member, by ID; and the member's own identities there before their
 // current one, oldest first, which signed the changes to their groups they
-// made before they started over (M16.3).
+// made before they started over.
 type identityRecord struct {
 	Members map[string]*keptIdentity `json:"members"`
 	Own     []denproto.Bytes         `json:"own,omitempty"`
@@ -341,7 +341,7 @@ func (c *conn) meetLocked(members ...string) bool {
 		}
 	}
 	// And the members of the groups this member is in, as their changes make
-	// them (M16.3).
+	// them.
 	for _, g := range c.groups {
 		for _, id := range g.Members {
 			if id != me {
@@ -478,7 +478,7 @@ func (c *conn) pullRecord(ctx context.Context) (denproto.Record, error) {
 		changed = true
 	}
 	// Groups whose changes were signed by identities this Dens couldn't
-	// place are checked again with what the other devices kept (M16.3).
+	// place are checked again with what the other devices kept.
 	retry := changed && c.retryGroupsLocked()
 	c.mu.Unlock()
 	if changed {
@@ -570,7 +570,7 @@ func (c *conn) idWork(ctx context.Context) {
 				}
 			}
 		case <-c.groupDue:
-			// Group DMs whose changes this Dens is behind on (M16.3), checked
+			// Group DMs whose changes this Dens is behind on, checked
 			// once the member's record was read, which holds their own
 			// identities before they started over.
 			if !c.connectedWithIdentities() {

@@ -1,6 +1,6 @@
-// While Dens can't reach a den (M6.2), the page reads what this computer
+// While Dens can't reach a den, the page reads what this computer
 // kept of it, and says so over the messages; and Leave den, which needs
-// the den, removes it from this computer instead (M10).
+// the den, removes it from this computer instead.
 
 export const OFFLINE_NOTE = "The den is offline. You're reading cached messages.";
 

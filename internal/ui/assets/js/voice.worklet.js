@@ -1,6 +1,6 @@
-// The voice processor (M3), in an AudioWorklet between the microphone and
+// The voice processor, in an AudioWorklet between the microphone and
 // the call: RNNoise, unless the member turned it off, and then the gate
-// that decides what's sent (M3.3).
+// that decides what's sent.
 //
 // The audio thread hands the processor 128 samples at a time, and RNNoise
 // and the gate work on frames of 480 (10 ms at 48 kHz), so the processor

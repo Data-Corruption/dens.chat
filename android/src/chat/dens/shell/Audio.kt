@@ -4,7 +4,7 @@ import android.content.Context
 import android.media.AudioDeviceInfo
 import android.media.AudioManager
 
-// Audio is where a call's sound plays (M12): Android's communication
+// Audio is where a call's sound plays: Android's communication
 // device, which the page's call follows, since the page plays it through an
 // audio context made once the microphone is open, which Android plays as a
 // call's. A call starts on a headset where one is connected and on the

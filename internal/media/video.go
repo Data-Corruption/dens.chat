@@ -14,7 +14,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 )
 
-// Smaller copies of videos (M5.4). A video goes as a smaller copy, as a
+// Smaller copies of videos. A video goes as a smaller copy, as a
 // photo does, which the media module makes: AV1 at about 0.04 bits a pixel
 // each frame, at most 720p and 30 frames a second, in chunks of a few
 // seconds that run side by side, each from a keyframe, put together with
@@ -56,7 +56,7 @@ type CopyBy int
 const (
 	// ByModule is the media module, in chunks side by side, up to 720p.
 	ByModule CopyBy = iota
-	// ByPage is the page, with WebCodecs, up to 1080p (M5.5).
+	// ByPage is the page, with WebCodecs, up to 1080p.
 	ByPage
 )
 

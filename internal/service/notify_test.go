@@ -83,7 +83,7 @@ func (p *pageStream) quiet(kind, why string) {
 	}
 }
 
-// Notifications reach the pages through their streams (M12.3): the status
+// Notifications reach the pages through their streams: the status
 // as it changes, which the settings keep, and each notification, to a page
 // the browser lets notify, unless a page shows its channel; reading the
 // channel takes it back. Muting needs a den this install joined.

@@ -19,7 +19,7 @@ func readIn(v denclient.View, channel string) denproto.ReadState {
 	return denproto.ReadState{}
 }
 
-// The owner's retention period (M5) reaches members, and a pass reaches
+// The owner's retention period reaches members, and a pass reaches
 // their pages as one event: what passed the period goes, and a channel
 // left empty has nothing unread.
 func TestRetention(t *testing.T) {

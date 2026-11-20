@@ -1,4 +1,4 @@
-// The site check (M17.1): the public site's install guide as a reader meets
+// The site check: the public site's install guide as a reader meets
 // it, at 390 by 844 as a phone, in Chromium (a mobile viewport and a touch
 // screen) and Firefox (a touch screen), and at a desktop's 1400 by 900 with
 // a mouse, in both. The choice at /docs/install/ shows its four cards, and

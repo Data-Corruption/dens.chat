@@ -1,4 +1,4 @@
-// Appearance's Verified marks (M16.4): whether the check beside a member
+// Appearance's Verified marks: whether the check beside a member
 // this member compared codes with shows beside their name, in the lists,
 // a DM's header and a profile: always, while the pointer is over its row,
 // or never; on a touch screen, which has no hover, shown or not. Where

@@ -9,7 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Call records (M21.2): each voice channel keeps its longest call's
+// Call records: each voice channel keeps its longest call's
 // length, from the call's first join to its last member's leaving, held
 // calls counting. The den writes it as a call ends longer than it, and
 // each minute a call runs past it, so a den that stops without ending its

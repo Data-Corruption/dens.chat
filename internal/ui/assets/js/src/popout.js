@@ -1,4 +1,4 @@
-// Shares in windows of their own (M11): a share the member watches opens in
+// Shares in windows of their own: a share the member watches opens in
 // a blank window of the page's own origin, which the page fills with the
 // share and its controls, and which they can move to another monitor,
 // resize and make full screen. The window plays the stream the page

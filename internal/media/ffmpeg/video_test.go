@@ -11,7 +11,7 @@ import (
 	"testing"
 )
 
-// Smaller copies of videos (M5.4): scan, encode and mux, on an iPhone's
+// Smaller copies of videos: scan, encode and mux, on an iPhone's
 // video, turned a quarter, of 120 frames over four seconds, with keyframes
 // at 0, 1, 2.001667 and 3.001667 seconds.
 
@@ -281,7 +281,7 @@ func TestMuxRefusesPacketsThatDontFit(t *testing.T) {
 
 // Demux hands a video's packets out as records, in the order a decoder
 // takes them, with what decoding them takes, for the page to make the
-// copy with WebCodecs (M5.5).
+// copy with WebCodecs.
 func TestDemuxHandsAVideosPacketsOut(t *testing.T) {
 	r := newRunner(t)
 	ctx := context.Background()

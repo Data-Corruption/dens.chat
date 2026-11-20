@@ -110,7 +110,7 @@ func upright(t *testing.T, data []byte, w, h int) {
 
 // A phone photo goes as a smaller copy, upright and without its details,
 // and its sender compares the two and switches to full size and back
-// before it's sent (M5). It's narrow, so it costs the race detector, which
+// before it's sent. It's narrow, so it costs the race detector, which
 // slows the module some fifty times over, little.
 func TestPhotoGoesSmaller(t *testing.T) {
 	_, owner, member, denID, channelID := chatDen(t)
@@ -192,7 +192,7 @@ func TestPhotoGoesSmaller(t *testing.T) {
 
 // A photo over the den's limit goes as its copy whatever the setting, and
 // can't switch to full size; one whose copy wouldn't save a quarter goes
-// full size, as does what has no copy (M5).
+// full size, as does what has no copy.
 func TestPhotoCopyRules(t *testing.T) {
 	if raceOn {
 		t.Skip("covered without the race detector")
@@ -252,7 +252,7 @@ func readTestdata(t *testing.T, name string) []byte {
 }
 
 // A PNG larger than a copy stays a PNG, with its transparency, scaled
-// down so a screenshot's text stays sharp (M5).
+// down so a screenshot's text stays sharp.
 func TestPNGCopy(t *testing.T) {
 	if raceOn {
 		t.Skip("covered without the race detector")
@@ -291,7 +291,7 @@ func TestPNGCopy(t *testing.T) {
 }
 
 // A DM's photo goes as a smaller copy too, sealed, and opens for the other
-// member (M5).
+// member.
 func TestDMPhotoGoesSmaller(t *testing.T) {
 	if raceOn {
 		t.Skip("covered without the race detector")
@@ -333,7 +333,7 @@ func TestDMPhotoGoesSmaller(t *testing.T) {
 }
 
 // An iPhone's HEIC goes as a smaller copy that keeps its colors and its
-// turn, and its full size is the JPEG it would be sent as (M5).
+// turn, and its full size is the JPEG it would be sent as.
 func TestHEICGoesSmaller(t *testing.T) {
 	if raceOn {
 		t.Skip("decoding 48 tiles under the race detector takes half a minute")

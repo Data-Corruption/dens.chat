@@ -202,7 +202,7 @@ func denCommand(bi build.BuildInfo) *cli.Command {
 }
 
 // hostingOn turns hosting on, after a confirmation where the den was
-// exported, since another computer may host it by now (M10), and says
+// exported, since another computer may host it by now, and says
 // what it serves, and where Caddy and the router send it.
 func hostingOn(bi build.BuildInfo, cmd *cli.Command) error {
 	client, l, err := controlClient(bi, cmd.String("instance"))

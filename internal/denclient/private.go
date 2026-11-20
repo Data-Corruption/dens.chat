@@ -9,7 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Private DMs (M1.7). A DM's messages and files are sealed here, with the
+// Private DMs. A DM's messages and files are sealed here, with the
 // DM's key, before they leave for the den, and opened here when they come
 // back; the page never holds a key, and the den never sees one.
 //
@@ -44,7 +44,7 @@ type PageMessage struct {
 	Locked string     `json:"locked,omitempty"`
 	Reply  *PageReply `json:"reply,omitempty"`
 	// DMReactions are a DM message's sets of reactions, opened, in place
-	// of the den's sealed ones (M15.3).
+	// of the den's sealed ones.
 	DMReactions []PageReactionSet `json:"dm_reactions,omitempty"`
 }
 
@@ -69,7 +69,7 @@ type dmFile struct {
 	key     []byte
 	thumb   string
 	// message is the message the file is on, which the cache drops it
-	// with (M6); 0 for one waiting to be sent.
+	// with; 0 for one waiting to be sent.
 	message int64
 }
 
@@ -82,8 +82,8 @@ const maxDMFiles = 20_000
 func (c *conn) meLocked() string { return c.profile.Member.ID }
 
 // dmKeyLocked opens the key of a DM a message or set of reactions names,
-// M1.7's or a signed one, or says why it can't; in the member's notes
-// (M17.3), the key their seal makes, which a message names by the notes'
+// M1.7's or a signed one, or says why it can't; in the member's notes,
+// the key their seal makes, which a message names by the notes'
 // channel. The caller holds c.mu, and clears the key once it's used.
 func (c *conn) dmKeyLocked(channel, keyID string) ([]byte, string) {
 	if c.j.seal == nil {
@@ -131,7 +131,7 @@ func (c *conn) dmKeyLocked(channel, keyID string) ([]byte, string) {
 
 // openPayloadLocked opens a DM message's sealed text and files with the
 // key it names, and says who sealed it: in a DM its author, in a group
-// (M16.3) whoever its signature says, which must be a member its key
+// whoever its signature says, which must be a member its key
 // names, and its author at its first revision. The caller holds c.mu.
 func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, revision int, sealed []byte) (denproto.DMPayload, string, string) {
 	key, locked := c.dmKeyLocked(channel, keyID)
@@ -149,7 +149,7 @@ func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, re
 		case err != nil && kind == denproto.KindNotes:
 			// A note that doesn't open under the key the seal makes was
 			// sealed under the seal before the member started over, as far
-			// as anyone can tell, and is gone for good either way (M17.3).
+			// as anyone can tell, and is gone for good either way.
 			return denproto.DMPayload{}, "", lockedLost
 		case err != nil:
 			return denproto.DMPayload{}, "", lockedBroken
@@ -189,12 +189,12 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 		return PageMessage{Message: out, Reply: reply}
 	}
 	// Its members' sets of reactions open with the keys they name, which
-	// may be newer than the message's (M15.3).
+	// may be newer than the message's.
 	sets := c.openSetsLocked(m)
 	out.Sealed, out.DMReactions = nil, nil
 	p, signer, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
 	// A group's message changed by someone the den doesn't say may edit it
-	// isn't shown as its author's (M16.3).
+	// isn't shown as its author's.
 	if locked == "" && signer != m.AuthorID && signer != m.EditedBy && !slices.Contains(m.Editors, signer) {
 		locked = lockedBroken
 	}
@@ -253,7 +253,7 @@ func (c *conn) isDM(channel string) (other string, ok bool) {
 // once it's one both members can use, which an M1.7 key is once both
 // checked it, and a signed key once it names their identities as this
 // Dens kept them. A DM without one gets a new key, sealed to both
-// members' identities (M16.1).
+// members' identities.
 func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, error) {
 	for range 3 {
 		c.mu.Lock()
@@ -266,7 +266,7 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			return "", nil, errNoSeal
 		}
 		// The member's notes go under the key their seal makes, named by
-		// the notes' channel (M17.3).
+		// the notes' channel.
 		if c.den.channels[channel].Kind == denproto.KindNotes {
 			key, err := c.notesKeyLocked()
 			c.mu.Unlock()
@@ -319,7 +319,7 @@ func (c *conn) sealMessage(ctx context.Context, channel, author string, nonce []
 	ad := denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}
 	var sealed denproto.Bytes
 	if c.isGroup(channel) {
-		// A group's is signed inside by whoever wrote or changed it (M16.3).
+		// A group's is signed inside by whoever wrote or changed it.
 		me, _ := denproto.ParseID(c.memberID())
 		err = c.ownIdentity(func(ik *denproto.IdentityKeys) error {
 			var err error
@@ -353,7 +353,7 @@ func (c *conn) useSeal(fn func(seal []byte) error) error {
 }
 
 // notesKeyLocked makes the key the member's notes here are sealed with,
-// from their seal (M17.3). The caller holds c.mu, and clears the key once
+// from their seal. The caller holds c.mu, and clears the key once
 // it's used.
 func (c *conn) notesKeyLocked() ([]byte, error) {
 	var key []byte

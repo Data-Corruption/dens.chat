@@ -81,9 +81,9 @@ const (
 	LimitPassword            // per IP: password sign-in and recovery
 	LimitPasswordName        // per username: anything that checks a password or recovery code
 	LimitCall                // per member: joining a call
-	LimitTalk                // per member: lighting the push-to-talk ring (M11)
-	LimitVoiceKey            // per member: their keys for calls (M16.2)
-	LimitRelay               // per member: boxes between their devices (M20)
+	LimitTalk                // per member: lighting the push-to-talk ring
+	LimitVoiceKey            // per member: their keys for calls
+	LimitRelay               // per member: boxes between their devices
 )
 
 // Allow takes a token from the kind's bucket for key, and returns a
@@ -130,7 +130,7 @@ var errRateLimited = denproto.Errorf(http.StatusTooManyRequests, denproto.CodeRa
 
 // AllowMessage takes a message from its author's budget, which holds their
 // messages in every channel and DM together, counted one by one and by
-// size, the bytes of its text or of a DM's sealed text (M8). Each channel's
+// size, the bytes of its text or of a DM's sealed text. Each channel's
 // own limit (LimitSend) can't stop a member spreading a flood over many
 // channels and DMs, and message text counts against no storage limit, so
 // this budget is what bounds how fast one member grows the den's database.

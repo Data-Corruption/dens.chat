@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// DM keys (M1.7). Before M16.1 the den relayed each key's exchange between
+// DM keys. Before M16.1 the den relayed each key's exchange between
 // the DM's two members' clients, and kept what they sealed with their DM
 // seals: each side's state while the exchange ran, and each member's copy
 // of the key once they compared check codes. From M16.1 it starts no
@@ -52,7 +52,7 @@ func (d *Den) keyDM(ctx context.Context, s *Session, channelID string, changing 
 	return c, cid, other, nil
 }
 
-// keyChannel returns a DM or a group DM (M16.3) the session's member is
+// keyChannel returns a DM or a group DM the session's member is
 // in, with the members its keys are sealed to: a DM's two, the other of
 // whom must still be in the den for anything to change, or a group's, as
 // the den held them when it was read.
@@ -180,7 +180,7 @@ func memberKeys(ctx context.Context, q querier, member int64) ([]denproto.DMKey,
 
 // publishKeys tells each member of the keys' DMs how the keys now stand,
 // each as they see them: M1.7's as dm.key, and signed keys as
-// dm.signed_key (M16.1). A group's key (M16.3) goes to those it was sealed
+// dm.signed_key. A group's key goes to those it was sealed
 // to who are in the group now, never to a socket speaking version 1: one
 // removed has lost the group, whose keys mean nothing to them.
 func (d *Den) publishKeys(ctx context.Context, ids ...int64) error {
@@ -350,7 +350,7 @@ func sendKey(ctx context.Context, q querier, channel int64, keyID string, member
 // resetSeal gives a member a new seal within tx: the live keys of their
 // DMs retire, and their sealed copies and states go, since nothing opens
 // them now; so do their identity, which came from the old seal, and their
-// record, which it sealed (M16.1). Their Dens publishes the new identity
+// record, which it sealed. Their Dens publishes the new identity
 // as it signs in. It returns the keys it retired.
 func resetSeal(ctx context.Context, tx *sql.Tx, member int64, sealCheck []byte, now int64) ([]int64, error) {
 	if _, err := tx.ExecContext(ctx, `UPDATE den_members SET seal_check = ?, identity = NULL WHERE id = ?`, sealCheck, member); err != nil {
@@ -364,7 +364,7 @@ func resetSeal(ctx context.Context, tx *sql.Tx, member int64, sealCheck []byte, 
 	if err := logMember(ctx, tx, member, time.UnixMilli(now)); err != nil {
 		return nil, err
 	}
-	// Their groups' keys too (M16.3), whose next is sealed to the new
+	// Their groups' keys too, whose next is sealed to the new
 	// identity.
 	ids, err := retireKeys(ctx, tx, member, now, denproto.RetiredStartedOver, `k.channel_id IN (SELECT id FROM den_channels
 		WHERE kind = 'dm' AND (dm_low = ?4 OR dm_high = ?4)) OR k.channel_id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?4)`, member)

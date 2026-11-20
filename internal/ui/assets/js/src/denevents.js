@@ -1,4 +1,4 @@
-// Events (M17.4), what the page knows of them without a screen: the den's
+// Events, what the page knows of them without a screen: the den's
 // limits as the den holds them, the order the pane lists them in, what the
 // Events row says, an event's times in the member's time zone, which the
 // form takes in and the pane shows, what the form sends, who may change an
@@ -33,7 +33,7 @@ export const MAX_LENGTH = 7 * DAY;
 // staff have up to 10, as its owner sets.
 export const MAX_EVENTS = 50;
 export const MAX_MEMBER_EVENTS = 10;
-// A badge's title is up to 40 characters (M17.5).
+// A badge's title is up to 40 characters.
 export const MAX_BADGE_TITLE = 40;
 
 // LENGTHS are the lengths the form offers, in minutes, from 5 minutes to a

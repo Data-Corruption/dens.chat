@@ -46,15 +46,15 @@ type Status struct {
 	Error       string `json:"error,omitempty"`
 	Since       int64  `json:"since"`
 	// Seal says this device holds the member's DM seal here; Requests are
-	// sign-ins on new devices waiting for their approval (M1.7).
+	// sign-ins on new devices waiting for their approval.
 	Seal     bool          `json:"seal"`
 	Requests []RequestView `json:"requests,omitempty"`
 	// Retention is the days the den keeps a message, as last heard, or 0
-	// for ever (M5).
+	// for ever.
 	Retention int `json:"retention,omitempty"`
 	// Unread counts the channels and DMs with messages the member hasn't
 	// read, and Mentions the mentions waiting in them, every message in a
-	// DM among them, which the home page marks the den with (M13.1).
+	// DM among them, which the home page marks the den with.
 	Unread   int `json:"unread,omitempty"`
 	Mentions int `json:"mentions,omitempty"`
 }
@@ -85,18 +85,18 @@ type conn struct {
 	focus []string
 
 	// follows holds the checks of the den's new addresses to one a
-	// minute (M8).
+	// minute.
 	follows followGate
 
 	// marked is the unread channels and mentions the den's status last
-	// said, so a change to them updates the pages' dens list (M13.1).
+	// said, so a change to them updates the pages' dens list.
 	marked marks
 
 	stop context.CancelFunc // ends run, when the den is forgotten
 	done chan struct{}      // closed when run has returned
 	wake chan struct{}      // cuts a wait between reconnects short
 
-	// DMs (M1.7): the keys of DM files this service opened; files uploaded
+	// DMs: the keys of DM files this service opened; files uploaded
 	// for DMs, waiting to be sent; and sign-ins this device is approving,
 	// or approved, whose digits the new device may still be waiting for.
 	dmFiles   map[string]dmFile
@@ -105,16 +105,16 @@ type conn struct {
 	approved  map[string]RequestView
 
 	// kept are the two versions of each photo waiting to be sent, by its
-	// upload's ID (M5).
+	// upload's ID.
 	kept map[string]*kept
 
-	// The cache (M6): what the files of channels' messages the page got
+	// The cache: what the files of channels' messages the page got
 	// are on; the latest snapshot's say on what the cache keeps, for its
 	// worker; and the worker's wake.
 	owners    map[string]fileOwner
 	readySync *pendingSync
 	syncDue   chan struct{}
-	// The den's emoji (M15.2): one fill of the cache with their files at a
+	// The den's emoji: one fill of the cache with their files at a
 	// time, and the worker's wake for one.
 	fillMu  sync.Mutex
 	fillDue chan struct{}
@@ -127,11 +127,11 @@ type conn struct {
 	stateDirty   bool
 	membersDirty bool
 	// tallies are the latest events applied that change a message without
-	// its revision, reactions' (M15.3) and polls' (M15.4), which what the
+	// its revision, reactions' and polls', which what the
 	// den sends of a message after a request they came during takes again.
 	tallies tallyRing
 
-	// Identities (M16.1), guarded by mu: the identities this member's Dens
+	// Identities, guarded by mu: the identities this member's Dens
 	// kept here, and the den's revision of their record this device last
 	// read or wrote; the hash of this member's own, which the seal makes;
 	// why each signed key can't be read, "" when it can, until what was
@@ -142,7 +142,7 @@ type conn struct {
 	verdicts map[string]string
 	copies   map[string]denproto.Bytes
 	idDue    chan struct{}
-	// Group DMs (M16.3), guarded by mu: each group as its changes, checked
+	// Group DMs, guarded by mu: each group as its changes, checked
 	// here, make it; groupDue wakes idWork to fetch those it's behind on.
 	// speaking is the protocol's version the socket was opened at, which
 	// only the run goroutine touches.
@@ -151,7 +151,7 @@ type conn struct {
 	speaking int
 	// pulled says the member's record was read since the latest snapshot,
 	// which a group's changes are checked against: it holds the member's
-	// own identities before they started over (M16.3).
+	// own identities before they started over.
 	pulled bool
 
 	// Only the run goroutine touches these, and sentMembers, the cursor
@@ -162,7 +162,7 @@ type conn struct {
 }
 
 // membersCursor is where a list of members stands: the den's sync epoch
-// and version it's current as of (M6.2).
+// and version it's current as of.
 type membersCursor struct {
 	epoch   denproto.Bytes
 	version int64
@@ -233,7 +233,7 @@ func (c *conn) run(ctx context.Context) {
 			return
 		}
 		// Why the connection closed goes to the log at info, with how long
-		// it was up (M11), by the wall clock (M14.1). One that never came up
+		// it was up, by the wall clock. One that never came up
 		// goes at debug, since a den that's down fails every half minute.
 		up := c.m.wall().Sub(connectedAt)
 		if connectedAt.IsZero() {
@@ -368,7 +368,7 @@ func describe(err error) string {
 // between two times by their monotonic readings when both hold one, and
 // the monotonic clock stops while a phone sleeps (android.md's A phone
 // sleeps). A session's expiry, and how long a connection lasted, go by the
-// wall clock alone (M14.1).
+// wall clock alone.
 func (m *Manager) wall() time.Time { return m.Now().Round(0) }
 
 // session returns a token that is valid for at least a minute, signing in
@@ -482,7 +482,7 @@ func (c *conn) call(ctx context.Context, method, path string, req, resp any) err
 // since the client last heard from it, or an older one that refuses this
 // build's, it dials again, once, at that one: a socket keeps the version it
 // opened at, so one left at an older version would go without group DMs
-// (M16.3) until it next reconnected.
+// until it next reconnected.
 func dialSocket(ctx context.Context, a *api, u string, token denproto.Bytes, opts websocket.DialOptions) (*websocket.Conn, *http.Response, int, error) {
 	for attempt := 0; ; attempt++ {
 		opts.HTTPHeader = http.Header{}
@@ -515,7 +515,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 		q.Set("resume", c.epoch+"."+strconv.FormatUint(c.seq, 10))
 	}
 	// A client that kept the list of members asks only for the changes to
-	// it (M6.2).
+	// it.
 	c.mu.Lock()
 	c.sentMembers = nil
 	if c.members != nil && c.den != nil {
@@ -527,7 +527,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 		u += "?" + q.Encode()
 	}
 	c.setState(StateConnecting, "")
-	// Each of the den's pings has renew look at the time (M14.1). The
+	// Each of the den's pings has renew look at the time. The
 	// socket hears pings as it reads, so this mustn't block.
 	pinged := make(chan struct{}, 1)
 	ws, resp, speaking, err := dialSocket(ctx, a, u, token, websocket.DialOptions{HTTPClient: a.client,
@@ -549,8 +549,8 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 		return time.Time{}, -1, unreached(err), err
 	}
 	defer ws.CloseNow()
-	// Group DMs come only on a socket speaking a version with them (M16.3),
-	// and notes on one speaking a version with those (M17.3).
+	// Group DMs come only on a socket speaking a version with them,
+	// and notes on one speaking a version with those.
 	c.speaking = speaking
 	ws.SetReadLimit(denproto.MaxBody)
 	c.mu.Lock()
@@ -692,10 +692,10 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		clear(c.dmFiles)
 		clear(c.verdicts)
 		c.pulled = false
-		// The identities the den gives now, against those kept (M16.1).
+		// The identities the den gives now, against those kept.
 		met := c.meetLocked()
 		// The groups whose changes this Dens is behind on, which it fetches,
-		// and those it's no longer in, which it forgets (M16.3).
+		// and those it's no longer in, which it forgets.
 		stale := len(c.staleGroupsLocked()) > 0
 		c.mu.Unlock()
 		if met {
@@ -708,8 +708,8 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.m.keysDue(c.j.denID.String())
 		c.m.notify()
 		// What the member can see may have changed, so files cached in
-		// memory go too, those on disk as far as the den's changes say
-		// (M6), and the page drops what it holds for this den and loads it
+		// memory go too, those on disk as far as the den's changes say,
+		// and the page drops what it holds for this den and loads it
 		// again.
 		c.m.files.drop(c.j.denID.String())
 		c.cacheReady(r)
@@ -751,7 +751,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// These go to the page holding the call, not to every page.
 		return e, false, c.callEvent(ctx, e)
 	case denproto.EventRelaySignal:
-		// A box from another of the member's devices, for Relay (M20).
+		// A box from another of the member's devices, for Relay.
 		var b denproto.RelaySignalEvent
 		if err := json.Unmarshal(e.D, &b); err != nil || denproto.CheckRelaySignalEvent(b) != nil {
 			return e, false, errors.New("malformed relay.signal")
@@ -767,7 +767,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		return e, false, nil
 	case denproto.EventGroupChange:
 		// A change to a group, checked against the group as this Dens knew
-		// it, the pages hearing of the group as it now stands (M16.3).
+		// it, the pages hearing of the group as it now stands.
 		c.mu.Lock()
 		if c.den == nil {
 			c.mu.Unlock()
@@ -793,7 +793,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		return e, false, nil
 	case denproto.EventRecordUpdated:
-		// Another device of this member's wrote their record (M16.1).
+		// Another device of this member's wrote their record.
 		var u denproto.RecordUpdated
 		if json.Unmarshal(e.D, &u) == nil {
 			c.mu.Lock()
@@ -830,18 +830,18 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	gone := c.den.gone
 	c.den.gone = nil
 	// The message as the den sent it, for the cache, which keeps a DM's
-	// sealed (M6.2).
+	// sealed.
 	var kept *denproto.Message
 	// What it may notify the member of, or, for their own, the channel
-	// they read by sending it (M12.3); or an event they're interested in
-	// that started, which the den tells them alone (M17.4).
+	// they read by sending it; or an event they're interested in
+	// that started, which the den tells them alone.
 	var notice *notify.Message
 	var own *denproto.Message
 	var start *notify.Start
-	// The message whose tallies an event changes, its reactions (M15.3) or
-	// its poll's (M15.4), for the cache.
+	// The message whose tallies an event changes, its reactions or
+	// its poll's, for the cache.
 	var tallied string
-	// A group's key, with which its name may open (M16.3).
+	// A group's key, with which its name may open.
 	groupKey := false
 	if err == nil && ok && e.Seq != 0 {
 		c.stateDirty = true
@@ -875,13 +875,13 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		var k denproto.SignedKey
 		if json.Unmarshal(e.D, &k) == nil {
 			delete(c.verdicts, k.ID)
-			// A group's name, and its namings, open with its keys (M16.3).
+			// A group's name, and its namings, open with its keys.
 			groupKey = c.den.channels[k.ChannelID].Kind == denproto.KindGroupDM
 		}
 	case !ok:
 	case e.T == denproto.EventDMReactions:
 		// A DM's set reaches the page opened, or as none where this device
-		// can't open it (M15.3).
+		// can't open it.
 		var d denproto.DMReactions
 		if json.Unmarshal(out.D, &d) == nil {
 			set, _ := c.openSetLocked(d.ChannelID, d.MessageID, d.SealedReactions)
@@ -907,7 +907,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 	}
 	// A member's identity the den gives now is checked against the one
-	// kept for them, and a new DM keeps its other member's (M16.1); this
+	// kept for them, and a new DM keeps its other member's; this
 	// member's own, if the den holds another, is published again.
 	met, republish := false, false
 	if err == nil && ok {
@@ -924,7 +924,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 	}
 	// A group created or changed whose changes this Dens is behind on, or
-	// one it left, which it forgets (M16.3).
+	// one it left, which it forgets.
 	groups := false
 	if err == nil && ok && (e.T == denproto.EventChannelCreated || e.T == denproto.EventChannelUpdated || e.T == denproto.EventChannelDeleted) {
 		before := len(c.groups)
@@ -936,16 +936,16 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
 	// The den tells only the members interested in an event that it
-	// started (M17.4), which the logs say, as they say a call's turns.
+	// started, which the logs say, as they say a call's turns.
 	if start != nil {
 		c.logf(true, "event %s, which the member is interested in, started", start.Event)
 	}
 	// Who is in the install's call may have changed, or a member's identity,
-	// which changes the member's key for it (M16.2).
+	// which changes the member's key for it.
 	if err == nil && ok && (e.T == denproto.EventVoiceState || e.T == denproto.EventMemberUpdated) {
 		c.m.keysDue(c.j.denID.String())
 	}
-	// Relay links to the device that holds the member's call (M20).
+	// Relay links to the device that holds the member's call.
 	if err == nil && ok && e.T == denproto.EventVoiceState {
 		c.m.relayChanged()
 	}
@@ -987,9 +987,9 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		c.mu.Unlock()
 	}
-	// A deleted channel, or a retention pass (M5), takes files the memory
+	// A deleted channel, or a retention pass, takes files the memory
 	// cache can't tell were theirs, so all of them go; the cache on disk
-	// knows what each file is on (M6).
+	// knows what each file is on.
 	if err == nil && (e.T == denproto.EventChannelDeleted || e.T == denproto.EventMessagesExpired) {
 		c.m.files.drop(c.j.denID.String())
 		c.cacheEvent(e)
@@ -1175,7 +1175,7 @@ func (c *conn) ping(ctx context.Context, ws *websocket.Conn) bool {
 // closes the socket with 4001 and run signs in again.
 //
 // It goes by the wall clock, as the token's expiry does, and looks at it as
-// its timer fires and as each of the den's pings arrives (M14.1): Go's
+// its timer fires and as each of the den's pings arrives: Go's
 // timers run on the monotonic clock, which stops while a phone sleeps, so
 // there the timer fires late, by hours on a desk, while the den's ping,
 // every 30 seconds, wakes a sleeping phone anyway.

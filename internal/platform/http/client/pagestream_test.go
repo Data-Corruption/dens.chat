@@ -15,7 +15,7 @@ import (
 )
 
 // TestPageStreamSaysWhyItClosed checks the causes the log gives for a
-// page's stream closing (M11): the page going away or closing it, its
+// page's stream closing: the page going away or closing it, its
 // connection breaking, a ping it doesn't answer, a write it doesn't take,
 // falling behind, and the service stopping.
 func TestPageStreamSaysWhyItClosed(t *testing.T) {

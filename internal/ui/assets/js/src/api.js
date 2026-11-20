@@ -4,7 +4,7 @@
 // Every call names the version of Dens that served this page. A service of
 // another version, as one an update restarted, refuses it, and the page
 // loads again from that service, rather than talking to it in a shape it
-// may not know (M9.3).
+// may not know.
 
 export class APIError extends Error {
     constructor(message, status) {

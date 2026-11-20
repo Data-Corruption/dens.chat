@@ -65,7 +65,7 @@ func TestLinks(t *testing.T) {
 }
 
 // TestHostileTextIsLinear checks that finding a text's links takes time in
-// proportion to its length, whatever its delimiters (M8), as the page's
+// proportion to its length, whatever its delimiters, as the page's
 // parse does: the den does it for every message, and again for each link
 // it rewrites. These lines are 16,000 bytes, four times a message's limit
 // in runes. Each took the old parser from 50 ms to seconds; each takes

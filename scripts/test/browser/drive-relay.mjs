@@ -248,7 +248,7 @@ try {
     report(barB.includes('Listening to') && barB.includes('Stop'), `bob's bar says he listens, with Stop: ${barB}`);
 
     // On Home the bar and the call are one box, the bar first, as under the
-    // channel list (M22.7). The page moves there without loading again,
+    // channel list. The page moves there without loading again,
     // which would end its listening.
     const goIn = (path) => B.b.eval(`(history.pushState(null, '', ${JSON.stringify(path)}), dispatchEvent(new PopStateEvent('popstate')), true)`);
     await B.b.key('Escape');

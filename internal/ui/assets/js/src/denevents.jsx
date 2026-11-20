@@ -1,4 +1,4 @@
-// Events (M17.4): the Events row at the top of a den's channel list, the
+// Events: the Events row at the top of a den's channel list, the
 // pane it opens, which lists the den's events live first and then by their
 // start, each as a card, and the form that makes or changes one. A member
 // marks Interested on a card, which the den counts for everyone and tells
@@ -160,7 +160,7 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
     const copiedTimer = useRef(null);
     useEffect(() => () => clearTimeout(copiedTimer.current), []);
     // Copy link gives the event's link, which shows its card where it's
-    // posted (M17.5).
+    // posted.
     function copyLink() {
         linking.run(async () => {
             await copyText(eventLinkTo(view.url, denID, e.id));
@@ -262,7 +262,7 @@ export function InterestedButton({ mine, disabled, onMark }) {
     );
 }
 
-// EventBadge shows an event's badge on its card (M17.5): its picture and
+// EventBadge shows an event's badge on its card: its picture and
 // title, and how it's earned.
 function EventBadge({ denID, badge, id }) {
     return (
@@ -275,7 +275,7 @@ function EventBadge({ denID, badge, id }) {
 }
 
 // EventCards shows the cards of the events a message's links point to,
-// after its files (M17.5).
+// after its files.
 export function EventCards({ text }) {
     const linked = useMemo(() => eventsIn(text), [text]);
     if (!linked.length) return null;
@@ -286,7 +286,7 @@ export function EventCards({ text }) {
     );
 }
 
-// EventLinkCard is the card of an event a link points to (M17.5): its
+// EventLinkCard is the card of an event a link points to: its
 // banner, its name, which opens it in its den's events, Live or Ended,
 // when, in the member's time zone, where, its badge, and, until it ends,
 // how many are interested, with Interested. A link to an event in a den the
@@ -375,7 +375,7 @@ function EndDialog({ denID, event, cancel, onClose }) {
 // banner, cut three times as wide as it's high; its start, in the member's
 // time zone, which a live event keeps; how long it lasts; and where it is,
 // one of the den's voice channels or a line of text. Staff attach a badge
-// to one in a voice channel (M17.5): a square picture, which an emoji's
+// to one in a voice channel: a square picture, which an emoji's
 // size takes, and a title.
 export function EventDialog({ denID, view, event, onClose }) {
     const tz = zone();
@@ -398,7 +398,7 @@ export function EventDialog({ denID, view, event, onClose }) {
     const shownBadge = willHaveBadge(form, event, badge) ? (badge === undefined ? event?.badge?.image : badge) : null;
 
     // cropped takes a picture the crop dialog framed: the banner's, or the
-    // badge's, which goes as an emoji's would (M17.5).
+    // badge's, which goes as an emoji's would.
     function cropped(blob, rect) {
         const forBadge = cropping.shape === 'badge';
         picture.run(async () => {

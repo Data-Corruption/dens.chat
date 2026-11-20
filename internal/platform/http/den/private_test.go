@@ -107,7 +107,7 @@ func (f *fixture) approve(existing denproto.Bytes, username string, verifier den
 
 // signedKey publishes an identity for each member of a DM, made from a
 // seal of its own, and makes the DM's key from the first, sealed to both
-// and signed by the first's, as their clients do (M16.1). It returns the
+// and signed by the first's, as their clients do. It returns the
 // key as the first sees it.
 func (f *fixture) signedKey(dm denproto.Channel, makers ...denproto.Bytes) denproto.SignedKey {
 	f.t.Helper()
@@ -176,7 +176,7 @@ func TestPrivateRoutes(t *testing.T) {
 	info, _ := f.d.Info()
 	a, _ := f.d.Authenticate(ctx, alice)
 	cid, _ := denproto.ParseID(dm.ID)
-	// The den starts no exchange any more (M16.1).
+	// The den starts no exchange any more.
 	_, offer, _ := denproto.StartExchange(denproto.DMExchangeContext(info.ID, cid, a.MemberID, b.MemberID))
 	keys := "/api/dms/" + dm.ID + "/keys"
 	if status := f.call(http.MethodPost, keys, alice, denproto.KeyStartRequest{Offer: offer, State: denproto.Random(100)}, nil); status != http.StatusBadRequest {
@@ -280,7 +280,7 @@ func TestFramesFitWhatClientsRead(t *testing.T) {
 }
 
 // A device the den let in by approval says so to the member's sessions as
-// its first socket opens, once, and to nobody else (M22.6).
+// its first socket opens, once, and to nobody else.
 func TestApprovedDeviceConnects(t *testing.T) {
 	f := newFixture(t)
 	code, err := f.d.Create(t.Context(), "Den", "https://den.test")

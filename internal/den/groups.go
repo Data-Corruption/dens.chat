@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Group DMs (M16.3). A group DM is a channel of kind group_dm, its members
+// Group DMs. A group DM is a channel of kind group_dm, its members
 // kept in the order they joined, each with the change that took them in,
 // from which they get the group's changes, and the group's last message as
 // they joined, after which they read. Every change is a member's
@@ -42,7 +42,7 @@ var (
 const reservedFor = time.Hour
 
 // isPrivate reports whether a channel's messages are sealed by its
-// members' Dens: a DM's, a group's, or a member's notes (M17.3).
+// members' Dens: a DM's, a group's, or a member's notes.
 func isPrivate(c denproto.Channel) bool {
 	return c.Kind == denproto.KindDM || c.Kind == denproto.KindGroupDM || c.Kind == denproto.KindNotes
 }

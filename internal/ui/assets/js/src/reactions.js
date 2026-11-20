@@ -1,4 +1,4 @@
-// Reactions (M15.3) on the page: the chips under a message, each emoji with
+// Reactions on the page: the chips under a message, each emoji with
 // how many reacted with it, marked where the member did; the events that
 // change them, each applied to its emoji's set, so applying one twice
 // changes nothing; a DM's sets, each member's, kept by their revision; and

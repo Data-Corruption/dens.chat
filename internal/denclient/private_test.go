@@ -16,7 +16,7 @@ import (
 
 // readyDM waits until both members' Dens have a DM, have published their
 // identities, and kept each other's, so either's first message makes its
-// key, with nothing to type (M16.1).
+// key, with nothing to type.
 func readyDM(t *testing.T, a, b *denclient.Manager, denID, dm string) {
 	t.Helper()
 	ida, idb := me(t, a, denID).ID, me(t, b, denID).ID

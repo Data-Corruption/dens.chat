@@ -12,7 +12,7 @@ import android.provider.Settings
 import java.io.File
 import java.io.FileInputStream
 
-// Updates hands the updates Dens downloads to Android's installer (M12.4).
+// Updates hands the updates Dens downloads to Android's installer.
 // Dens checks each one against the release's checksums and their signature
 // before it says it's ready; the shell posts that it is, and its tap, or
 // the page's Install, which Dens passes on, writes the APK into an install

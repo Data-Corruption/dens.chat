@@ -12,7 +12,7 @@ import (
 
 // The page says how to pair a browser: the command that opens the default
 // one, which the Flatpak's apps menu is, and the one that prints the link
-// for any other (M9.3). The Android app pairs its own page (M12).
+// for any other. The Android app pairs its own page.
 func TestPairCommands(t *testing.T) {
 	for _, c := range []struct {
 		form       layout.Form
@@ -48,7 +48,7 @@ func TestAutoplaysInTheAndroidAppAlone(t *testing.T) {
 
 // The page shows in Dens's own app in the Android app's WebView alone, where
 // the app holds its permissions and the phone has no keys for its
-// shortcuts (M13.3).
+// shortcuts.
 func TestThePageIsInAnAppOnAndroidAlone(t *testing.T) {
 	for form, want := range map[layout.Form]bool{layout.Installed: false, layout.Development: false, layout.Flatpak: false, layout.Android: true} {
 		a := app.New(build.BuildInfo{Name: "dens", Version: "v1.6.0"})
@@ -62,7 +62,7 @@ func TestThePageIsInAnAppOnAndroidAlone(t *testing.T) {
 
 // A request from a page another version of Dens served, as one open across
 // an update, is refused with the header that has the page load again; one
-// from this version's page, or naming none, as a script's, passes (M9.3).
+// from this version's page, or naming none, as a script's, passes.
 func TestRequestsFromAnotherVersionsPage(t *testing.T) {
 	a := app.New(build.BuildInfo{Name: "dens", Version: "v1.2.0"})
 	handler := (&router{a: a}).requireThisVersion(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -90,7 +90,7 @@ func TestRequestsFromAnotherVersionsPage(t *testing.T) {
 }
 
 // The page's Install hands the Android app's update to its shell only
-// once the updater has one ready (M12.4); elsewhere the address is the
+// once the updater has one ready; elsewhere the address is the
 // Flatpak's alone.
 func TestInstallingAnUpdateByForm(t *testing.T) {
 	for _, c := range []struct {
@@ -110,8 +110,8 @@ func TestInstallingAnUpdateByForm(t *testing.T) {
 	}
 }
 
-// Check now is the Android app's alone, with a release host to ask
-// (M17.2): an installed Dens's page has no such address, and nor does an
+// Check now is the Android app's alone, with a release host to ask:
+// an installed Dens's page has no such address, and nor does an
 // app built without one.
 func TestCheckingForAnUpdateByForm(t *testing.T) {
 	for _, form := range []layout.Form{layout.Installed, layout.Flatpak, layout.Android} {

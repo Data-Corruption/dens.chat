@@ -38,20 +38,20 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 // PageActivity shows Dens's page, which the service serves on loopback, in
-// a WebView with no JavaScript bridge (M12): the page talks to the service
+// a WebView with no JavaScript bridge: the page talks to the service
 // alone, as in a desktop browser, and the shell answers only what the
 // WebView asks of the app. The WebView stays on the page: every other
 // address opens in the phone's browser, but YouTube's player in its frame.
 // The page gets the microphone for its calls, and while it has it, the
 // activity holds it as shown, whatever the screen does. A notification's
-// tap opens the page at its message (M12.3). Back walks the page's history
-// down to Home, its root, then leaves the page (M13.1). The status and
+// tap opens the page at its message. Back walks the page's history
+// down to Home, its root, then leaves the page. The status and
 // navigation bars take the page's background, with icons to match, so
 // they follow its theme, the phone's light or dark or one the member
-// picks (M13.3). What the page plays full screen turns with the phone
-// (M13.4). While the page plays another of the member's devices' sound,
+// picks. What the page plays full screen turns with the phone.
+// While the page plays another of the member's devices' sound,
 // the activity holds it as shown, as for a call, and as the member first
-// wants Relay, it asks Android to let the app reach its network (M20.3).
+// wants Relay, it asks Android to let the app reach its network.
 class PageActivity : Activity() {
     private companion object {
         const val FILES = 1
@@ -66,8 +66,8 @@ class PageActivity : Activity() {
     // The page's request for the microphone, while Android asks the member
     // for it.
     private var micAsk: PermissionRequest? = null
-    // cameraAsk is the page's ask for the camera, to scan a sign-in's code
-    // (M22.6), while Android asks the member.
+    // cameraAsk is the page's ask for the camera, to scan a sign-in's code,
+    // while Android asks the member.
     private var cameraAsk: PermissionRequest? = null
     // asking is whether Android is asking the member for a permission the
     // activity asked for, which takes one request at a time.
@@ -139,7 +139,7 @@ class PageActivity : Activity() {
         window.insetsController?.setSystemBarsAppearance(if (Color.luminance(color) > 0.5f) light else 0, light)
     }
 
-    // installTapped installs the update a notification's tap names (M12.4),
+    // installTapped installs the update a notification's tap names,
     // now the activity is in front, where Android lets the app start its
     // installer's confirmation.
     private fun installTapped(i: Intent?) {
@@ -188,7 +188,7 @@ class PageActivity : Activity() {
     // pairing link Dens gives the shell, as dens open gives a desktop's
     // browser. A page that shows, at the address shown, takes the message
     // in place instead, as a link on it would, so a call on it goes on and
-    // its history keeps its root (M13.1).
+    // its history keeps its root.
     private fun open(page: Uri, shown: String? = null) {
         val w = webView()
         origin = page
@@ -303,8 +303,8 @@ class PageActivity : Activity() {
     }
 
     // askToNotify asks Android to let the app post notifications once the
-    // member turns some on, unless it asked before, as at their first call
-    // (M12.2): a member who refused then finds where to allow them in the
+    // member turns some on, unless it asked before, as at their first call:
+    // a member who refused then finds where to allow them in the
     // settings.
     private fun askToNotify() {
         if (Build.VERSION.SDK_INT < 33 || !started || !DensService.notifying || micAsk != null || cameraAsk != null || asking) return
@@ -317,7 +317,7 @@ class PageActivity : Activity() {
     }
 
     // askForLocal asks Android to let the app reach its network as the
-    // member first wants Relay, which Dens says (M20.3), once: a member
+    // member first wants Relay, which Dens says, once: a member
     // who refused finds where to allow it in the Relay settings.
     private fun askForLocal() {
         if (!Local.asks() || !started || !DensService.relaying || micAsk != null || cameraAsk != null || asking || Local.allowed(this) || Local.asked(this)) return
@@ -389,7 +389,7 @@ class PageActivity : Activity() {
         w.webChromeClient = object : WebChromeClient() {
             override fun onPermissionRequest(request: PermissionRequest) {
                 // The page asks for the microphone in a call, and the camera
-                // to scan a sign-in's code (M22.6), each of which it gets
+                // to scan a sign-in's code, each of which it gets
                 // once Android lets the app have it; anything else is
                 // refused.
                 val resources = request.resources.toList()
@@ -431,7 +431,7 @@ class PageActivity : Activity() {
             }
 
             // Full screen, as a video or a share docked above a channel
-            // plays (M13.4), turns with the phone, whatever its rotation is
+            // plays, turns with the phone, whatever its rotation is
             // locked to, as video apps' do.
             override fun onShowCustomView(view: View, callback: CustomViewCallback) {
                 fullScreen?.let { root.removeView(it) }
@@ -557,7 +557,7 @@ class PageActivity : Activity() {
     }
 
     // hold holds the page as shown while it has the microphone, as in a
-    // call, or plays another device's sound (M20.3), and lets it go after:
+    // call, or plays another device's sound, and lets it go after:
     // Chromium freezes a hidden page a minute after its sound stops, which
     // stops a call sending, and leaves it silent once the page thaws.
     private fun hold() {
@@ -622,7 +622,7 @@ class PageActivity : Activity() {
 
     // back walks the page's history down to its root, Home, then leaves
     // the page, as in a browser; full screen goes first. A page in a call,
-    // or playing another device's sound (M20.3), goes behind the phone's
+    // or playing another device's sound, goes behind the phone's
     // other apps instead, as Home sends it, and its call or sound goes on.
     private fun back() {
         val w = web
@@ -669,7 +669,7 @@ class PageActivity : Activity() {
 private const val NOTIFY = "android.permission.POST_NOTIFICATIONS"
 
 // HeldWebView tells Chromium its window shows while it's held, whatever the
-// window does, and passes the window's own visibility on otherwise (M12).
+// window does, and passes the window's own visibility on otherwise.
 class HeldWebView(ctx: Context) : WebView(ctx) {
     private var shown = View.VISIBLE
     var held = false

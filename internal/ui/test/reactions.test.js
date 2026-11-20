@@ -1,4 +1,4 @@
-// Reactions (M15.3), checked without a browser: the chips a message shows,
+// Reactions, checked without a browser: the chips a message shows,
 // each event applied to its emoji's set, so applying one twice changes
 // nothing; a DM's sets kept by their revision; what an edit's answer keeps;
 // a load's replay; the tip that says who; a message's room; and the quick

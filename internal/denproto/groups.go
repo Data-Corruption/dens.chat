@@ -11,7 +11,7 @@ import (
 	"slices"
 )
 
-// Group DMs (M16.3).
+// Group DMs.
 //
 // A group DM is a DM of three to ten members, which any of them adds
 // others to, the one who made it removes them from, and anyone leaves.

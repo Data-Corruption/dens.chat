@@ -4,7 +4,7 @@
 // behind; the local service checks it on the way to the den all the same.
 // An animated GIF or WebP is framed by its first frame, and goes as it is,
 // with the part framed, for the local service to make each frame again,
-// which a canvas can't (M15.1).
+// which a canvas can't.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { Actions, Button, ErrorText, Slider } from './components.jsx';
@@ -16,9 +16,9 @@ import { Dialog } from './manage.jsx';
 export const SHAPES = {
     avatar: { frame: [256, 256], out: [512, 512], round: true, square: true, title: 'Your picture', moving: '256 × 256 pixels and 2 MB' },
     banner: { frame: [384, 128], out: [1200, 400], round: false, title: 'Your banner', moving: '600 × 200 pixels and 4 MB' },
-    // An event's banner (M17.4), cut as a profile's is.
+    // An event's banner, cut as a profile's is.
     event: { frame: [384, 128], out: [1200, 400], round: false, title: "The event's banner", moving: '600 × 200 pixels and 4 MB' },
-    // A badge's picture (M17.5), square at an emoji's size, which an animated
+    // A badge's picture, square at an emoji's size, which an animated
     // one is made at too.
     badge: { frame: [256, 256], out: [128, 128], round: false, square: true, title: "The badge's picture", moving: '128 × 128 pixels and 512 KB' },
 };

@@ -5,7 +5,7 @@
 # manager runs her session bus and Flatpak's portal, and every call to the
 # Flatpak's local API goes through her paired browser session (a cookie
 # jar). The release host is a directory, served over HTTP, which the
-# release pipeline's publisher writes the Flatpak to (M9.4).
+# release pipeline's publisher writes the Flatpak to.
 
 set -eu
 
@@ -64,7 +64,7 @@ json() {
 
 # services counts Dens's services running: its sandboxes whose command is
 # dens service run, and not the short ones, as the service's own that asks
-# the newest build installed its version (M9.4).
+# the newest build installed its version.
 services() {
     n=0
     for pid in $(as_alice flatpak ps --columns=application,child-pid | awk -v app="$APP" '$1 == app { print $2 }'); do
@@ -112,7 +112,7 @@ image)
     as_alice flatpak --user install -y --noninteractive --no-related flathub org.freedesktop.Platform//26.08
     ;;
 prepare)
-    # An image made before the frontend was in it, or PulseAudio (M20.2).
+    # An image made before the frontend was in it, or PulseAudio.
     for package in xdg-desktop-portal pulseaudio pulseaudio-utils; do
         dpkg -s "$package" >/dev/null 2>&1 ||
             DEBIAN_FRONTEND=noninteractive apt-get install -y -qq --no-install-recommends "$package" >/dev/null
@@ -229,8 +229,8 @@ join)
         json 'd["den"]["role"]'
     ;;
 permissions)
-    # The Flatpak has PulseAudio's socket, for the sound Relay shares
-    # (M20.2), beside its others.
+    # The Flatpak has PulseAudio's socket, for the sound Relay shares,
+    # beside its others.
     perms=$(as_alice flatpak info --show-permissions "$APP")
     printf '%s\n' "$perms" | grep -q '^sockets=.*pulseaudio' || fail "the Flatpak's permissions: $perms"
     ;;
@@ -301,7 +301,7 @@ update-outside)
 wait-installed)
     # wait-installed VERSION: the page's next look finds VERSION installed,
     # which Dens asks the newest build installed, where Flatpak's update
-    # monitor names commits alone (M9.4).
+    # monitor names commits alone.
     wait_status "d.get('flatpakUpdate', {}).get('version') == '$1'"
     ;;
 restart)

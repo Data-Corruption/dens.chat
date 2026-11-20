@@ -82,12 +82,12 @@ type Caller struct {
 	screenSending, soundSending bool
 	keyframeRequests            int
 	// board holds what reached the caller on the call's soundboard, in the
-	// order it came, with when (M14.3).
+	// order it came, with when.
 	board []BoardPacket
 }
 
 // BoardPacket is a packet that reached a caller on the call's soundboard:
-// its payload, its RTP timestamp, and when it came (M14.3).
+// its payload, its RTP timestamp, and when it came.
 type BoardPacket struct {
 	Payload   []byte
 	Timestamp uint32
@@ -104,7 +104,7 @@ const maxBoard = 30_000
 var browserOpus = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
 	SDPFmtpLine: "minptime=10;useinbandfec=1"}
 
-// vp9 is VP9 as dens offer it for screen shares (M4.2), profile 0, with
+// vp9 is VP9 as dens offer it for screen shares, profile 0, with
 // the keyframe requests a viewer's browser sends.
 var vp9 = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeVP9, ClockRate: 90000, SDPFmtpLine: "profile-id=0",
 	RTCPFeedback: []webrtc.RTCPFeedback{{Type: "ccm", Parameter: "fir"}}}
@@ -466,7 +466,7 @@ func sharedSound(member string) string  { return "audio " + denproto.ScreenStrea
 func (c *Caller) Heard(member string) int { return c.count(voiceKey(member)) }
 
 // Board returns what has reached the caller on the call's soundboard, in
-// the order it came (M14.3).
+// the order it came.
 func (c *Caller) Board() []BoardPacket {
 	c.mu.Lock()
 	defer c.mu.Unlock()

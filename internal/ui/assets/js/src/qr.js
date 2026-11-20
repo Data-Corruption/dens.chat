@@ -1,4 +1,4 @@
-// Reading QR codes (M22.6), for the sign-in codes a new device scans with
+// Reading QR codes, for the sign-in codes a new device scans with
 // its camera: a frame's pixels in, the code's text out, or null. It reads
 // what Dens makes, versions 1 to 10, held up to a camera on a screen. A
 // code is whatever someone shows the camera, so every step is bounded and

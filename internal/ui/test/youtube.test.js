@@ -1,4 +1,4 @@
-// YouTube's players (M4.1): which links get covers, what plays, and the
+// YouTube's players: which links get covers, what plays, and the
 // setting. Checked without a browser, as markdown.test.js checks the
 // renderer.
 
@@ -176,7 +176,7 @@ test('players stay off until the member turns them on, and the page hears when t
     assert.deepEqual(heard, [true, false]);
 });
 
-// A cover's title and channel (M14.1).
+// A cover's title and channel.
 const RICK = { found: true, playable: true, title: 'Never Gonna Give You Up', channel: 'Rick Astley', channel_url: 'https://www.youtube.com/@RickAstleyYT' };
 
 test("a cover's title links to the video and its channel's name to the channel, laid over the button that plays it", () => {

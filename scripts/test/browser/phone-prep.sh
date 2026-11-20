@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
-# The phone check's den (M13): alice's install hosts it; bob and carol
+# The phone check's den: alice's install hosts it; bob and carol
 # join; dave's, which the driver starts new for each browser, shows the
 # screens before a den. Alice, bob and carol share a group DM, which
-# carol renames (M16.3) and sets to disappear after a week, as bob sets
-# the DM after a day (M16.4). Its soundboard holds a sound (M14.3), and it has
-# an emoji of its own (M15.2). general
+# carol renames and sets to disappear after a week, as bob sets
+# the DM after a day. Its soundboard holds a sound, and it has
+# an emoji of its own. general
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
-# only. Alice and bob share a DM, which opens at once (M16.1), where alice
+# only. Alice and bob share a DM, which opens at once, where alice
 # started over, so bob's page shows her keys changed. Random ends in a
-# photo bob sent as a spoiler (M17.2). Two events are to come (M17.4),
+# photo bob sent as a spoiler. Two events are to come,
 # Game night with a badge, whose link #general holds, and two that passed
-# had badges, which bob earned, and alice the first of (M17.5).
+# had badges, which bob earned, and alice the first of.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"
 stop m2d
@@ -32,13 +32,13 @@ limits=$(api alice GET "/api/dens/$DEN/state" | python3 -c 'import json, sys; d 
 api alice POST "/api/dens/$DEN/settings" "$limits" >/dev/null
 ./node browser/make-sound.mjs ping.ogg 1
 api alice POST "/api/dens/$DEN/soundboard" "{\"name\":\"Ping\",\"upload\":\"$(upload alice ping.ogg ping.ogg)\"}" >/dev/null
-# An emoji of the den's own (M15.2), which the phone's picker and
+# An emoji of the den's own, which the phone's picker and
 # completion offer.
 ./node browser/make-emoji.mjs party.png 96 96
 api alice POST "/api/dens/$DEN/emoji" "{\"name\":\"party\",\"upload\":\"$(upload alice party.png party.png)\"}" >/dev/null
 
-# Two events to come (M17.4): one in Lounge, with a description and a
-# badge (M17.5), and one somewhere else, a day on.
+# Two events to come: one in Lounge, with a description and a
+# badge, and one somewhere else, a day on.
 ./node browser/make-emoji.mjs badge.png 128 128
 at=$(($(date +%s) * 1000))
 night=$(api alice POST "/api/dens/$DEN/events" "{\"name\":\"Game night\",\"description\":\"Bring **snacks**, and a game for four or more.\",\"starts_at\":$((at + 3600000)),\"ends_at\":$((at + 3 * 3600000)),\"channel_id\":\"$LOUNGE\",\"badge\":\"$(upload alice badge.png badge.png)\",\"badge_title\":\"Game night regular\"}" | json 'd["id"]')
@@ -75,7 +75,7 @@ dm=$(open_dm alice bob)
 say alice "$dm" "a DM for bob, end to end"
 say bob "$dm" "and one back"
 # Alice starts over, as on a new phone, so the DM shows where her keys
-# changed (M13.4, M16.1).
+# changed.
 api alice POST "/api/dens/$DEN/seal/start-over" '{"password":"den password"}' >/dev/null
 open_dm alice bob >/dev/null
 say alice "$dm" "and one after starting over"
@@ -96,7 +96,7 @@ api bob PUT "/api/dens/$DEN/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null
 say bob "$dm" "and this one goes tomorrow"
 
 # Two events that passed, of a second each, as a development instance's den
-# takes, each with a badge (M17.5); the den gives badges by calls, which
+# takes, each with a badge; the den gives badges by calls, which
 # the events check makes, so with the den stopped bob gets both, and alice
 # the first, for their profile cards.
 passed=()

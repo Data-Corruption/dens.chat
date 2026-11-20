@@ -2,8 +2,8 @@
 // browser named at a desktop's width: every section of the settings and
 // of Manage opened from the list down the side, each with the layout
 // audit, and every hint in it read as one line, a hint that wrapped
-// failing it, Voice with push to talk's release delay too (M19.3), and
-// Relay (M20.1), its Audio relay card among it (M20.2); then
+// failing it, Voice with push to talk's release delay too, and
+// Relay, its Audio relay card among it; then
 // Appearance's sizes: a photo at Medium until she chooses, at Large and
 // Largest the photo itself drawn over the den's preview, and at Small its
 // preview again; a YouTube player at Small, then Large with the larger
@@ -72,7 +72,7 @@ const WRAPPED = `(() => {
     }
     return out;
 })()`;
-// FRAME reads a section as the one frame shows it (M22.3): what stands in
+// FRAME reads a section as the one frame shows it: what stands in
 // its panel outside a card, the toggles' heights and the labels' weights.
 const FRAME = `JSON.stringify((() => {
     const panel = document.querySelector('[role=dialog] [data-panel]');
@@ -165,7 +165,7 @@ const WEARS = `JSON.stringify((() => {
         set: document.documentElement.style.length, styled: document.documentElement.getAttribute('style') || '' };
 })())`;
 const wears = async (on) => JSON.parse(await on.eval(WEARS));
-// Appearance's columns (M22.8): the list of themes, the editor of the one
+// Appearance's columns: the list of themes, the editor of the one
 // shown, the bar of its unsaved edits, the middle column's panel, and the
 // preview; and what the preview wears: its box's background and text, its
 // variables, its channel list's background, and its primary button's

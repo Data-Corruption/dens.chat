@@ -17,7 +17,7 @@ import (
 
 // Runner runs jobs, each in a worker process of its own: one at a time, but
 // for the chunks of videos' copies, which run side by side, as many as half
-// the computer's cores (M5.4).
+// the computer's cores.
 type Runner struct {
 	command []string
 	start   func(*exec.Cmd) error
@@ -107,14 +107,14 @@ func (r *Runner) Poster(ctx context.Context, in Input, out Output, maxSide, qual
 }
 
 // Scan reads in's video's packets without decoding them, to plan its smaller
-// copy (M5.4).
+// copy.
 func (r *Runner) Scan(ctx context.Context, in Input) (Scanned, error) {
 	var s Scanned
 	return s, r.run(ctx, Job{Op: OpScan}, files{in: in}, &s)
 }
 
 // Encode makes a chunk of in's video's smaller copy in AV1, and writes its
-// packets to out, for Mux to put together with the other chunks' (M5.4).
+// packets to out, for Mux to put together with the other chunks'.
 // Chunks run side by side, as many as Workers, at the lowest priority, as
 // every job does. progress, if it's set, gets the time of each frame as
 // it's encoded, in microseconds.
@@ -126,7 +126,7 @@ func (r *Runner) Encode(ctx context.Context, in Input, out Output, c Chunk, prog
 
 // Mux writes in's video's smaller copy to out as an MP4: the AV1 packets
 // Encode wrote of its chunks, one chunk's after another in packets, width ×
-// height, with in's sound and turn (M5.4).
+// height, with in's sound and turn.
 func (r *Runner) Mux(ctx context.Context, in, packets Input, out Output, width, height int) (Muxed, error) {
 	var m Muxed
 	return m, r.run(ctx, Job{Op: OpMux, Width: width, Height: height}, files{in: in, out: out, packets: packets}, &m)
@@ -134,7 +134,7 @@ func (r *Runner) Mux(ctx context.Context, in, packets Input, out Output, width, 
 
 // Demux writes in's video packets to out as records, in the order a
 // decoder takes them, for the page to decode with WebCodecs and make the
-// video's copy itself, and says what decoding them takes (M5.5).
+// video's copy itself, and says what decoding them takes.
 func (r *Runner) Demux(ctx context.Context, in Input, out Output) (Demuxed, error) {
 	var d Demuxed
 	return d, r.run(ctx, Job{Op: OpDemux}, files{in: in, out: out}, &d)

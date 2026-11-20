@@ -33,11 +33,11 @@ type Archive struct {
 var ErrNoDen = errors.New("this instance holds no den")
 
 // ErrNotExported is removing a den that hasn't been exported since hosting
-// was last on, which no other computer can hold all of (M10).
+// was last on, which no other computer can hold all of.
 var ErrNotExported = errors.New("the den hasn't been exported since hosting was last on")
 
 // AddressError is a den that doesn't answer at its address from this
-// computer as itself, so its copy here stays (M10). It says what to try.
+// computer as itself, so its copy here stays. It says what to try.
 type AddressError struct {
 	Den, URL string
 	Err      error
@@ -70,8 +70,8 @@ func (a *App) Backup(ctx context.Context) (Archive, error) {
 	}, nil)
 }
 
-// ExportDen writes the den's export, which moves it to another computer
-// (M10): an archive in a backup's format whose database holds the den and
+// ExportDen writes the den's export, which moves it to another computer:
+// an archive in a backup's format whose database holds the den and
 // none of the client (database.SnapshotDen), as dens den export and the
 // page's Move stream it, and names it. It refuses while hosting is on, so
 // nothing reaches the den after its snapshot, and records the export,
@@ -126,7 +126,7 @@ func (a *App) archive(ctx context.Context, m backup.Manifest, name, what string,
 	}
 	// The den takes no file off the disk from before the snapshot until
 	// the archive holds the uploads, so the archive has every file the
-	// snapshot names (M8).
+	// snapshot names.
 	release := a.Den.HoldFiles()
 	temp, err := os.MkdirTemp(a.Layout.Temp, "backup-")
 	if err != nil {
@@ -175,7 +175,7 @@ func (a *App) archive(ctx context.Context, m backup.Manifest, name, what string,
 }
 
 // RemoveDen deletes this install's copy of its den once another computer
-// serves it (M10): with hosting off, the den exported and hosting not on
+// serves it: with hosting off, the den exported and hosting not on
 // since, and the den answering at its address from this computer as
 // itself, which with hosting off here means another computer serves it.
 // authorize runs once those hold, before anything goes, as the local
@@ -238,7 +238,7 @@ func (a *App) RemoveDen(ctx context.Context, authorize func() error) error {
 
 // BackupSize is at least how large a backup made now would be, from the
 // database as it stands, with its write-ahead log, and the uploads, so the
-// page can say before it makes one (M10).
+// page can say before it makes one.
 func (a *App) BackupSize() (int64, error) {
 	return archiveSize(filepath.Join(a.Layout.DB, database.FileName), a.Layout.Uploads)
 }

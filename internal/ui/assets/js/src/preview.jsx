@@ -1,4 +1,4 @@
-// Appearance's preview (M22.5, M22.8): a small den in the theme shown,
+// Appearance's preview: a small den in the theme shown,
 // drawn by the page's own components on a box that wears the theme alone,
 // so the page keeps its own until the member uses it. It shows every other
 // Appearance setting as it's chosen: the chat's background, Density,

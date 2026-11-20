@@ -46,7 +46,7 @@ func fakeDen(t *testing.T, lo, hi int) (*httptest.Server, func() []int) {
 
 // A den that speaks only versions older than this build's is asked again,
 // once, at the newest it speaks, and requests go at that from then on,
-// until it says it speaks a newer one, as once it updates (M16.3).
+// until it says it speaks a newer one, as once it updates.
 func TestVersionsNegotiated(t *testing.T) {
 	ctx := context.Background()
 	old, seen := fakeDen(t, 1, 1)
@@ -83,7 +83,7 @@ func TestVersionsNegotiated(t *testing.T) {
 // A socket opens at the version the den and this build share: one dialed
 // at an older version than a den that updated since speaks dials again at
 // the newer, rather than going without group DMs until it reconnects, and
-// one a den older than this build refuses dials again at the den's (M16.3).
+// one a den older than this build refuses dials again at the den's.
 func TestSocketDialsAtTheSharedVersion(t *testing.T) {
 	ctx := context.Background()
 	updated, seen := fakeDen(t, 1, denproto.Version)

@@ -27,7 +27,7 @@ const startWait = 5 * time.Minute
 // spawnLatest is Flatpak's portal's Spawn; tests answer for it.
 var spawnLatest = host.SpawnLatest
 
-// launchCommand is what Dens's desktop file runs (M9.3): it reaches the
+// launchCommand is what Dens's desktop file runs: it reaches the
 // running service, or starts one, then opens Dens in the browser, pairing
 // it. The Flatpak's service is started through Flatpak's portal, as a
 // sandbox of its own that nothing the launch ran in holds, and one older

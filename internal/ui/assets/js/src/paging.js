@@ -42,7 +42,7 @@ export function mergeIn(messages, incoming) {
 
 // withUpdate puts a changed message into the run. A tick's answer can
 // arrive after a newer update, so the higher revision wins. Its reactions
-// change without its revision (M15.3): a DM's sets each keep the newer,
+// change without its revision: a DM's sets each keep the newer,
 // and the answer to the member's own edit or tick, a response, at the
 // revision held keeps the reactions held, which events may have changed
 // since.
@@ -65,7 +65,7 @@ export function withDelete(list, d) {
 
 // withExpired takes out of the run what a retention pass deleted: every
 // message up to through, in every channel, and the quotes of them in
-// replies (M5). Passes delete the oldest first, so a run that lost any
+// replies. Passes delete the oldest first, so a run that lost any
 // holds the oldest message left.
 export function withExpired(list, through) {
     const messages = list.messages
@@ -102,8 +102,8 @@ export function atTail(list, d, above) {
 // replayed applies again, on top of what a load fetched, the events that
 // came while it was out: the service may have taken the page before them.
 // Applying one twice changes nothing, so the run they already reached
-// takes them as well: a reaction's too (M15.3), each applied to its
-// emoji's set, and a DM's set by its revision; and a poll's (M15.4), which
+// takes them as well: a reaction's too, each applied to its
+// emoji's set, and a DM's set by its revision; and a poll's, which
 // carry how it stands, in order, the newest last. A new message joins only
 // a run that holds the newest.
 export function replayed(list, events) {

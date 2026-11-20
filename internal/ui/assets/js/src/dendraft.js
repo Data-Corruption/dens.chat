@@ -1,4 +1,4 @@
-// The owner's edits to a den in its Manage dialog (M8.3): its name and
+// The owner's edits to a den in its Manage dialog: its name and
 // address, its upload limits, how long it keeps messages, its limits for
 // calls, from M14.3 for its soundboard, from M15.2 for its emoji, and from
 // M17.4 how many events each member may have. They gather in one draft,
@@ -32,7 +32,7 @@ export function draftOf(den, view) {
 }
 
 // eventFields are a den's limit for members' events as a draft's field, or
-// none for a den older than events (M17.4).
+// none for a den older than events.
 export function eventFields(l) {
     return l ? { memberEvents: String(l.member_events) } : {};
 }

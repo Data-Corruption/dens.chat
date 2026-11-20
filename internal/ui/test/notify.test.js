@@ -1,4 +1,4 @@
-// The page's notifications (M12.3): what the browser lets it do, asking it
+// The page's notifications: what the browser lets it do, asking it
 // as a kind is turned on, showing what the service gives the page, a
 // click opening the message, taking them back, and what the settings say
 // of where they show.

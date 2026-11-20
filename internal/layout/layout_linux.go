@@ -62,7 +62,7 @@ func (l *Layout) resolve() error {
 		l.ControlEndpoint = filepath.Join(l.Runtime, "control.sock")
 	case Android:
 		// The app's shell names its files directory in XDG_DATA_HOME, as
-		// Flatpak names the app's own (M12), and everything lives there,
+		// Flatpak names the app's own, and everything lives there,
 		// the cache too: Android empties an app's cache directory when
 		// storage runs low, even under the running app, and the cache's
 		// database can't lose its files.

@@ -1,4 +1,4 @@
-// A sealed call's frames (M16.2), in a worker of the page's own: SFrame
+// A sealed call's frames, in a worker of the page's own: SFrame
 // (RFC 9605), in its AES-128-GCM suite, which WebRTC's Encoded Transform
 // (RTCRtpScriptTransform) hands each frame the page's encoders make before
 // it's sent, and each it receives before it's decoded. The den forwards
@@ -20,7 +20,7 @@
 // one under a key it lacks has it ask for the call's keys again. The
 // soundboard is the den's own track, which plays in the clear.
 //
-// The worker counts what it does on each of the tracks (M18): the frames
+// The worker counts what it does on each of the tracks: the frames
 // the page's sender hands it, empty ones too, which tell the page its
 // sender's transform runs, those it seals, those it opens, those that
 // reach a receiver empty, and those it drops, by why; and frames on a

@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Private DMs and device approval (M1.7): the DM keys made before M16.1,
+// Private DMs and device approval: the DM keys made before M16.1,
 // starting over with a new seal, and sign-ins waiting for approval; and
 // from M16.1 identities, the DM keys sealed to them, and members' records.
 
@@ -40,7 +40,7 @@ func (h *handler) startKey(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusCreated, k)
 }
 
-// Identities, signed DM keys and records (M16.1).
+// Identities, signed DM keys and records.
 
 func (h *handler) signedKeys(w http.ResponseWriter, r *http.Request) {
 	list, err := h.d.SignedKeys(r.Context(), session(r), chi.URLParam(r, "id"))
@@ -247,7 +247,7 @@ func (h *handler) refuseRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Group DMs (M16.3).
+// Group DMs.
 
 func (h *handler) reserveGroup(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
@@ -261,7 +261,7 @@ func (h *handler) reserveGroup(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusCreated, g)
 }
 
-// openNotes answers with the member's notes, made the first time (M17.3).
+// openNotes answers with the member's notes, made the first time.
 func (h *handler) openNotes(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

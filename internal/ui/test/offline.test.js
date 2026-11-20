@@ -1,4 +1,4 @@
-// When the page says a den is offline over its messages (M6.2).
+// When the page says a den is offline over its messages.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

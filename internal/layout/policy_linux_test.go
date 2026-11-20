@@ -65,7 +65,7 @@ func setFlatpakHome(t *testing.T) string {
 
 // The Flatpak keeps its data in the app's data directory, its cache where
 // backup tools skip it, and its socket where every sandbox of the app
-// finds it (M9.3).
+// finds it.
 func TestFlatpakLayoutUsesTheAppsDirectories(t *testing.T) {
 	app := setFlatpakHome(t)
 	l, err := New("dens", "main", Flatpak)

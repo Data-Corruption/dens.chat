@@ -62,7 +62,7 @@ try {
     const label = await bob.eval(`${dialog}.innerText.replace(/\\s+/g, ' ')`);
     // 1440 × 1080 cropped to 1308 × 980 as its container asks, turned a
     // quarter, at about 24 frames a second. Chromium makes its own copy,
-    // which fits 1080p, and the module's fits 720p (M5.5).
+    // which fits 1080p, and the module's fits 720p.
     const small = bobIn === 'chromium' ? 'Smaller 980 × 1308 · 24 fps' : 'Smaller 960 × 1280 · 24 fps';
     if (!label.includes(small) || !/Full size 980 × 1308 · 24 fps/.test(label)) throw new Error(`labels: ${label}`);
     ok(`both load: ${JSON.stringify(v.map((x) => [x.which, x.w, x.h]))}`);

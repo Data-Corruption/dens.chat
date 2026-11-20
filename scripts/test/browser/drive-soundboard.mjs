@@ -5,7 +5,7 @@
 // her page, and a sound too long is refused; she raises the longest, and
 // makes bob a moderator, whose page prepares a video's sound and one of two
 // minutes. In the call, bob plays sounds from the call's block, behind its
-// arrow (M21.2), up and to the right of it, from Home's box, down from it, and at 390 pixels from
+// arrow, up and to the right of it, from Home's box, down from it, and at 390 pixels from
 // the phone's bar, as a sheet, beside its mute; each time alice's page
 // receives the soundboard's track playing, by its stats and its level, and
 // lights his ring, while his tiles wait as it plays and for his wait after.
@@ -98,7 +98,7 @@ const q = (s) => JSON.stringify(s);
 const button = (label) => `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === ${q(label)} || x.getAttribute('aria-label') === ${q(label)})`;
 const click = (s, expr) => s.b.eval(`(() => { const b = ${expr}; if (!b) return 'missing'; if (b.disabled) return 'disabled'; b.click(); return 'clicked'; })()`, true);
 
-// The block's soundboard is among the rest of the call's controls (M21.2):
+// The block's soundboard is among the rest of the call's controls:
 // the arrow opens them, and closes what one of them opened.
 const MORE = `document.querySelector('[data-call-more-button]')`;
 async function openMore(s) {
@@ -222,7 +222,7 @@ try {
         `the sounds last what their files did: ${toneSound?.duration_ms} ms and ${chordSound?.duration_ms} ms`);
 
     step('alice raises the longest to 130 seconds, and makes bob a moderator, who adds a video\'s sound and two minutes');
-    // The soundboard's limits are in its own section (M22.3), open here.
+    // The soundboard's limits are in its own section, open here.
     await waitFor(() => A.b.eval(`!!document.querySelector('[data-limits-soundboard]')`), "the soundboard's limits");
     await setValue(A, '[data-limits-soundboard] input[type=number][max="300"]', 130);
     await click(A, button('Save changes'));

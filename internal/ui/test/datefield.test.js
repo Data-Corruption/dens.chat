@@ -1,4 +1,4 @@
-// The page's own day and time fields (M22.3), checked without a browser:
+// The page's own day and time fields, checked without a browser:
 // a month's weeks from the locale's first day, moving by days and months,
 // the week's first day by locale, and the quarter hours a time offers.
 

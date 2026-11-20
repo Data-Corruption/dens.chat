@@ -25,7 +25,7 @@ const (
 
 // A share's video goes at most a quarter past its bitrate, in bursts of up
 // to a second of it or shareBurst, whichever is more, so a keyframe gets
-// through whole (M4.2). Its packets are held to one for each
+// through whole. Its packets are held to one for each
 // bytesPerPacket of the bitrate, and at least maxPacketsPerSecond.
 const (
 	shareHeadroom  = 1.25
@@ -41,8 +41,8 @@ const keyframeGap = 500 * time.Millisecond
 
 // The IDs of the tracks the den sends: a member's voice, in a stream named
 // for the member, and their share's screen and sound, in a stream
-// denproto.ScreenStream names (M4.2); and the call's soundboard, in the
-// stream denproto.SoundboardStream names (M14.3).
+// denproto.ScreenStream names; and the call's soundboard, in the
+// stream denproto.SoundboardStream names.
 const (
 	voiceTrack  = "audio"
 	screenTrack = "screen"
@@ -84,7 +84,7 @@ type Peer struct {
 	// muted drops the member's audio before it's forwarded, as a staff mute
 	// does, and their share's too.
 	muted atomic.Bool
-	// share is the member's screen share while it goes on (M4.2), and
+	// share is the member's screen share while it goes on, and
 	// screenSSRC what their browser sends the screen under, which keyframe
 	// requests name.
 	share      atomic.Pointer[share]
@@ -94,7 +94,7 @@ type Peer struct {
 	mu        sync.Mutex
 	closed    bool
 	version   int
-	voice     int    // the Opus bitrate voice sections ask for (M4.2)
+	voice     int    // the Opus bitrate voice sections ask for
 	offer     string // the offer that's out, as sent
 	waiting   bool   // an offer is out
 	stale     bool   // the sections changed since that offer
@@ -104,9 +104,9 @@ type Peer struct {
 	connected bool
 	answerBy  *time.Timer
 	connectBy *time.Timer
-	offeredAt time.Time // when the offer that's out went, for the log (M11)
+	offeredAt time.Time // when the offer that's out went, for the log
 	// screen and sound receive the member's share, from their first share
-	// in the call (M4.2), and shareBitrate is the most the screen's section
+	// in the call, and shareBitrate is the most the screen's section
 	// asks their browser for.
 	screen, sound *webrtc.RTPTransceiver
 	shareBitrate  int
@@ -172,7 +172,7 @@ func (s *SFU) Join(room, member string, bitrate int, signal Signal) (*Peer, erro
 	}
 	pc.OnTrack(p.forward)
 	pc.OnConnectionStateChange(p.stateChanged)
-	// The log follows the call's ICE and DTLS, and the path it takes (M11):
+	// The log follows the call's ICE and DTLS, and the path it takes:
 	// only its protocol and the candidates' types, never their addresses.
 	pc.OnICEConnectionStateChange(func(state webrtc.ICEConnectionState) { p.note("ICE %s", state) })
 	dtls := p.mic.Receiver().Transport()
@@ -199,7 +199,7 @@ func (s *SFU) Join(room, member string, bitrate int, signal Signal) (*Peer, erro
 	}
 	// The call's soundboard reaches each member from their first offer, so
 	// a sound needs none of its own, and a member joining partway hears
-	// the rest of it (M14.3).
+	// the rest of it.
 	b := s.boards[room]
 	if b == nil {
 		if b, err = newBoard(); err != nil {
@@ -371,7 +371,7 @@ func (p *Peer) shapes() func(mid string) shape {
 	return func(mid string) shape { return byMid[mid] }
 }
 
-// Hold keeps the member in the call while their signaling is away (M3):
+// Hold keeps the member in the call while their signaling is away:
 // their media flows as before, but no offer goes out, and the one that's
 // out waits without its deadline. Pion can't take an offer back, so
 // Resume sends it again.
@@ -431,7 +431,7 @@ func (p *Peer) Restart() {
 func (p *Peer) SetMuted(muted bool) { p.muted.Store(muted) }
 
 // SetVoiceBitrate has the member's offers ask for another Opus bitrate for
-// voice, from the next one, which goes now (M4.2).
+// voice, from the next one, which goes now.
 func (p *Peer) SetVoiceBitrate(bitrate int) {
 	p.mu.Lock()
 	if p.closed || p.voice == bitrate {
@@ -444,7 +444,7 @@ func (p *Peer) SetVoiceBitrate(bitrate int) {
 }
 
 // Share starts the member's screen share, with its sound if sound, held to
-// bitrate (M4.2). Their first share in a call adds the sections the den
+// bitrate. Their first share in a call adds the sections the den
 // receives the screen and its sound on, which stay for later shares, and
 // whenever those change, or the bitrate does, an offer goes now.
 func (p *Peer) Share(sound bool, bitrate int) error {
@@ -502,7 +502,7 @@ func (p *Peer) Unshare() {
 }
 
 // Watch sends the member another member's share, its screen and any
-// sound, in sections their next offer opens, which goes now (M4.2). Once
+// sound, in sections their next offer opens, which goes now. Once
 // they answer it, the sharer is asked for a keyframe.
 func (p *Peer) Watch(sharer *Peer) error {
 	s := p.sfu
@@ -727,7 +727,7 @@ func (p *Peer) forwardAudio(remote *webrtc.TrackRemote, out *webrtc.TrackLocalSt
 }
 
 // forwardScreen passes the member's screen to those watching it while they
-// share (M4.2): only VP9 from the screen's section, under the den's own
+// share: only VP9 from the screen's section, under the den's own
 // headers, within the share's bitrate. When its packets start again after
 // a pause, as when nobody watched it, the sharer is asked for a keyframe,
 // since one asked of a paused encoder may never come.

@@ -64,25 +64,25 @@ type App struct {
 	// Den is the den this instance holds, created or not, which it serves
 	// while hosting is on.
 	Den *den.Den
-	// Hosting is the switch that serves it (M9.1), which the service runs.
+	// Hosting is the switch that serves it, which the service runs.
 	Hosting Hosting
-	// Flatpak is what the Flatpak's service does in the member's session
-	// (M9.3); nil in the other forms.
+	// Flatpak is what the Flatpak's service does in the member's session;
+	// nil in the other forms.
 	Flatpak Flatpak
 	// RememberingChanged, if set, is told when the Flatpak's remembered
-	// copy of its key comes or goes (M9.3).
+	// copy of its key comes or goes.
 	RememberingChanged func()
 	// Dens keeps the dens this instance has joined connected.
 	Dens *denclient.Manager
 	// Shortcuts carries the voice keys from the desktop user's helper to
-	// the pages (M7), and the notifications it shows to the helper.
+	// the pages, and the notifications it shows to the helper.
 	Shortcuts *shortcuts.Hub
-	// Notify decides what notifies the member, and where it shows (M12.3).
+	// Notify decides what notifies the member, and where it shows.
 	Notify *notify.Hub
 	// Relay links this install with the member's others on its network,
-	// and carries the voice keys of one to the call another holds (M20).
+	// and carries the voice keys of one to the call another holds.
 	Relay *relay.Relay
-	// Cache is the client's cache of other dens' files (M6).
+	// Cache is the client's cache of other dens' files.
 	Cache *cache.Store
 	// Media runs the media module's jobs, the den's and the client's, one
 	// at a time.
@@ -101,18 +101,18 @@ type App struct {
 	closeErr    error
 
 	// snapshotKept is the snapshot this start kept of an older version's
-	// data, for the log (M9.3).
+	// data, for the log.
 	snapshotKept string
-	// keys is the Flatpak's locked start and its remembered key (M9.3).
+	// keys is the Flatpak's locked start and its remembered key.
 	keys keyState
 	// RetrieveSecret asks the member's keyring for the app's secret, as
 	// host.RetrieveSecret does; tests answer for it.
 	RetrieveSecret func(ctx context.Context, wait time.Duration) ([]byte, error)
 
 	updateCheckMu sync.Mutex
-	// apk is the Android app's updater's (M12).
+	// apk is the Android app's updater's.
 	apk apkUpdate
-	// bars is the page's background, for the shell's bars (M13.3).
+	// bars is the page's background, for the shell's bars.
 	bars barsState
 	// relayShell is what Relay asks of Android, for the shell.
 	relayShell relayShellState
@@ -122,7 +122,7 @@ type App struct {
 	passwordLimiter *rate.Limiter
 }
 
-// Hosting turns serving the den on and off from the settings (M9.1).
+// Hosting turns serving the den on and off from the settings.
 type Hosting interface {
 	// State says whether hosting is on, and whether the den serves.
 	State() HostingState
@@ -135,7 +135,7 @@ type Hosting interface {
 	WhileOff(f func() error) error
 }
 
-// ErrHostingOn is a den's export or removal while hosting is on (M10).
+// ErrHostingOn is a den's export or removal while hosting is on.
 var ErrHostingOn = errors.New("hosting is on")
 
 // HostingState is hosting as the page shows it. Serving is whether the
@@ -168,7 +168,7 @@ func (e *PortError) Unwrap() error { return e.Err }
 // DeviceNameEnv and DeviceModelEnv are where the Android app's shell gives
 // Dens the phone's name, as its owner knows it from Android's settings,
 // and its model, Build.MODEL, which dens list the phone by among the
-// member's devices, where its hostname would say only localhost (M13.3).
+// member's devices, where its hostname would say only localhost.
 const (
 	DeviceNameEnv  = "DENS_DEVICE_NAME"
 	DeviceModelEnv = "DENS_DEVICE_MODEL"
@@ -176,7 +176,7 @@ const (
 
 // devRecordEvery is how often a development instance writes a member's
 // record of the identities they kept, where an installed one writes it
-// every hour (M16.1).
+// every hour.
 const devRecordEvery = 20 * time.Second
 
 // ErrCantHost is turning hosting on in a form that hosts no den.
@@ -199,9 +199,9 @@ func New(buildInfo build.BuildInfo) *App {
 
 func (a *App) BuildInfo() build.BuildInfo { return a.buildInfo }
 
-// FormOf is the form a process of this build runs in (M9): on Android,
-// Android, a development build's too, since the app's shell runs either
-// (M12); elsewhere a development build's is Development; the release binary
+// FormOf is the form a process of this build runs in: on Android,
+// Android, a development build's too, since the app's shell runs either;
+// elsewhere a development build's is Development; the release binary
 // in Dens's Flatpak sandbox the Flatpak, so it runs as it is; and every
 // other Installed.
 func FormOf(bi build.BuildInfo) layout.Form {
@@ -296,7 +296,7 @@ func (a *App) open(opts OpenOptions) error {
 	}
 	// tmp holds files only while the service works on them: uploads
 	// arriving, files being prepared for sending, a backup's snapshot. So
-	// whatever a crash left there goes before anything uses it (M8).
+	// whatever a crash left there goes before anything uses it.
 	if err := emptyDir(l.Temp); err != nil {
 		return fmt.Errorf("empty %s: %w", l.Temp, err)
 	}
@@ -389,7 +389,7 @@ func (a *App) open(opts OpenOptions) error {
 // unlock finishes opening the app with its data key: the vault, and what
 // needs it, the den, the dens this instance joined, the voice keys' hub and
 // the cache. The Flatpak, which starts locked, does it once the member's
-// local password or its remembered copy opens the key (M9.3).
+// local password or its remembered copy opens the key.
 func (a *App) unlock(key []byte) error {
 	l, mode, phase := a.Layout, a.Lease.Mode, a.Lease.State.Phase
 	v, err := vault.New(key)
@@ -412,9 +412,9 @@ func (a *App) unlock(key []byte) error {
 	a.AddCleanup(func() error { a.Den.Close(); return nil })
 	if phase == maintenance.PhaseRestoring {
 		// A backup lacks what came after it, which members' clients may
-		// hold, so their caches of this den go (M6), and its counters move
+		// hold, so their caches of this den go, and its counters move
 		// on, so nothing new takes the ID of what it lacks, which links to
-		// messages may name (M11).
+		// messages may name.
 		if err := a.Den.NewSyncEpoch(context.Background()); err != nil {
 			return fmt.Errorf("start the restored den's sync epoch: %w", err)
 		}
@@ -424,7 +424,7 @@ func (a *App) unlock(key []byte) error {
 	}
 	if l.Form == layout.Development {
 		a.Den.RelaxLimits()
-		// The browser checks see messages disappear in seconds (M16.4).
+		// The browser checks see messages disappear in seconds.
 		a.Den.ShortTimes = true
 	}
 
@@ -435,7 +435,7 @@ func (a *App) unlock(key []byte) error {
 	a.Dens = denclient.New(a.DB, a.Vault, a.Log, a.UserAgent, a.OwnDen)
 	if l.Form == layout.Development {
 		// The browser checks see a comparison reach a member's other device
-		// in moments, not within the hour (M16.1).
+		// in moments, not within the hour.
 		a.Dens.RecordEvery = devRecordEvery
 	}
 	if l.Form == layout.Android {
@@ -462,7 +462,7 @@ func (a *App) unlock(key []byte) error {
 		})
 		return err
 	}, a.Shortcuts, l.Form == layout.Android)
-	// The sounds the member replaced with files of their own (M14.2), which
+	// The sounds the member replaced with files of their own, which
 	// the pages hear of with the notifications' status.
 	own, err := sounds.List(context.Background(), a.DB)
 	if err != nil {
@@ -482,7 +482,7 @@ func (a *App) unlock(key []byte) error {
 	return nil
 }
 
-// newRelay makes the install's Relay (M20), with its Relay ID, which the
+// newRelay makes the install's Relay, with its Relay ID, which the
 // first start of a version with Relay makes, and a restore makes afresh:
 // it names the computer, which a backup restored elsewhere isn't.
 func (a *App) newRelay(cfg *types.Configuration, restoring bool) (*relay.Relay, error) {
@@ -505,12 +505,12 @@ func (a *App) newRelay(cfg *types.Configuration, restoring bool) (*relay.Relay, 
 }
 
 // CanShareSound reports whether the install shares its computer's sound
-// with the member's others (M20.2): every form whose helper reads it, a
+// with the member's others: every form whose helper reads it, a
 // desktop's, which the Android app isn't.
 func (a *App) CanShareSound() bool { return a.Layout.Form != layout.Android }
 
 // prepareHosting settles the hosting switch as the service starts, and
-// returns the configuration with it (M9.1). The first start of a version
+// returns the configuration with it. The first start of a version
 // that has the switch takes it from the den role v1.0's installer gave the
 // instance, so one that hosted keeps hosting and every other starts off;
 // from then on the switch alone decides. A restored backup starts off, as
@@ -552,7 +552,7 @@ func (a *App) prepareHosting(phase maintenance.Phase, devDen bool) (*types.Confi
 
 // CanHost reports whether the instance may host its den. The Flatpak may
 // not: it runs in the member's session, which a den has to outlive, and
-// has no Caddy beside it (M9.3). Nor may the Android app, on a phone (M12).
+// has no Caddy beside it. Nor may the Android app, on a phone.
 func (a *App) CanHost() bool {
 	switch a.Layout.Form {
 	case layout.Flatpak, layout.Android:
@@ -755,7 +755,7 @@ func (a *App) SetPassword(ctx context.Context, password string) error {
 
 // ChangePassword sets the local password where none is set yet, as the
 // page's first pairing does, or changes it given the current one, which
-// wraps the data key anew and changes nothing else (M10). It reports
+// wraps the data key anew and changes nothing else. It reports
 // whether the password it set was the first. The check of the current
 // one is rate limited, as every check is.
 func (a *App) ChangePassword(ctx context.Context, current, next string) (bool, error) {

@@ -1,4 +1,4 @@
-// Emoji (M15.2), checked without a browser: the rule that finds the den's
+// Emoji, checked without a browser: the rule that finds the den's
 // emoji in text, as the renderer shows it; a message of emoji alone; the
 // picker's search and skin tone; the member's most used; and completion.
 

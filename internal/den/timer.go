@@ -8,10 +8,10 @@ import (
 )
 
 // The den's timer: set for whatever comes due next, it ends polls at their
-// time (M15.4), deletes disappearing messages at theirs (M16.4), starts and
-// ends events at theirs (M17.4), gives a live event's badge as a member's
-// stretch in its call comes due (M17.5), and writes a call's length each
-// minute it runs past its channel's record (M21.2). It's set as the den
+// time, deletes disappearing messages at theirs, starts and
+// ends events at theirs, gives a live event's badge as a member's
+// stretch in its call comes due, and writes a call's length each
+// minute it runs past its channel's record. It's set as the den
 // starts, which catches up on what came due while it was stopped, as for a
 // den restored from a backup, and again as polls are posted and ended,
 // messages that disappear are sent, events are made, moved, canceled and
@@ -34,7 +34,7 @@ type dueTimer struct {
 // starting and ending events at their time, beginning with those whose
 // time passed while the den was stopped. Without it, as in tests, they
 // come due only when a pass is called. It starts again after StopTimer, as
-// hosting does (M9.1).
+// hosting does.
 func (d *Den) StartTimer() {
 	t := &d.timer
 	t.mu.Lock()

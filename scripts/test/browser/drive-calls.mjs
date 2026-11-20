@@ -100,7 +100,7 @@ const TEXT = `document.body.innerText`;
 const rx = async (s) => s.b.eval(RX);
 const click = (s, selector) => s.b.eval(`(() => { const el = ${selector}; if (!el) return false; el.click(); return true; })()`);
 
-// The block's lock is among the rest of the call's controls (M21.2), which
+// The block's lock is among the rest of the call's controls, which
 // its arrow opens and closes.
 const MORE = `document.querySelector('[data-call-more-button]')`;
 async function openMore(b) {
@@ -134,7 +134,7 @@ try {
     }
     // A short call of alice's alone ends as Lounge's first, which makes it
     // the channel's record, for the call after it to pass while both pages
-    // show the channel (M21.2).
+    // show the channel.
     await A.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`);
     await waitFor(async () => (await A.b.eval(STATS)).includes('Connected'), `${A.browser} in a call alone`, 30000);
     await sleep(5000);
@@ -153,7 +153,7 @@ try {
 
     // Every member's encoder runs at 96 kbps: the first to join too, whose
     // re-offer Pion would build from their browser's answer. The
-    // soundboard's section (M14.3) carries what the den sends, as a share's
+    // soundboard's section carries what the den sends, as a share's
     // sound does, so it's left out.
     const ENC = `(async () => {
         const pc = window.__pcs.at(-1);
@@ -184,7 +184,7 @@ try {
         await s.b.shot(`${HOME}/shot-calls-${s.browser}-call.png`).catch((e) => console.log('shot', e.message));
     }
 
-    // The call timer (M21.2): both pages show the call's length on its row,
+    // The call timer: both pages show the call's length on its row,
     // a second apart at most, in the rainbow once it passed the record
     // alice's call alone set, which its tip names; the fireworks went off on
     // both as it passed; and bob, with Call timer turned off, sees none of
@@ -227,10 +227,10 @@ try {
     report(wasOn && hidden === true && kept === 'off' && stillShown && wasOff && shownAgain === true,
         `${B.browser}'s Call timer, on to start, turned off hides the call's length (${hidden}, kept ${kept}) while alice's shows it (${stillShown}), and turned on shows it again (${shownAgain})`);
 
-    // Sealed (M16.2): each page seals its voice and opens the other
+    // Sealed: each page seals its voice and opens the other
     // member's, so the rings above came from frames each page opened, as
-    // its worker counts them, dropping none while it holds the call's keys
-    // (M18); the call's lock in the call's block says so.
+    // its worker counts them, dropping none while it holds the call's keys;
+    // the call's lock in the call's block says so.
     const COUNTS = `(async () => {
         const w = (window.__workers || []).at(-1);
         if (!w) return 'null';
@@ -322,7 +322,7 @@ try {
     report(denied === 204 && given === 204 && deniedFlow.moving && !rang && heardAgain === true,
         `${B.browser} denied Alice's keys receives her packets ${deniedFlow.before}->${deniedFlow.after}, rang for her ${rang}; given them again, hears her ${heardAgain} (${denied}, ${given})`);
     // Its notes count each track's frames, and why it dropped those it
-    // dropped (M18).
+    // dropped.
     const notes = await logOf(B);
     const counted = [...notes.matchAll(/voice frames sealed (\d+), opened (\d+)(?:, \d+ empty)?, dropped (\d+)(?: \(([^)]*)\))?/g)].map((m) => [...m.slice(1, 4).map(Number), m[4] || '']);
     const last = counted.at(-1);
@@ -331,7 +331,7 @@ try {
 
     // Volume: Bob turns Alice down on his side. Her audio element follows,
     // the browser keeps it, and her row shows no figure: her menu's slider
-    // says it (M19.2).
+    // says it.
     const aliceID = await A.b.eval(`(async () => (await (await fetch('/api/dens/${den}/state')).json()).me.id)()`);
     const VOLUME = (id) => `(() => { const a = window.__audios.filter((x) => x.srcObject && x.srcObject.id === ${JSON.stringify(aliceID)}).at(-1); return a ? a.volume : -1; })()`;
     const ROW = `(() => { const li = [...document.querySelectorAll('ul[aria-label="In the call"] li')].find((x) => x.textContent.includes('Alice'));
@@ -381,7 +381,7 @@ try {
         && zero.volume === 0 && zero.row === '' && zero.kept === JSON.stringify({ [`${den}:${aliceID}`]: 0 }),
         `${B.browser} turns Alice down: ${full} -> ${JSON.stringify(thirty)} -> ${JSON.stringify(zero)}`);
 
-    // Mute, in her menu, for Bob alone (M22.2): from 30% to 0, and Unmute
+    // Mute, in her menu, for Bob alone: from 30% to 0, and Unmute
     // back to 30%, which the browser keeps, as it keeps her volume.
     await slide(30);
     await sleep(300);
@@ -485,7 +485,7 @@ try {
     // it through, and push to talk sends only while its key is held, and
     // nothing once the page loses focus mid-push. Held back, DTX sends
     // almost nothing, sealed too: the empty frames it leaves between its
-    // packets of silence go on empty, unsent (M16.2).
+    // packets of silence go on empty, unsent.
     const RATE = `(async () => {
         const read = async () => {
             let b = 0;
@@ -518,7 +518,7 @@ try {
     await sleep(200);
     await key('keydown', 'window');
     await sleep(300);
-    // The service keeps the keys (M7.1).
+    // The service keeps the keys.
     const bound = await B.b.eval(`fetch('/api/settings').then((r) => r.json()).then((s) => s.voiceKeys?.ptt?.code === 'KeyV')`);
     const outside = await closeSettings(B, 'outside');
     const up = await B.b.eval(RATE);
@@ -576,7 +576,7 @@ try {
 
     // The owner, who can drag Bob's row onto another call, drags the slider
     // in his menu with the mouse, from 100% at its middle: it moves, and the
-    // menu stays where it is, nothing dragged (M19.2). A drag Chromium starts
+    // menu stays where it is, nothing dragged. A drag Chromium starts
     // is caught, as it never ends under the DevTools protocol.
     const SLIDER = `document.querySelector('input[aria-label="Volume for Bob"]')`;
     await click(A, `document.querySelector('button[aria-label="Options for Bob in the call"]')`);
@@ -678,7 +678,7 @@ try {
         `${B.browser} keeps Alice's volume into the next call: ${JSON.stringify(again)}, then ${JSON.stringify(reset)}`);
 
     // Deafen: Bob hears nothing of the call and is muted, which Alice sees
-    // as his deafened mark, beside his muted one (M11); hearing again puts
+    // as his deafened mark, beside his muted one; hearing again puts
     // his microphone back.
     const PANEL_BUTTON = (label) => `document.querySelector('button[aria-label="${label}"]')`;
     const DEAFENED_MARK = `[...document.querySelectorAll('ul[aria-label="In the call"] li')].some((li) => li.textContent.includes('Bob') && li.querySelector('[aria-label=deafened]') && li.querySelector('[aria-label=muted]'))`;
@@ -759,7 +759,7 @@ try {
         });
     })()`));
     // The channel's row shows how the call stands on its speaker, green once
-    // connected, and says so in its label (M14.3).
+    // connected, and says so in its label.
     const speaker = JSON.parse(await B.b.eval(`(() => {
         const s = document.querySelector('[data-call-state]');
         return JSON.stringify({ state: s?.dataset.callState, green: !!s?.classList.contains('text-success'), label: s?.closest('button')?.getAttribute('aria-label') });
@@ -787,7 +787,7 @@ try {
         && head.home && !head.dot && !head.header,
         `${B.browser} panel and message box stand level: out of a call ${JSON.stringify(outOfCall)}, in one ${JSON.stringify(inCall)}; the call's row ${JSON.stringify(row)}, the channel's speaker ${JSON.stringify(speaker)}; the picture edits ${edit}, the cog opens ${cog}; the header ${JSON.stringify(head)}`);
 
-    // Every theme, with its colors, in Appearance's list (M22.8): System,
+    // Every theme, with its colors, in Appearance's list: System,
     // Light and Dark first; a theme chosen shows in the editor, Use wears
     // it at once, and System follows the device again. Under a large
     // window the list is a tab beside the editor.
@@ -905,7 +905,7 @@ try {
     const listed = () => B.b.eval(`[...${SETTINGS}.querySelectorAll('nav button')].map((t) => t.textContent.trim()).join('|')`);
     const tabs = await waitFor(async () => ((await listed()).includes('Leave den') ? listed() : ''), `${B.browser} settings' sections of the den`, 5000).catch(listed);
     await closeSettings(B, 'close');
-    // On a den's page they list the member's own sections of it first (M22.3).
+    // On a den's page they list the member's own sections of it first.
     report(tabs === 'Devices|Password and recovery|Your code|Your files|Appearance|Chat|Notifications|Voice|Relay|System|Leave den',
         `${B.browser} settings sections: ${tabs}`);
 
@@ -948,7 +948,7 @@ try {
     const clickClosed = !(await B.b.eval(`!!${MENU}`));
     const caption = await B.b.eval(`document.body.innerText.includes('Enter to send')`);
     // The + sits inside the message box at its left, as the smiley does at
-    // its right, and no ? stays there (M22.4).
+    // its right, and no ? stays there.
     const inside = JSON.parse(await B.b.eval(`(() => {
         document.activeElement?.blur();
         const t = document.querySelector('textarea').getBoundingClientRect();
@@ -972,7 +972,7 @@ try {
     await B.b.eval(`(document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`);
     await sleep(200);
     const guideClosed = !(await B.b.eval(`!!${GUIDE}`));
-    // A channel's + makes a poll too (M15.4).
+    // A channel's + makes a poll too.
     report(items === 'Attach files|Let others edit|Poll|Formatting help' && escClosed && clickClosed && !caption && inside.plus && inside.smiley && inside.order
         && !inside.question && guide?.table && guide.keys && guide.link.endsWith('/docs/usage/#writing-messages') && guideClosed,
         `${B.browser} composer: menu ${items}, closed by Escape ${escClosed} and a click ${clickClosed}, old caption ${caption}, inside the box ${JSON.stringify(inside)}, guide ${JSON.stringify(guide)}, closed ${guideClosed}`);
@@ -1042,7 +1042,7 @@ try {
         `${B.browser} video volume shared: ${JSON.stringify(shared)}`);
     await B.b.go(`http://127.0.0.1:${B.port}/`);
     await waitFor(() => B.b.eval(`!!document.querySelector('a[aria-label="Settings"]')`), `${B.browser} home`);
-    // Home's cog sits in Your dens' header, beside Add a den (M22.4).
+    // Home's cog sits in Your dens' header, beside Add a den.
     const home = JSON.parse(await B.b.eval(`(() => {
         const cog = document.querySelector('a[aria-label="Settings"]');
         const head = cog.parentElement;

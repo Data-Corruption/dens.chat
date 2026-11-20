@@ -51,7 +51,7 @@ type Signer struct {
 }
 
 // TrustedRoot is what a release's signature is checked against where no
-// cosign runs, as in the Android app (M12): the certificate authorities
+// cosign runs, as in the Android app: the certificate authorities
 // that issue signing certificates, Fulcio's, and the transparency logs
 // whose record of a signature says when it was made, Rekor's.
 type TrustedRoot struct {

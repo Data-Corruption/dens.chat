@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Messages (M6.2): the cache keeps the messages it fetched from other dens
+// Messages: the cache keeps the messages it fetched from other dens
 // and those that arrived while the client was connected, as the den sent
 // them, a DM's still sealed. Beside them it keeps runs: ranges of IDs in a
 // channel for which it holds every message the den has. IDs increase with
@@ -96,10 +96,10 @@ func (s *Store) txLocked(fn func(*sql.Tx) error) error {
 // putLocked keeps messages of a den within tx: new ones, and newer
 // revisions of those it holds, or with fresh, what the den just sent of
 // them at the revision the cache holds too, as their reactions change
-// without changing it (M15.3). A DM's sets of reactions each have a
+// without changing it. A DM's sets of reactions each have a
 // revision of their own, and the newer of each stays, whichever copy held
 // it. A message deleted lately, one retention reached, or one past its
-// time to disappear (M16.4) stays out. It returns the bytes this added to
+// time to disappear stays out. It returns the bytes this added to
 // each channel.
 func (s *Store) putLocked(tx *sql.Tx, den int64, denID []byte, g *guards, ms []denproto.Message, fresh bool) (map[int64]int64, error) {
 	added := map[int64]int64{}
@@ -394,7 +394,7 @@ func (s *Store) UpdateMessage(denID []byte, m denproto.Message) error {
 // RefreshMessage keeps a message as the den just sent it, as what changed
 // while away brings it, if the cache holds the message: at a newer
 // revision, or the one the cache holds, as its reactions change without
-// changing it (M15.3).
+// changing it.
 func (s *Store) RefreshMessage(denID []byte, m denproto.Message) error {
 	return s.updateMessage(denID, m, true)
 }
@@ -444,7 +444,7 @@ func (s *Store) updateMessage(denID []byte, m denproto.Message, fresh bool) erro
 
 // ChangeMessage changes the copy of a message the cache holds, if it holds
 // one, as change says, which reports whether it changed it: as a reaction
-// changes it (M15.3), its revision staying.
+// changes it, its revision staying.
 func (s *Store) ChangeMessage(denID []byte, id int64, change func(*denproto.Message) bool) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -488,7 +488,7 @@ func (s *Store) ChangeMessage(denID []byte, id int64, change func(*denproto.Mess
 
 // NewerSets joins two lists of a DM message's sets of reactions, a set a
 // member, keeping the newer of each member's, by its revision, in the
-// order of the members' IDs (M15.3).
+// order of the members' IDs.
 func NewerSets(a, b []denproto.SealedReactions) []denproto.SealedReactions {
 	var out []denproto.SealedReactions
 	for _, r := range append(slices.Clip(a), b...) {
@@ -839,7 +839,7 @@ func (s *Store) Page(denID []byte, channel int64, q Query, gen int64, offline, e
 
 // rangeLocked reads a channel's messages from lo to hi, at most limit,
 // oldest first; with fromTop, the newest of them. One past its time to
-// disappear, which the timer is about to let go, is left out (M16.4).
+// disappear, which the timer is about to let go, is left out.
 func (s *Store) rangeLocked(den int64, denID []byte, channel, lo, hi int64, limit int, fromTop bool) ([]denproto.Message, error) {
 	order := "ASC"
 	if fromTop {

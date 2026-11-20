@@ -8,7 +8,7 @@ import (
 )
 
 // LoadHostKey returns the data key the app's shell hands the service on its
-// standard input (M12), as systemd hands an installed service its key on
+// standard input, as systemd hands an installed service its key on
 // Linux: the shell unwraps it with its Keystore key, writes it, and closes
 // the pipe. The wrapped key at path is the shell's to read.
 func LoadHostKey(string) ([]byte, error) {

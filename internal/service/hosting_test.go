@@ -198,7 +198,7 @@ func mediaPortsFree(t *testing.T, udp, tcp int) bool {
 	return true
 }
 
-// A new instance hosts nothing until its owner turns hosting on (M9.1).
+// A new instance hosts nothing until its owner turns hosting on.
 func TestHostingStartsOff(t *testing.T) {
 	a, client := startDevService(t)
 	b := pair(t, a, client)
@@ -309,7 +309,7 @@ func TestHostingThatCantStartSaysWhy(t *testing.T) {
 }
 
 // dens den hosting turns hosting on and off over the control endpoint, as
-// the page's switch does (M10): on takes the local password, says where
+// the page's switch does: on takes the local password, says where
 // Caddy and the router send the den, and fails, naming the port and the
 // flag that moves it, while another program holds one; off needs nothing
 // more, since the command asks first.

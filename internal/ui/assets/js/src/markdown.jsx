@@ -1,16 +1,16 @@
 // The markdown subset messages use: **bold**, *italic* or _italic_,
 // ~~strikethrough~~, `inline code`, ``` code blocks ```, > quotes,
 // ||spoilers||, @mentions, bare http(s) links, task lines that start with
-// [ ] or [x], and the den's emoji by name, :name: (M15.2). There are no
+// [ ] or [x], and the den's emoji by name, :name:. There are no
 // [label](url) links, so a link always shows where it goes; a link to a
-// message shows the channel it's in, with its address on hover (M11), and
-// a link to an event its name (M17.5).
+// message shows the channel it's in, with its address on hover, and
+// a link to an event its name.
 //
 // Every message comes from a den, and dens are other people's servers. The
 // renderer builds Preact nodes whose text is always text: nothing here
 // turns a string into markup, and a link's address is only ever an
 // http(s) URL the parser matched. Any member can send any text, so a line
-// takes time in proportion to its length, whatever its delimiters (M8).
+// takes time in proportion to its length, whatever its delimiters.
 
 import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DenEmoji, EmojiContext } from './denemoji.jsx';
@@ -29,12 +29,12 @@ const TASK_RE = /^\[( |x)\] /;
 // Markdown renders text as blocks: code blocks, quotes, task lines and
 // paragraphs. With onTask, the reader may tick tasks: onTask(n, checked,
 // text) returns a promise that settles once the den has the tick. With
-// big, as a message's text, one of emoji alone shows them large (M15.2).
+// big, as a message's text, one of emoji alone shows them large.
 //
-// With everyone, the message's @everyone is staff's (M15.4), which
+// With everyone, the message's @everyone is staff's, which
 // mentions the reader as their own name does.
 //
-// It parses a text once (M8): the parse is kept while the text, the
+// It parses a text once: the parse is kept while the text, the
 // reader's username, whether tasks tick and the den's emoji stay the same,
 // so a row that renders again, as every row does while the member types,
 // gives Preact the same tree, which it skips. A tick goes through a ref,
@@ -53,7 +53,7 @@ export function Markdown({ text, me, onTask, big, everyone }) {
 
 // parse is what Markdown renders: a text's blocks in their container. ctx
 // holds the reader's username, whose mentions look different, as staff's
-// @everyone does where everyone says it's theirs (M15.4), onTask, the den's
+// @everyone does where everyone says it's theirs, onTask, the den's
 // emoji by name, and whether the text is emoji alone, shown large.
 export function parse(text, ctx) {
     return <div class={ctx.big ? 'markdown font-emoji text-5xl leading-tight' : 'markdown'} data-big={ctx.big ? '' : undefined}>{blocks(text, ctx)}</div>;
@@ -76,10 +76,10 @@ export function preview(text, username, more, emoji) {
     return <span>{inline(line, marksOf(line), { username, emoji, preview: true }, 'p', 0, line.length)}{more && '…'}</span>;
 }
 
-// MAX_VIDEOS is how many YouTube covers a message gets at most (M4.1).
+// MAX_VIDEOS is how many YouTube covers a message gets at most.
 export const MAX_VIDEOS = 3;
 
-// videosIn lists the YouTube videos a message's covers play (M4.1): those
+// videosIn lists the YouTube videos a message's covers play: those
 // its links point to in the one form the den writes, found exactly as the
 // renderer finds links, so none in code, and none in a spoiler, whose
 // cover would show what it hides. Each video comes once, at its first
@@ -109,7 +109,7 @@ export function gamesIn(text) {
 export const MAX_EVENT_CARDS = 3;
 
 // eventsIn lists the events a message's links point to, for their cards
-// under it (M17.5): found exactly as the renderer finds links, so none in
+// under it: found exactly as the renderer finds links, so none in
 // code, and none in a spoiler, whose card would show what it hides. Each
 // event comes once.
 export function eventsIn(text) {
@@ -199,7 +199,7 @@ const MAKE = [
 ];
 
 // marksOf finds what a line's inline syntax needs, so the line takes time
-// in proportion to its length, whatever its delimiters (M8): code[i] is
+// in proportion to its length, whatever its delimiters: code[i] is
 // the backtick that closes a code span opening at i, found in one pass,
 // and closer(marks, d, i) where delimiter d first closes at or after i, or
 // -1, from a table found in one pass the first time a d opens. A code span
@@ -252,7 +252,7 @@ function linkEnd(line, i, end) {
 // marks marksOf found for it. Code spans are kept literal; everything else
 // can nest. Links and mentions start where denproto.Mentions says they do,
 // nested or not: after a character that can't be in a name. A den's emoji
-// is a name it has, by the rule in emoji.js (M15.2).
+// is a name it has, by the rule in emoji.js.
 function inline(line, marks, ctx, key, start, end) {
     const out = [];
     let plain = '';
@@ -280,9 +280,9 @@ function inline(line, marks, ctx, key, start, end) {
                 if (video) ctx.videos.push(video);
                 const game = ctx.games && !ctx.spoiler && steamApp(url);
                 if (game) ctx.games.push(game);
-                // A link to a message is a chip naming where it points (M11),
+                // A link to a message is a chip naming where it points,
                 // and one to an event a chip naming it, with its card under
-                // the message (M17.5).
+                // the message.
                 const message = !ctx.preview && messageLink(url);
                 const event = !ctx.preview && !message && eventLink(url);
                 if (event && ctx.events && !ctx.spoiler) ctx.events.push(event);
@@ -395,7 +395,7 @@ function Spoiler({ children }) {
 
 // inCodeBlock says whether a caret at offset at in text is inside a code
 // block, which a line starting with three backticks opens and the next
-// one closes, as parse reads them (M11). The fence a caret ends counts, so
+// one closes, as parse reads them. The fence a caret ends counts, so
 // Enter after an opening one starts the code, and after a closing one
 // sends.
 export function inCodeBlock(text, at) {
@@ -408,8 +408,8 @@ export function inCodeBlock(text, at) {
 
 // sends says whether Enter, as a keydown, sends a message or saves an
 // edit, rather than starting a new line: anywhere with Ctrl, and without
-// Shift outside a code block (M11). With a finger, touch, whose keyboard
-// has no Shift, ↵ always starts a line, and a button sends (M13.2).
+// Shift outside a code block. With a finger, touch, whose keyboard
+// has no Shift, ↵ always starts a line, and a button sends.
 export function sends(e, touch = false) {
     if (e.key !== 'Enter' || e.isComposing) return false;
     if (e.ctrlKey || e.metaKey) return true;

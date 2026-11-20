@@ -1,4 +1,4 @@
-// The rest of the call's controls (M21.2): the arrow in the call's block,
+// The rest of the call's controls: the arrow in the call's block,
 // the grid it opens, with the soundboard where the den has one and the
 // call's lock, and where a popup stands by its button.
 

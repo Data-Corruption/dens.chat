@@ -1,6 +1,6 @@
-// Opening a den's Manage dialog from anywhere on the page (M8.3): home's
+// Opening a den's Manage dialog from anywhere on the page: home's
 // rows, and the alerts on a den's page that point at what's in it; and the
-// settings, which hold a den's sections of the member's own (M22.3). The
+// settings, which hold a den's sections of the member's own. The
 // app shows the dialogs; this keeps their openers out of the modules the
 // dialogs themselves use.
 

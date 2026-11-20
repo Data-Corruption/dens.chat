@@ -13,8 +13,8 @@ import (
 )
 
 // A development build runs as a development instance, and every other
-// build, a test release's too, as an installed one (M9.2), but in Dens's
-// Flatpak sandbox, where it's the Flatpak (M9.3).
+// build, a test release's too, as an installed one, but in Dens's
+// Flatpak sandbox, where it's the Flatpak.
 func TestFormOfBuild(t *testing.T) {
 	release := build.BuildInfo{Name: "dens", Version: "v1.1.0"}
 	for _, c := range []struct {
@@ -60,7 +60,7 @@ func TestFormOfBuild(t *testing.T) {
 }
 
 // An installed instance and the Android app ask their release host for
-// updates and tell the member of one (M12.4); a development build has
+// updates and tell the member of one; a development build has
 // nothing to update to, and the Flatpak updates through Flatpak.
 func TestWhoChecksForUpdates(t *testing.T) {
 	const source = "https://releases.example"

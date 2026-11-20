@@ -12,11 +12,11 @@
 # The checks, by milestone, and the arguments their drivers take:
 #   calls BROWSER BROWSER       M2, M3: two members in a call; from M19.2 staff sliding a member's
 #                               volume with the mouse, their menu staying put; and a member at 200%,
-#                               measured twice as loud as their stream (M19.3); and the call's length on
+#                               measured twice as loud as their stream; and the call's length on
 #                               both pages a second apart, in the rainbow past a short record with
-#                               fireworks, and none of it with the timer off (M21.2)
-#   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links (M14.1),
-#                               and a Short's cover and player portrait (M19.2)
+#                               fireworks, and none of it with the timer off
+#   youtube BROWSER BROWSER     M4.1: YouTube's players, and a cover's title and channel as links,
+#                               and a Short's cover and player portrait
 #   share                       M4.2: screen shares, Chromium and Firefox; from M21.1 a share turned down,
 #                               muted, unmuted and watched again, playing where it was
 #   two-shares                  M4.2: two shares in a player, one the probe's
@@ -31,7 +31,7 @@
 #   cache BROWSER               M6.1: the cache of other dens' files
 #   history BROWSER             M6.2: history read offline
 #   keys BROWSER                M7.1: voice keys with the helper
-#   desktop BROWSER             M7.2: a desktop that binds the keys, toggle deafen among them (M19.3)
+#   desktop BROWSER             M7.2: a desktop that binds the keys, toggle deafen among them
 #   answers BROWSER             M8: answers reach the den without addresses
 #   hostile BROWSER             M8: a channel of hostile messages
 #   hosting BROWSER             M9.1: hosting turned on and off in the settings
@@ -39,18 +39,18 @@
 #                               and removing it from this one once its server is gone
 #   fixes BROWSER               M11.1: the small fixes: dialogs, a key's capture, the two tabs,
 #                               the New divider, the message box, folding groups, a late-sound video,
-#                               and a thin video's full screen button (M14.3); and the crown and the
+#                               and a thin video's full screen button; and the crown and the
 #                               shield at one height, a long name scrolling under the pointer, and
-#                               right clicks on a message, a link and a member (M19.2); and the message
+#                               right clicks on a message, a link and a member; and the message
 #                               bar as its box, the box growing with wrapped lines to half its pane, a
-#                               reaction's chip square on a square theme, and file names on hover (M22.7)
+#                               reaction's chip square on a square theme, and file names on hover
 #   messages BROWSER            M11.2: each message's ⋯ menu by keyboard, and by touch through a long
-#                               press (M13.2), its delete dialog, and links to messages, in a den and
-#                               from another; a link underlined only on hover and focus (M14.1)
+#                               press, its delete dialog, and links to messages, in a den and
+#                               from another; a link underlined only on hover and focus
 #   talk BROWSER                M11.3: push to talk ringing in silence for the call, a watched share
 #                               in a window of its own and back, and the logs downloaded; and a
 #                               release delay holding the gate and the rings open after the key's
-#                               release, and the deafen key (M19.3)
+#                               release, and the deafen key
 #   callaudio BROWSER BROWSER   M12.2: a call played as Android's app plays it, through a context
 #                               made once the microphone is open, and played again on resume
 #   notify BROWSER              M12.3: a DM's notification from a tab in the background, its click,
@@ -101,35 +101,35 @@
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
 #                               given), failing on anything past the right edge, a control under 24
 #                               pixels, and with a finger a list's row under 44 or a control only a hover
-#                               shows; getting around the panes by swipes, taps and Back (M13.1); touch, a
-#                               long press, a sheet's swipe down, three lines sent and a tip's tap
-#                               (M13.2); and pages, the settings and Manage as lists of pages Back walks
-#                               out of, the viewer swiped and zoomed, and a dialog's sheet swiped down
-#                               (M13.3); and the call, its bar, the call's button held and tapped by its
+#                               shows; getting around the panes by swipes, taps and Back; touch, a
+#                               long press, a sheet's swipe down, three lines sent and a tip's tap;
+#                               and pages, the settings and Manage as lists of pages Back walks
+#                               out of, the viewer swiped and zoomed, and a dialog's sheet swiped down;
+#                               and the call, its bar, the call's button held and tapped by its
 #                               role, a member's volume in a sheet, a share docked, full screen and back,
-#                               and leaving from the bar (M13.4); and the emoji picker's sheet, its search
-#                               at its top as it scrolls, and :par and @al completed by taps (M15.2); and a
+#                               and leaving from the bar; and the emoji picker's sheet, its search
+#                               at its top as it scrolls, and :par and @al completed by taps; and a
 #                               message's sheet with its quick reactions, a tap reacting, the chip's tip by
-#                               a long press, and the picker's sheet (M15.3); and the composer's + as a sheet,
-#                               a poll written in it and sent, voted on by taps, and its count's tip (M15.4);
-#                               comparing codes from a DM's lock (M16.1); and a DM's time from its header (M16.4);
+#                               a long press, and the picker's sheet; and the composer's + as a sheet,
+#                               a poll written in it and sent, voted on by taps, and its count's tip;
+#                               comparing codes from a DM's lock; and a DM's time from its header;
 #                               and Compact picked by a tap, a channel's messages a line each, a long press
-#                               on one, and a spoiler covered until a tap shows it (M17.2); and the notes
+#                               on one, and a spoiler covered until a tap shows it; and the notes
 #                               opened from the top of the Direct messages list, a note sent with nothing
-#                               marked unread, and the own profile card's Notes (M17.3); and the events
+#                               marked unread, and the own profile card's Notes; and the events
 #                               opened from the top of the Den tab, Interested marked and taken back by taps,
-#                               and the owner's events, their form as a sheet and Cancel's dialog (M17.4);
+#                               and the owner's events, their form as a sheet and Cancel's dialog;
 #                               and an event's card under its link, Interested by taps, and a badge's tip
-#                               shown by a tap on a profile card, within the screen (M17.5); and a profile
-#                               card's ⋯ as a sheet, Remove from den… reached from it (M17.6); and the
-#                               theme editor and the chat background's card with its Dim (M19.4); and Edit
-#                               profile's Name style, a font and a gradient picked (M19.5); and Staff marks
-#                               and the background's Hover (M21.1); and Call timer, and a call's length at
-#                               its row's right, its lock behind the call's block's arrow (M21.2); and the den's
+#                               shown by a tap on a profile card, within the screen; and a profile
+#                               card's ⋯ as a sheet, Remove from den… reached from it; and the
+#                               theme editor and the chat background's card with its Dim; and Edit
+#                               profile's Name style, a font and a gradient picked; and Staff marks
+#                               and the background's Hover; and Call timer, and a call's length at
+#                               its row's right, its lock behind the call's block's arrow; and the den's
 #                               own sections from the cog on its page, Manage's pages headed by their names, and
-#                               every button one of the page's kinds, a dialog leading with one primary (M22.3);
-#                               and before's first run asking about Link previews, and a Steam link's card (M22.7);
-#                               and Appearance as a page, each tab along its foot and each of its editor's (M22.8).
+#                               every button one of the page's kinds, a dialog leading with one primary;
+#                               and before's first run asking about Link previews, and a Steam link's card;
+#                               and Appearance as a page, each tab along its foot and each of its editor's.
 #                               PART is member, around, touch, pages, call, emoji, reactions, polls, compact,
 #                               notes, events, owner or before; all unless given
 #   site [MODE...]              M17.1: the public site's install guide, its choice of platform and each
@@ -144,7 +144,7 @@
 #                               and bob, in the second, in a call, muted, dragged onto another voice
 #                               channel, whose call his page joins, sealed and still muted, and Move to in
 #                               his menu taking him back; and carol, a moderator, offered Move to on bob, a
-#                               moderator, without Mute for everyone or Disconnect, dragging him (M19.3)
+#                               moderator, without Mute for everyone or Disconnect, dragging him
 #   notes BROWSER               M17.3: bob's notes opened from the top of his Direct messages tab, the den
 #                               making them then; a note with a photo written on his phone, the composer
 #                               offering no one else's editing, poll or Spoiler; his laptop opening them from
@@ -172,9 +172,9 @@
 #                               own made in the editor, saved, edited, its code copied and pasted into bob's
 #                               browser, a stranger's codes refused; and
 #                               a picture set behind general's messages, found there under its dim by the
-#                               screen's pixels, in a second browser too, and removed (M19.4); and Staff
+#                               screen's pixels, in a second browser too, and removed; and Staff
 #                               marks, the message bar's hue on a green theme of her own, and the background's
-#                               Hover in both browsers (M21.1); and from M22.3 each section held to the one frame,
+#                               Hover in both browsers; and from M22.3 each section held to the one frame,
 #                               its groups cards, one toggle size, regular labels, every button one of the page's
 #                               kinds; Manage holding what staff manage; and her own sections of the den from the
 #                               cog on its page; and from M22.5 the code a block, a stranger's blocks read for
@@ -190,7 +190,7 @@
 #                               card, the dark end lightened on Dark and the pale one darkened on Light, by
 #                               the page's styles and the screen's pixels, no row taller, her font alone
 #                               fetched; a Cyrillic name in the page's font; bob's Name styles at Colors
-#                               only and Off; each font's letters inside a name's box (M21.1); and alice
+#                               only and Off; each font's letters inside a name's box; and alice
 #                               clearing her style
 #   relay BROWSER               M20.1: bob in a call on his first install, his laptop's install linked to it
 #                               through the den's introduction, its stand-in helper's push to talk ringing

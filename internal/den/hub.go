@@ -14,13 +14,13 @@ type Audience struct {
 	kind audienceKind
 	a, b int64
 	// set holds a poll's voters, for an audience of them or of the rest of
-	// its channel (M15.4), and staff whether the channel is staff's alone;
-	// or a group DM's members (M16.3). Nothing changes a set once its
+	// its channel, and staff whether the channel is staff's alone;
+	// or a group DM's members. Nothing changes a set once its
 	// audience is made, since the ring keeps the audience for replays.
 	set   map[int64]bool
 	staff bool
 	// version is the protocol's version a socket speaks to get the event:
-	// one about a group DM needs 2 (M16.3), and one about notes 3 (M17.3).
+	// one about a group DM needs 2, and one about notes 3.
 	version int
 }
 
@@ -52,7 +52,7 @@ func OnlyMember(id int64) Audience { return Audience{kind: toMembers, a: id, b: 
 func Pair(a, b int64) Audience { return Audience{kind: toMembers, a: a, b: b} }
 
 // Voters is the audience of a poll's voters among those who see its
-// channel, staff's alone where staffOnly says (M15.4), and NonVoters the
+// channel, staff's alone where staffOnly says, and NonVoters the
 // rest of them. voters mustn't change once it's passed.
 func Voters(voters map[int64]bool, staffOnly bool) Audience {
 	return Audience{kind: toVoters, set: voters, staff: staffOnly}
@@ -63,14 +63,14 @@ func NonVoters(voters map[int64]bool, staffOnly bool) Audience {
 }
 
 // Members is the audience of a group DM's members, which a socket speaking
-// version 1 of the protocol never gets (M16.3). members mustn't change
+// version 1 of the protocol never gets. members mustn't change
 // once it's passed.
 func Members(members map[int64]bool) Audience {
 	return Audience{kind: toSet, set: members, version: denproto.GroupsVersion}
 }
 
 // notesOf is the audience of a member's notes: the member, on sockets
-// speaking version 3 of the protocol (M17.3).
+// speaking version 3 of the protocol.
 func notesOf(member int64) Audience {
 	return Audience{kind: toMembers, a: member, b: member, version: denproto.NotesVersion}
 }
@@ -124,7 +124,7 @@ type Hub struct {
 	epoch  string
 	maxLen int
 	maxAge time.Duration
-	// maxBytes bounds what the ring's events hold (M8), so members sending
+	// maxBytes bounds what the ring's events hold, so members sending
 	// large messages fast can't grow the den's memory as far as maxLen
 	// would let them.
 	maxBytes int
@@ -158,7 +158,7 @@ type ringEntry struct {
 // Sub is one socket's subscription. Events arrive in order; the channel is
 // closed when the socket falls too far behind (Slow) or unsubscribes.
 // version is the protocol's version its socket speaks, which decides
-// whether it gets group DMs (M16.3) and notes (M17.3).
+// whether it gets group DMs and notes.
 type Sub struct {
 	member  int64
 	version int
@@ -344,7 +344,7 @@ func (h *Hub) trim(now time.Time) {
 	}
 }
 
-// forget drops the events the ring holds, as erasing the den does (M10),
+// forget drops the events the ring holds, as erasing the den does,
 // so no client resumes into what the den was.
 func (h *Hub) forget() {
 	h.mu.Lock()
@@ -366,8 +366,8 @@ func (h *Hub) Subscribe(member int64, staff bool, epoch string, after uint64) (s
 }
 
 // SubscribeAt subscribes as Subscribe does, for a socket that speaks a
-// version of the protocol, which gets nothing of group DMs before 2
-// (M16.3), nor of notes before 3 (M17.3).
+// version of the protocol, which gets nothing of group DMs before 2,
+// nor of notes before 3.
 func (h *Hub) SubscribeAt(member int64, staff bool, version int, epoch string, after uint64) (sub *Sub, missed []denproto.Event, resumed bool, seq uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

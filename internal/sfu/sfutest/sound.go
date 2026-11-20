@@ -4,7 +4,7 @@ import (
 	"encoding/binary"
 )
 
-// Sounds for the den's soundboard (M14.3), as the page of the staff member
+// Sounds for the den's soundboard, as the page of the staff member
 // adding one writes it: Opus packets in Ogg, each on a page of its own.
 
 // SoundPackets makes n packets of 20 ms of Opus, each naming its place in

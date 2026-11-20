@@ -102,7 +102,7 @@ func Run(ctx context.Context, a *app.App, ready func()) error {
 	start("update checker", func(ctx context.Context) error { return a.RunUpdateChecker(ctx, func() {}) })
 
 	// What needs the data key starts once the instance has it: at once, but
-	// for the Flatpak starting locked (M9.3), which its keyring may open
+	// for the Flatpak starting locked, which its keyring may open
 	// while the page offers the local password.
 	wg.Add(1)
 	go func() {

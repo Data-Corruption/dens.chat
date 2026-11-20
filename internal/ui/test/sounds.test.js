@@ -1,4 +1,4 @@
-// The page's sounds (M14.2): which sound each change in a call plays, the
+// The page's sounds: which sound each change in a call plays, the
 // settings they play by, where they play, through an element on the
 // speaker chosen or through the call's context, and the check of a file a
 // member gives to take one's place.

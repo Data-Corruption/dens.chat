@@ -85,7 +85,7 @@ type Manager struct {
 
 	// Label names this device among the member's on the dens it joins or
 	// signs in to: the computer, by its name, unless the app names it
-	// otherwise, as the Android app does by the phone's model (M13.3).
+	// otherwise, as the Android app does by the phone's model.
 	Label string
 
 	// HTTP reaches dens; it trusts the system's certificate authorities.
@@ -95,7 +95,7 @@ type Manager struct {
 	// a home connection. A transfer ends with its request instead.
 	Transfer *http.Client
 	files    *fileCache
-	// Cache keeps what other dens send on disk (M6); without it, as in
+	// Cache keeps what other dens send on disk; without it, as in
 	// most tests, files come from the den each time, but for the small
 	// ones the memory cache keeps.
 	Cache *cache.Store
@@ -108,11 +108,11 @@ type Manager struct {
 	PingInterval time.Duration
 	PingTimeout  time.Duration
 	// Now reads the wall clock, which a session's expiry and how long a
-	// connection lasted go by (M14.1); tests move it ahead, as a phone's
+	// connection lasted go by; tests move it ahead, as a phone's
 	// goes ahead of its monotonic clock while it sleeps.
 	Now func() time.Time
 	// RecordEvery is how often each connected device writes the member's
-	// record of the identities they kept (M16.1): an hour, which tests and
+	// record of the identities they kept: an hour, which tests and
 	// a development instance shorten.
 	RecordEvery time.Duration
 
@@ -139,33 +139,33 @@ type Manager struct {
 	signIns   map[string]*pendingSignIn
 	signInSeq uint64
 
-	// call is the install's one call, if it holds one (M2), and withheld
+	// call is the install's one call, if it holds one, and withheld
 	// the members whose keys for calls its pages don't get, as a
-	// development build's browser checks ask (M16.2); guarded by callMu.
+	// development build's browser checks ask; guarded by callMu.
 	callMu   sync.Mutex
 	call     *activeCall
 	withheld map[string]bool
 	// OnCall hears whether the install holds a call as that changes: the
-	// shortcut helper reads keys only during one (M7). hookMu keeps its
+	// shortcut helper reads keys only during one. hookMu keeps its
 	// calls in order, each with the state as it is then.
 	OnCall func(active bool)
 	hookMu sync.Mutex
 	// Notices hears what the dens' events say of the member's
-	// notifications (M12.3).
+	// notifications.
 	Notices Notices
 	// Relay hears the boxes between the member's devices, and what it
-	// links for (M20); set before Run.
+	// links for; set before Run.
 	Relay Relay
 
-	// follows are uploads the page follows, by its keys (M5.4).
+	// follows are uploads the page follows, by its keys.
 	followMu sync.Mutex
 	follows  map[string]*following
-	// animating holds an animated picture being made (M15.1), one at a
+	// animating holds an animated picture being made, one at a
 	// time, since each takes a core for as long as it lasts.
 	animating chan struct{}
 	// PageOfferWait is how long the page has to answer an offer of a
 	// video's copy, and PageQuiet how long it may go quiet while it makes
-	// one, before the module makes it instead (M5.5).
+	// one, before the module makes it instead.
 	PageOfferWait time.Duration
 	PageQuiet     time.Duration
 
@@ -230,7 +230,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	// request, uploads included; a file's body then takes what it takes.
 	transport := &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS12}, ResponseHeaderTimeout: requestTimeout}
 	// An answer that sends the client elsewhere is taken as it is, and
-	// fails (M8): the client asks a den only at an address it proved
+	// fails: the client asks a den only at an address it proved
 	// itself at, which the protocol's moves go through.
 	stay := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Manager{
@@ -276,7 +276,7 @@ func computerLabel() string {
 // DeviceLabel names a device on dens by its name and, in parentheses at
 // the end, what it is, which the page shows under the name: a computer's
 // system, as "Pearl (Windows)", or a phone's model, as "Galaxy S24 Ultra
-// (SM-S928U1)" (M13.3). It's made as dens take a label: what a name can't
+// (SM-S928U1)". It's made as dens take a label: what a name can't
 // show taken out, and a long name, or what it is, cut to fit. A device
 // with no name to show is "Dens".
 func DeviceLabel(name, detail string) string {
@@ -299,7 +299,7 @@ func DeviceLabel(name, detail string) string {
 }
 
 // PhoneLabel names a phone on dens by the name its owner knows it by,
-// Android's device name, and its model (M13.3). A phone with no name of
+// Android's device name, and its model. A phone with no name of
 // its own, or one that's its model, as a Pixel's is, is its model on
 // Android, as "Pixel 9 Pro (Android)".
 func PhoneLabel(name, model string) string {
@@ -341,7 +341,7 @@ func (m *Manager) Run(ctx context.Context) error {
 	}
 	m.mu.Unlock()
 	m.notify()
-	// The cache lets disappearing messages go at their time (M16.4).
+	// The cache lets disappearing messages go at their time.
 	if m.Cache != nil {
 		m.Cache.OnDisappear(m.disappeared)
 	}
@@ -384,7 +384,7 @@ func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *c
 		fillDue: make(chan struct{}, 1)}
 	c.api, c.own = m.apiFor(j.denID, j.profile.URL)
 	// The page shows the den as it last was until it sends a snapshot, or
-	// while it's away (M6.2).
+	// while it's away.
 	c.restoreKept()
 	return c
 }
@@ -478,11 +478,11 @@ func (m *Manager) notify() {
 	}
 	m.mu.Unlock()
 	// A den connecting or dropping, or a seal arriving, changes what
-	// Relay may link through (M20).
+	// Relay may link through.
 	m.relayChanged()
 }
 
-// HostingChanged tells the pages that hosting turned on or off (M9.1),
+// HostingChanged tells the pages that hosting turned on or off,
 // and has this install's own den, once it has joined it, connect again at
 // once rather than after its backoff.
 func (m *Manager) HostingChanged() {
@@ -497,11 +497,11 @@ func (m *Manager) HostingChanged() {
 }
 
 // Changed tells the pages that something the dens view shows changed
-// outside the dens, as the record of this install's den's export (M10).
+// outside the dens, as the record of this install's den's export.
 func (m *Manager) Changed() { m.notify() }
 
 // OwnDenGone has the den this install hosted reached at its address, as
-// any other den is, once its copy here is gone (M10). Its connection
+// any other den is, once its copy here is gone. Its connection
 // starts again there, in its place on the list and with the channels the
 // pages show, keeping the account; the device signs in afresh.
 func (m *Manager) OwnDenGone() {
@@ -533,7 +533,7 @@ func (m *Manager) OwnDenGone() {
 }
 
 // CheckDen reaches a den at url as a member's install would, and checks
-// it proves the identity denID there (M10): how the install that hosted
+// it proves the identity denID there: how the install that hosted
 // it finds another computer serves it now, before it lets its copy go.
 // Describe words its error for the member.
 func (m *Manager) CheckDen(ctx context.Context, denID []byte, url string) error {

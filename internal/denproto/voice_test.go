@@ -34,7 +34,7 @@ func TestStripCandidates(t *testing.T) {
 }
 
 // TestStripAddresses checks that a browser's answer comes out with no
-// address in it (M8). testdata/answers.json holds Chromium's and Firefox's,
+// address in it. testdata/answers.json holds Chromium's and Firefox's,
 // each its second in a call, after it had gathered, taken in the browser
 // check's container, with a documentation address in place of the
 // container's. Firefox's names its host candidates, as it does once the page

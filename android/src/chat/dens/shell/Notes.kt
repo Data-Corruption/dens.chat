@@ -8,7 +8,7 @@ import android.content.Context
 import android.content.Intent
 import org.json.JSONObject
 
-// Notes posts the member's notifications (M12.3): each one Dens gives the
+// Notes posts the member's notifications: each one Dens gives the
 // shell, in a Messages channel of their own, grouped by den, and a tap
 // opens the page at the message, or from M17.4 at an event that started.
 // Dens decides what notifies the member, and takes a notification back as
@@ -24,7 +24,7 @@ object Notes {
     const val OPEN = "chat.dens.shell.OPEN"
     const val PATH = "path"
     // The paths a tap opens: a den, a channel's message there, or one of
-    // its events (M17.4).
+    // its events.
     private val path = Regex("^/den/[A-Za-z0-9_-]+(/[0-9]+#message=[0-9]+|/events#event=[0-9]+)?$")
 
     private fun manager(ctx: Context) = ctx.getSystemService(NotificationManager::class.java)

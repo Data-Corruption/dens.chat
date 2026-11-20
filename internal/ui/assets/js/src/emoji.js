@@ -1,4 +1,4 @@
-// Emoji (M15.2): Unicode's, from the list scripts/emoji.sh writes, which
+// Emoji: Unicode's, from the list scripts/emoji.sh writes, which
 // the page fetches once a picker or a completion first needs it, and the
 // den's own, which staff add and members write by name, as :name:. This is
 // what the picker, completion and the markdown subset share: the rule that
@@ -256,7 +256,7 @@ const USES = 'DENS_EMOJI_USES';
 export const HALF_LIFE = 14 * 24 * 60 * 60 * 1000;
 // KEEP is how many scores the browser keeps, the lowest dropping first.
 export const KEEP = 300;
-// QUICK are the quick reactions while the member has used fewer (M15.3).
+// QUICK are the quick reactions while the member has used fewer.
 export const QUICK = ['👍', '❤️', '😂', '😮', '😢', '🎉'];
 
 // A use is keyed by the emoji: Unicode's as itself without a skin tone,
@@ -359,7 +359,7 @@ export function mostUsed(denID, denEmoji, limit, now = Date.now(), l = list) {
     return found.sort((a, b) => b.score - a.score).slice(0, limit);
 }
 
-/** quickRow is the quick reactions (M15.3): the member's six most used,
+/** quickRow is the quick reactions: the member's six most used,
     filled out with QUICK while they've used fewer. denEmoji are all the
     den's emoji, whose scores stay while emoji are off, when on is false
     and the row leaves them out. */
@@ -430,7 +430,7 @@ export function completeMember(query, members) {
 }
 
 /** completeMention lists what completing a mention offers: @everyone
-    first, where the member may send it (M15.4) and it matches, then the
+    first, where the member may send it and it matches, then the
     members, as completeMember lists them */
 export function completeMention(query, members, everyone) {
     const out = completeMember(query, members).map((m) => ({ member: m }));

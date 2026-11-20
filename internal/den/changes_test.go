@@ -59,7 +59,7 @@ func TestChangesLogEditsTicksAndDeletes(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()
 	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
-	// The two joins were the den's first changes (M6.2).
+	// The two joins were the den's first changes.
 	start := f.sync(member)
 	if start.Version != 2 || start.Floor != 0 || start.Expired != "" {
 		t.Fatalf("a new den's sync: %+v", start)
@@ -341,7 +341,7 @@ func TestNewSyncEpoch(t *testing.T) {
 	}
 }
 
-// A restore moves the den's ID counters on (M11): a backup's are where
+// A restore moves the den's ID counters on: a backup's are where
 // they were when it was made, and nothing made after the restore may take
 // the ID of what the backup lacks, which a link elsewhere may name.
 func TestAdvanceIDs(t *testing.T) {

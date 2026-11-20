@@ -6,7 +6,7 @@ import (
 )
 
 // TestFixture makes and uses a Sigstore of the Android e2e's own, for its
-// fixture releases (M12.4). With DENS_SIGSTORE_DIR alone it makes one
+// fixture releases. With DENS_SIGSTORE_DIR alone it makes one
 // there: its keys, and the trusted root a fixture build embeds. With
 // DENS_SIGSTORE_SIGN too, it signs that file as DENS_SIGSTORE_IDENTITY,
 // vouched for by DENS_SIGSTORE_ISSUER, into FILE.cosign.bundle, as cosign

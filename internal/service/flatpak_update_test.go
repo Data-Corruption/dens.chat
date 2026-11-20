@@ -31,7 +31,7 @@ func (m *fakeMonitor) Update(context.Context) error {
 	return m.answer
 }
 
-// The Flatpak's update notice follows Flatpak's update monitor (M9.3): it
+// The Flatpak's update notice follows Flatpak's update monitor: it
 // offers Update where Dens may install the update, which GNOME never lets
 // an app with no window do, and the software center where Flatpak refused
 // it, until the remote has another; once one is installed, by anything,
@@ -118,7 +118,7 @@ func TestFlatpakUpdateNotice(t *testing.T) {
 }
 
 // An update something else installed, as the software center does, shows
-// as the page next asks (M9.4): the newest build installed, asked its
+// as the page next asks: the newest build installed, asked its
 // version from a sandbox of its own, at most every 30 seconds, is newer
 // than the running one. One the same or older is no update, and one that
 // answers nothing leaves the notice as it was.

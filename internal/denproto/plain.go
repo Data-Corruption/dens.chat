@@ -9,7 +9,7 @@ import (
 // SpoilerText stands for a spoiler in Plain's text.
 const SpoilerText = "(spoiler)"
 
-// Plain is the start of a text as a notification shows it (M12.3): its
+// Plain is the start of a text as a notification shows it: its
 // words without the markdown subset's marks, its lines run together, and
 // each spoiler, as the page's renderer finds them, put as SpoilerText, so a
 // notification never shows what a spoiler hides. Control and format

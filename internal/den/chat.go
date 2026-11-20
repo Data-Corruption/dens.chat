@@ -24,7 +24,7 @@ func IsStaff(role string) bool { return role == denproto.RoleModerator || role =
 func textAD(id int64) []byte { return []byte("den_messages.text:" + strconv.FormatInt(id, 10)) }
 
 // hasMessages reports whether a channel holds messages: text channels,
-// DMs and group DMs (M16.3) do; voice channels don't.
+// DMs and group DMs do; voice channels don't.
 func hasMessages(c denproto.Channel) bool {
 	return c.Kind == denproto.KindText || isPrivate(c)
 }
@@ -42,7 +42,7 @@ func invalid(format string, args ...any) error {
 // Snapshot --------------------------------------------------------------------
 
 // membersCursor is where a client's list of members stood, as it named it
-// on the socket's upgrade (M6.2).
+// on the socket's upgrade.
 type membersCursor struct {
 	epoch   []byte
 	version int64
@@ -56,14 +56,14 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 }
 
 // snapshotAt is snapshot for a client that speaks a version of the
-// protocol, which gets nothing of group DMs before 2 (M16.3), nor of notes
-// before 3 (M17.3).
+// protocol, which gets nothing of group DMs before 2, nor of notes
+// before 3.
 func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version int, seq uint64, mc *membersCursor) (denproto.Ready, error) {
 	groups := version >= denproto.GroupsVersion
 	r := denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
 	// The version comes first: a change made while the rest is read has a
-	// higher one, so a client that starts from it misses nothing (M6). The
+	// higher one, so a client that starts from it misses nothing. The
 	// log is read with it, so pruning can't take changes from between them.
 	var only map[int64]bool
 	err := d.readTx(ctx, func(tx *sql.Tx) error {
@@ -201,11 +201,11 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 
 // lastMessages returns the newest message in each channel and DM a member
 // sees that has any, by channel, at a version of the protocol: with
-// groups, in each group DM they're in, of those since they joined (M16.3),
-// and with notes, in their notes (M17.3). Each is a lookup of the
+// groups, in each group DM they're in, of those since they joined,
+// and with notes, in their notes. Each is a lookup of the
 // (channel_id, id) index, where max(id) GROUP BY channel_id would read
 // every message in the den, for each of the hundreds of snapshots a den
-// restart sends at once (M8).
+// restart sends at once.
 func (d *Den) lastMessages(ctx context.Context, member int64, staff bool, version int) (map[string]string, error) {
 	rows, err := d.db.QueryContext(ctx, `
 		SELECT c.id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id
@@ -269,7 +269,7 @@ func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 	if low.Valid && high.Valid {
 		c.Members = []string{denproto.FormatID(low.Int64), denproto.FormatID(high.Int64)}
 	}
-	// A member's notes name them alone (M17.3).
+	// A member's notes name them alone.
 	if notesOf.Valid {
 		c.Members = []string{denproto.FormatID(notesOf.Int64)}
 	}
@@ -277,7 +277,7 @@ func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 		g := denproto.FormatID(group.Int64)
 		c.GroupID = &g
 	}
-	// Who last set a DM's or a group's time, and when (M16.4).
+	// Who last set a DM's or a group's time, and when.
 	if expiresBy.Valid && expiresSet.Valid {
 		c.ExpiresSet = &denproto.ExpirySet{By: denproto.FormatID(expiresBy.Int64), At: expiresSet.Int64}
 	}
@@ -313,7 +313,7 @@ func (d *Den) queryChannels(ctx context.Context, q querier, query string, args .
 	return out, rows.Err()
 }
 
-// channel reads a channel, a group DM's with its members (M16.3).
+// channel reads a channel, a group DM's with its members.
 func (d *Den) channel(ctx context.Context, q querier, id int64) (denproto.Channel, error) {
 	c, err := scanChannel(q.QueryRowContext(ctx, `SELECT `+channelColumns+` FROM den_channels WHERE id = ?`, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -342,8 +342,8 @@ func (d *Den) visibleChannel(ctx context.Context, s *Session, id string) (denpro
 }
 
 // visible reports whether a member can see a channel: a DM only its two
-// members, a group DM only its members (M16.3), notes only their member
-// (M17.3), a staff-only channel only staff, and any other channel anyone.
+// members, a group DM only its members, notes only their member,
+// a staff-only channel only staff, and any other channel anyone.
 func visible(c denproto.Channel, member int64, staff bool) bool {
 	switch {
 	case isPrivate(c):
@@ -355,7 +355,7 @@ func visible(c denproto.Channel, member int64, staff bool) bool {
 }
 
 // sees reports whether a session sees a channel: one its member can see,
-// and a group DM (M16.3) or notes (M17.3) only in a version of the
+// and a group DM or notes only in a version of the
 // protocol with them.
 func sees(c denproto.Channel, s *Session) bool {
 	return visible(c, s.MemberID, IsStaff(s.Role)) && s.Version >= kindVersion(c.Kind)
@@ -558,7 +558,7 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 	}
 	staffOnly := req.StaffOnly != nil && *req.StaffOnly
 	// A voice channel's call goes at the default bitrate unless staff set
-	// another (M4.2); other channels have none.
+	// another; other channels have none.
 	var bitrate *int
 	if kind == denproto.KindVoice {
 		b := denproto.DefaultVoiceBitrate
@@ -702,7 +702,7 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 		d.channelChanged(after, false)
 		// Members who could see the channel lose it, or members who
 		// couldn't gain it with its history: a fresh snapshot covers both,
-		// and its events (M17.4), which follow it.
+		// and its events, which follow it.
 		if err := d.Hub.Publish(denproto.EventChannelUpdated, after, Staff); err != nil {
 			return after, err
 		}
@@ -722,7 +722,7 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 }
 
 // DeleteChannel removes a channel and all its messages, and a voice
-// channel's events to come, its live one ending (M17.4).
+// channel's events to come, its live one ending.
 func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 	if !IsStaff(s.Role) {
 		return errStaffOnly
@@ -1001,7 +1001,7 @@ func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 }
 
 // queryMessages returns the messages a query selects, with previews of the
-// messages they reply to, and their polls as viewer may see them (M15.4).
+// messages they reply to, and their polls as viewer may see them.
 func (d *Den) queryMessages(ctx context.Context, viewer int64, query string, args ...any) ([]denproto.Message, error) {
 	ms, err := d.scanMessages(ctx, query, args...)
 	if err != nil {
@@ -1230,7 +1230,7 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	if !hasMessages(c) {
 		return denproto.History{Messages: []denproto.Message{}}, nil
 	}
-	// A group's member reads from their joining (M16.3).
+	// A group's member reads from their joining.
 	since, err := groupSince(ctx, d.db, c, cid, s.MemberID)
 	if err != nil {
 		return denproto.History{}, err
@@ -1319,7 +1319,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err := denproto.Size("nonce", req.Nonce, denproto.NonceBytes); err != nil {
 		return denproto.Message{}, err
 	}
-	// A DM's and a group's are sealed by their members' Dens (M16.3), and a
+	// A DM's and a group's are sealed by their members' Dens, and a
 	// group's member replies to what they can read, from their joining.
 	dm := isPrivate(c)
 	since, err := groupSince(ctx, d.db, c, cid, s.MemberID)
@@ -1380,7 +1380,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		return existing[0], nil
 	}
 	// Staff's @everyone mentions every member who can see the channel; anyone
-	// else's, a member of that name (M15.4).
+	// else's, a member of that name.
 	everyone := !dm && IsStaff(s.Role) && denproto.MentionsEveryone(req.Text)
 	mentioned, err := d.mentionedMembers(ctx, req.Text, c, s.MemberID, everyone)
 	if err != nil {
@@ -1406,7 +1406,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 			keyID = &k
 			// A DM's or a group's message goes by the time it has as it's
 			// sent, read here so a member setting one meanwhile can't slip
-			// in between (M16.4).
+			// in between.
 			var after int64
 			if err := tx.QueryRowContext(ctx, `SELECT expires_after FROM den_channels WHERE id = ?`, cid).Scan(&after); err != nil {
 				return err
@@ -1505,7 +1505,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	return m, d.publishReadState(ctx, s.MemberID, cid)
 }
 
-// parseSpoilers checks a send's spoilers (M17.2): each one of its
+// parseSpoilers checks a send's spoilers: each one of its
 // uploads, once, in a channel, since a DM's go inside its seal.
 func parseSpoilers(ids []string, files []int64, dm bool) ([]int64, error) {
 	if len(ids) == 0 {
@@ -1543,10 +1543,10 @@ func checkSealedText(dm bool, text string, sealed denproto.Bytes, keyID string) 
 // mentionedMembers resolves a text's mentions to members in the den who can
 // see the channel, leaving out the author. In a DM, every message counts
 // for the other member, so their unread count is the messages waiting.
-// With everyone, staff's @everyone (M15.4), it's every member who can see
+// With everyone, staff's @everyone, it's every member who can see
 // the channel, a row each, so the unread mention counts need nothing new.
 func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Channel, author int64, everyone bool) ([]int64, error) {
-	// Everything in a member's notes is their own (M17.3).
+	// Everything in a member's notes is their own.
 	if isNotes(c) {
 		return nil, nil
 	}
@@ -1557,7 +1557,7 @@ func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Chan
 		return nil, nil
 	}
 	if c.Kind == denproto.KindGroupDM {
-		// Every message counts for each other member, as in a DM (M16.3).
+		// Every message counts for each other member, as in a DM.
 		var out []int64
 		for _, m := range c.Members {
 			if id, err := denproto.ParseID(m); err == nil && id != author {
@@ -1624,7 +1624,7 @@ func (d *Den) message(ctx context.Context, viewer int64, id string) (denproto.Me
 
 // Edit replaces a message's text, if nobody changed it since revision. Its
 // author and the members they named may edit it; only the author changes
-// who those are, and the message's files (M5).
+// who those are, and the message's files.
 func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.EditRequest) (denproto.Message, error) {
 	d.changes.Lock()
 	defer d.changes.Unlock()
@@ -1693,7 +1693,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	// was sent, and nobody is mentioned by their own edit. An @everyone
 	// counts while the text holds it and staff put it there: one already
 	// marked stays through anyone's edit that keeps it, and a co-editor who
-	// isn't staff can take it out but can't put it in (M15.4). It mentions
+	// isn't staff can take it out but can't put it in. It mentions
 	// everyone but the author, as when it was sent.
 	from := s.MemberID
 	if dm {
@@ -1856,7 +1856,7 @@ func Conflict(err error) (denproto.Message, bool) {
 // Delete removes a message for good. Its author may, and so may staff of a
 // higher rank than the author, as with removing members: moderators delete
 // members' messages, and the owner anyone's. Staff powers stop at DMs,
-// whose text they can't see: there only the author deletes (M8).
+// whose text they can't see: there only the author deletes.
 func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	m, mid, err := d.message(ctx, s.MemberID, id)
 	if err != nil {
@@ -1942,7 +1942,7 @@ func readersOf(ctx context.Context, tx *sql.Tx, ids []int64) ([]reader, error) {
 // deleted in their channel, by channel in deleted, as far as they were all
 // that lay between it and the next message left, within tx. A client knows
 // a channel's newest message only as messages come, so without it a DM
-// whose last message went unread, deleted or disappearing (M16.4), would
+// whose last message went unread, deleted or disappearing, would
 // stay unread until the client's next snapshot; one still holding a message
 // unread before it stays so.
 func passDeleted(ctx context.Context, tx *sql.Tx, readers []reader, deleted map[int64][]int64) error {
@@ -1956,7 +1956,7 @@ func passDeleted(ctx context.Context, tx *sql.Tx, readers []reader, deleted map[
 
 // passGone moves a member's read position in a channel past the messages
 // just deleted there, ids, as far as they were all that lay between it and
-// the next message left. A group's member reads from their joining (M16.3),
+// the next message left. A group's member reads from their joining,
 // so the messages before it don't hold it back.
 func passGone(ctx context.Context, tx *sql.Tx, member, channel int64, ids []int64) error {
 	var pos int64
@@ -2043,7 +2043,7 @@ func (d *Den) publishReadState(ctx context.Context, member, channel int64) error
 		coalesce((SELECT kind FROM den_channels WHERE id = ?2), '')`, member, channel, pos.Int64).Scan(&st.MentionCount, &kind); err != nil {
 		return err
 	}
-	// A group's (M16.3) and the member's notes' (M17.3) reach only the
+	// A group's and the member's notes' reach only the
 	// sockets that see them.
 	return d.Hub.Publish(denproto.EventReadStateUpdated, st, OnlyMember(member).needs(kindVersion(kind)))
 }

@@ -32,9 +32,9 @@ import (
 	"strings"
 )
 
-// Protocol versions this build speaks. Version 2 (M16.3) brings group
+// Protocol versions this build speaks. Version 2 brings group
 // DMs, which a den sends nothing of to a client speaking 1, and version 3
-// (M17.3) notes to self, which it sends nothing of to one speaking 1 or 2.
+// notes to self, which it sends nothing of to one speaking 1 or 2.
 const (
 	Version    = 3
 	MinVersion = 1
@@ -103,7 +103,7 @@ var codes = map[string]bool{
 
 // KnownCode reports whether code is one of the protocol's error codes. A
 // den's code is its own text, so the client shows a member only the codes
-// it knows (M8).
+// it knows.
 func KnownCode(code string) bool { return codes[code] }
 
 // WebSocket close codes beyond the standard ones.
@@ -306,21 +306,21 @@ type Den struct {
 	SoundLimits SoundLimits  `json:"sound_limits,omitzero"`
 	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"`
 	EventLimits *EventLimits `json:"event_limits,omitempty"`
-	// SealedCalls says the den seals every call end to end (M16.2), and
+	// SealedCalls says the den seals every call end to end, and
 	// takes no join that doesn't; a den older than it doesn't say so.
 	SealedCalls bool `json:"sealed_calls,omitempty"`
 	// Disappearing says the den deletes a DM's and a group's messages at
-	// the time their members set (M16.4); a den older than it doesn't.
+	// the time their members set; a den older than it doesn't.
 	Disappearing bool `json:"disappearing,omitempty"`
 	// Spoilers says the den keeps which of a channel's files went as
 	// spoilers, and MoveMembers that staff move members from one call to
-	// another (M17.2); a den older than them says neither.
+	// another; a den older than them says neither.
 	Spoilers    bool `json:"spoilers,omitempty"`
 	MoveMembers bool `json:"move_members,omitempty"`
 	// NameStyles says the den keeps a style for each member's name; a den
 	// older than them drops one a member sets.
 	NameStyles bool `json:"name_styles,omitempty"`
-	// Relay says the den passes boxes between a member's devices (M20), so
+	// Relay says the den passes boxes between a member's devices, so
 	// their installs ask only a den that does.
 	Relay bool `json:"relay,omitempty"`
 }
@@ -335,7 +335,7 @@ const (
 // Member is an account on a den. A member who left or was removed keeps
 // their record, with LeftAt set, so their messages still have a name. Bio
 // comes only with GET /api/members/{id}, to keep snapshots small.
-// Identity is the hash of the identity their Dens published (M16.1), as
+// Identity is the hash of the identity their Dens published, as
 // base64url, which a change to it reaches everyone with; none before it
 // published one, as from an older Dens. NameStyle is how their name
 // shows, left out when they set none.
@@ -355,7 +355,7 @@ type Member struct {
 
 // MemberProfile is a member as GET /api/members/{id} answers, for their
 // profile card: their record with their bio, and the badges they earned
-// whose events the asker sees, latest first (M17.5), which travel with the
+// whose events the asker sees, latest first, which travel with the
 // card alone, as the bio does.
 type MemberProfile struct {
 	Member
@@ -454,7 +454,7 @@ type DenUpdateRequest struct {
 	URL        *string     `json:"url,omitempty"`
 	Limits     *Limits     `json:"limits,omitempty"`
 	CallLimits *CallLimits `json:"call_limits,omitempty"`
-	// Retention is the days a message is kept, or 0 to keep them all (M5).
+	// Retention is the days a message is kept, or 0 to keep them all.
 	Retention   *int         `json:"retention,omitempty"`
 	SoundLimits *SoundLimits `json:"sound_limits,omitempty"` // M14.3
 	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"` // M15.2

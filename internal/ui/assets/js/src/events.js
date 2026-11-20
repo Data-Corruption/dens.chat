@@ -31,8 +31,8 @@ let down = false;
 let everConnected = false;
 let delay = MIN_DELAY;
 let retry = null;
-// The service sends den statuses, the voice keys' (M7), the
-// notifications' (M12.3) and Relay's (M20.2), when the stream opens and
+// The service sends den statuses, the voice keys', the
+// notifications' and Relay's, when the stream opens and
 // when they change, so a view that starts listening later gets the latest
 // from here.
 let latestDens = null;
@@ -156,7 +156,7 @@ export function showChannel(den, channel) {
 }
 
 // setPageState tells the service whether this page is on screen, and
-// whether the browser lets it notify (M12.3), so a notification shows
+// whether the browser lets it notify, so a notification shows
 // once, in the right place.
 export function setPageState(visible, allowed) {
     if (pageState?.visible === visible && pageState?.allowed === allowed) return;
@@ -164,7 +164,7 @@ export function setPageState(visible, allowed) {
     send({ t: 'page', d: pageState });
 }
 
-// setBars tells the service the page's background, as #rrggbb (M13.3).
+// setBars tells the service the page's background, as #rrggbb.
 export function setBars(color) {
     if (bars === color) return;
     bars = color;

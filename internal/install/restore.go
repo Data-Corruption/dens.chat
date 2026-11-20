@@ -167,7 +167,7 @@ func Restore(ctx context.Context, sys System, bi build.BuildInfo, opts Options, 
 }
 
 // describeArchive is the line a restore gives the archive it read: a
-// backup, or a den's export (M10), which holds the den alone.
+// backup, or a den's export, which holds the den alone.
 func describeArchive(m backup.Manifest) string {
 	made := fmt.Sprintf("from %s, made by %s %s on %s", m.CreatedAt.Format(time.RFC1123), m.App, m.Version, m.Platform)
 	if m.DenExport {
@@ -178,7 +178,7 @@ func describeArchive(m backup.Manifest) string {
 }
 
 // acceptArchive refuses an archive the form can't restore: a den's export
-// where the form hosts no den, as the Flatpak (M10).
+// where the form hosts no den, as the Flatpak.
 func acceptArchive(form layout.Form, m backup.Manifest) error {
 	if !m.DenExport {
 		return nil
@@ -195,7 +195,7 @@ func acceptArchive(form layout.Form, m backup.Manifest) error {
 const movingGuide = "https://dens.chat/docs/backups/#moving-a-den"
 
 // checkTarget refuses a den's export over an instance that would lose
-// something to it (M10): one that has joined a den, or hosts another. The
+// something to it: one that has joined a den, or hosts another. The
 // export holds its den alone, so the instance's accounts, and a den of its
 // own, would go with nothing in their place. The same den, on an instance
 // that has joined none, is a move done again with a later export.
@@ -238,7 +238,7 @@ var freeSpace = host.FreeSpace
 // another password or whose key doesn't match its own database, one the
 // target's form can't restore, or a den's export that would delete what
 // the target holds, it refuses as soon as its database is out, before any
-// upload (M10).
+// upload.
 func openBackup(bi build.BuildInfo, archive, dir, password string, target layout.Layout) ([]byte, backup.Manifest, error) {
 	file, err := os.Open(archive)
 	if err != nil {
@@ -363,7 +363,7 @@ func (c *countingReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// RestoreSession replaces a session form's data with a backup (M9.3): the
+// RestoreSession replaces a session form's data with a backup: the
 // installed restore's steps without the elevation, as the user whose
 // instance it is. stop asks a running service to stop, and the restore
 // waits for its lifecycle lock. The restored data's first start migrates
@@ -385,7 +385,7 @@ func RestoreSession(ctx context.Context, bi build.BuildInfo, l layout.Layout, ar
 		return fmt.Errorf("RestoreSession called on the %s layout", l.Form)
 	}
 	// The backup's key would have to be wrapped anew by the app's shell,
-	// with its Keystore key, which nothing else may use (M12).
+	// with its Keystore key, which nothing else may use.
 	if l.Form == layout.Android {
 		return errors.New("the Android app restores no backup")
 	}

@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// Identities, signed DM keys and the record (M16.1): what the den relays
+// Identities, signed DM keys and the record: what the den relays
 // and keeps. The cryptography is in identity.go; the den never holds a key
 // that opens any of it.
 
@@ -63,7 +63,7 @@ type KeyMaker struct {
 	Sig     Bytes `json:"sig"`
 }
 
-// SignedKey is a DM key sealed to its members' identities (M16.1), as one
+// SignedKey is a DM key sealed to its members' identities, as one
 // of its members sees it: the statement its maker signed, the maker's
 // keys, and that member's own copy. Messages name the key they're sealed
 // with by its ID, which the den gives it; KID is the one its maker gave
@@ -92,7 +92,7 @@ type KeyCopy struct {
 }
 
 // SignedKeyRequest makes a DM's key: its statement, signed by the maker's
-// identity, and a copy for each member. A group's key (M16.3) carries the
+// identity, and a copy for each member. A group's key carries the
 // group's name sealed under it, where the group has one.
 type SignedKeyRequest struct {
 	KID       Bytes       `json:"kid"`

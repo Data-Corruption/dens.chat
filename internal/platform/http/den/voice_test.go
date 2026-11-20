@@ -470,7 +470,7 @@ func TestStaffInCalls(t *testing.T) {
 }
 
 // moved matches the den telling a socket that staff moved its member's
-// call to another channel (M17.2).
+// call to another channel.
 func moved(from, to string) (string, func(denproto.Event) bool) {
 	return "a move from " + from + " to " + to, func(e denproto.Event) bool {
 		var x denproto.VoiceMove
@@ -479,7 +479,7 @@ func moved(from, to string) (string, func(denproto.Event) bool) {
 }
 
 // TestStaffMoveMembers checks staff moving a member's call to another
-// voice channel (M17.2): anyone but the owner and themselves, a moderator
+// voice channel: anyone but the owner and themselves, a moderator
 // too; only to a voice channel the member can see, whose call has room;
 // told to the socket holding the call, whose join of that channel doesn't
 // count toward the member's limit on joining; and refused while the call
@@ -681,8 +681,8 @@ func TestUnansweredCallFails(t *testing.T) {
 	watcher.wait(inCall(lounge.ID))
 }
 
-// TestCallHoldsItsLimit checks the caps on calls as an owner sets them
-// (M4.2): a new den's, then a call of three and calls of four across the
+// TestCallHoldsItsLimit checks the caps on calls as an owner sets them:
+// a new den's, then a call of three and calls of four across the
 // den, past which a join is refused as full.
 func TestCallHoldsItsLimit(t *testing.T) {
 	f := newFixture(t)
@@ -716,7 +716,7 @@ func TestCallHoldsItsLimit(t *testing.T) {
 	later.wait(ended(games.ID, denproto.VoiceFull))
 }
 
-// talking matches word of who holds push to talk in a call (M11).
+// talking matches word of who holds push to talk in a call.
 func talking(channel string, members ...string) (string, func(denproto.Event) bool) {
 	return "push to talk in " + channel + " to be held by " + strings.Join(members, ", "), func(e denproto.Event) bool {
 		var x denproto.VoiceTalking
@@ -763,7 +763,7 @@ func (v *voiceSocket) lit(member string, d time.Duration) int {
 }
 
 // TestPushToTalkRings checks the push-to-talk ring the den passes around a
-// call (M11): to the call's members alone, never for a member muted or
+// call: to the call's members alone, never for a member muted or
 // staff muted, lit at most five times a second, and put out as the member
 // lets go, mutes, leaves, or their socket closes. A member joining hears
 // who holds it already.

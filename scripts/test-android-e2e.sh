@@ -1,39 +1,39 @@
 #!/usr/bin/env bash
 
-# Android e2e (M12.1): the Android app's development APK, built from this
+# Android e2e: the Android app's development APK, built from this
 # tree, in Android's emulator, joining a den behind Caddy in the browser
 # checks' container, as a member's phone does.
 #
-# In Android 17's emulator, its screen 390 CSS pixels wide (M13), the app
+# In Android 17's emulator, its screen 390 CSS pixels wide, the app
 # installs, makes its data key in the Keystore, starts Dens and pairs its
 # page without a token; the page takes a local password and joins the den
-# through its forms, typed into by Android's keyboard (M13.3), with a
+# through its forms, typed into by Android's keyboard, with a
 # picture and an audit of each screen, and the den lists the phone by the
 # name the emulator has, with its model under it; a message goes each way
 # from the composer; a phone photo goes as a smaller copy, and saved from
 # the viewer it reaches Downloads with no GPS or camera left in it. A call
-# with the den's owner goes on through two and a half minutes off screen
-# (M12.2), most of them silent and sealed both ways, as the app holds its
+# with the den's owner goes on through two and a half minutes off screen,
+# most of them silent and sealed both ways, as the app holds its
 # page as shown, and lets the page and the microphone go once the call ends.
 #
 # The phone's DM with the den's owner opens at once, and the two compare
 # codes; the phone reads the owner's message in a group of three, its
 # changes, keys and signature checked; and the member's notes open at
 # version 3 of the protocol, and a note written there reads back, sealed on
-# the den (M17.3). A DM from the owner while the app is behind the others
-# posts its notification (M12.3), whose tap opens the page at the message,
-# in place on the page that shows (M13.1), and another, read on the den, has
+# the den. A DM from the owner while the app is behind the others
+# posts its notification, whose tap opens the page at the message,
+# in place on the page that shows, and another, read on the den, has
 # its notification taken back. The DM's messages are set to go after a day,
 # for the walk to find. An event the member marked Interested posts its
 # notification as it starts, the phone's screen off, whose tap opens the
-# page's events at it, and its end takes it back (M17.4). Dens killed under
+# page's events at it, and its end takes it back. Dens killed under
 # the shell starts again, and the app force-stopped and opened again keeps
 # its page's session; a link opens outside the page, and Back leaves it.
 #
-# At 390 CSS pixels (M13.1), by Android's own taps and swipes, the member
+# At 390 CSS pixels, by Android's own taps and swipes, the member
 # gets around the phone layout's panes, from Home to a channel, the list and
 # the members, and Back walks up them to Home, closing the settings on the
-# way, and out of the app. By touch (M13.2), a long press opens a message's
+# way, and out of the app. By touch, a long press opens a message's
 # actions in a sheet, which a swipe down closes, and Back too; the keyboard
 # comes up, shown beside the emulator's own, leaving the composer and the
 # newest message in sight, and three lines go by the send button; and a tip
@@ -42,10 +42,10 @@
 # out of, and the phone's settings hold no keyboard shortcuts or screen
 # share; the viewer, on a message's two photos, moves to the second by a
 # swipe, zooms by a double tap, and Back closes it; and a dialog, a sheet,
-# closes by a swipe down (M13.3). The owner reacts to the member's message,
+# closes by a swipe down. The owner reacts to the member's message,
 # which the phone's page shows as a chip, and the member reacts to the
-# owner's from the long press's quick row (M15.3). The owner posts a poll,
-# which the member votes on by taps, and the den counts (M15.4).
+# owner's from the long press's quick row. The owner posts a poll,
+# which the member votes on by taps, and the den counts.
 #
 # In a call with the owner, joined from the list, whose row shows the call's
 # length, and from a text channel never back to the list, the member finds
@@ -54,8 +54,8 @@
 # to talk through Android's own touch, ringing for the owner only while it's
 # held, has it let go as the notification shade comes down mid-press, plays
 # the soundboard's sound and hears the owner's, hears the owner leave and
-# join again, the page playing the sounds through the call's context
-# (M14.2), and leaves from the bar (M13.4).
+# join again, the page playing the sounds through the call's context,
+# and leaves from the bar.
 #
 # An install of the member's own beside the owner's signs in through the
 # phone's approval and shares that computer's sound, a tone; on the phone,
@@ -63,7 +63,7 @@
 # Dens reach its network, allowed on its dialog, and Listen plays the
 # install's sound across the link from the emulator, as media, the page held
 # as shown and Wi-Fi kept awake, moving into a call's context as the phone
-# joins one and back as it leaves, until Stop lets them go (M20.3).
+# joins one and back as it leaves, until Stop lets them go.
 #
 # Then every member's screen is walked for its picture and the audit of its
 # layout, which fails on a control under 24 pixels, a list's row under 44 or
@@ -73,12 +73,12 @@
 # emulator as the app.
 #
 # Then the app's release, from the fixture releases
-# (scripts/test/android/releases.sh), updates itself (M12.4): its updater
+# (scripts/test/android/releases.sh), updates itself: its updater
 # refuses a newer release whose checksums another workflow signed, before
 # downloading its APK, then, at the member's Check now in the page's
-# settings (M17.2), checks the release signed as it should be; the app joins
+# settings, checks the release signed as it should be; the app joins
 # a den, which shows the update's notice too, until the member dismisses it
-# there, while Home keeps it (M21.1); and the tap on its notification hands
+# there, while Home keeps it; and the tap on its notification hands
 # the APK to Android's installer, which updates the app to it. Android 12's
 # emulator, whose WebView is older than the page needs, runs Dens and says
 # to update the WebView, and the release's app updates itself there too,
@@ -113,12 +113,12 @@ CONTAINER=${CONTAINER:-dens-android}
 APP=chat.dens.Dens.dev
 # The release's app, from the fixture releases, which updates itself, and
 # where the e2e serves their host: the emulator's loopback, which adb
-# forwards to the container's (M12.4).
+# forwards to the container's.
 RELEASE_APP=chat.dens.Dens
 RELEASES_PORT=18480
-# Where desk answers the walk's call (M13.4), in dens-browsers.
+# Where desk answers the walk's call, in dens-browsers.
 DESK_PORT=18590
-# The den the release's app joins (M21.1), on the emulator's loopback, which
+# The den the release's app joins, on the emulator's loopback, which
 # adb forwards to the container's, and the page of the instance hosting it.
 LOOP_DEN_PORT=18695
 LOOP_PAGE_PORT=18694
@@ -180,7 +180,7 @@ waitfor() {
   fail "waited $tries s for $what"
 }
 
-# loop_den up|invite|down is a den the release's app can join (M21.1),
+# loop_den up|invite|down is a den the release's app can join,
 # which a den behind Caddy isn't, since a release build can't be given its
 # authority's root: a development instance in $CONTAINER, as loopden,
 # hosting one at http://127.0.0.1:$LOOP_DEN_PORT, the binary the browsers'
@@ -260,7 +260,7 @@ finish() {
   stop_releases_host
   loop_den down
   incus exec dens-browsers -- curl -s -m 3 -X POST "http://127.0.0.1:$DESK_PORT/quit" >/dev/null 2>&1 || :
-  # The member's install beside desk's, its log kept (M20.3).
+  # The member's install beside desk's, its log kept.
   incus exec dens-browsers -- cat /home/tester/android-den/rden.log >"$RUN_LOG_DIR/twin.log" 2>/dev/null || :
   den twin down >/dev/null 2>&1 || :
   # The emulator keeps a density it was given across restarts, and its
@@ -323,15 +323,15 @@ echo ">> Android 17"
 serial=$NEW
 incus exec "$CONTAINER" -- /root/box.sh boot a17 5554
 adb uninstall "$APP" >/dev/null 2>&1 || :
-# The phone layout (M13), at 390 CSS pixels, its 1080-pixel screen at 443
+# The phone layout, at 390 CSS pixels, its 1080-pixel screen at 443
 # dpi, from the first screen on; and a name of the phone's own, as a
 # phone's owner gives it in Android's settings, which dens list it by
-# beside its model (M13.3).
+# beside its model.
 adb shell wm density 443
 adb shell settings put system font_scale 1.0
 adb shell "settings put global device_name 'Dens e2e phone'"
 # Android says once, as an app first hides the bars, how to leave full
-# screen, and its notice takes the Back that should leave it (M13.4): a
+# screen, and its notice takes the Back that should leave it: a
 # phone's member reads it once, and the walk has read it.
 adb shell settings put secure immersive_mode_confirmations confirmed
 phone install amd64 >/dev/null
@@ -397,9 +397,9 @@ ok "a phone photo went as its smaller copy, and saved from the viewer it reached
 # would freeze a page that quiet a minute after it hid, but the app tells
 # its WebView it shows while the page has the microphone.
 echo ">> A call, off screen"
-# The den seals its calls (M16.2): each page's notes on its frames, which
+# The den seals its calls: each page's notes on its frames, which
 # its Dens logs at debug, say what it sealed and opened on the voices'
-# track (M18).
+# track.
 phone drive api POST /api/settings '{"logLevel":"debug"}' | grep -q '^200' || fail "turning the phone's debug logs on"
 incus file push -q --uid 1000 --gid 1000 scripts/test/android/call.mjs dens-browsers/home/tester/browser/call.mjs
 incus exec dens-browsers --user 1000 --group 1000 --cwd /home/tester/browser --env HOME=/home/tester --env XDG_RUNTIME_DIR=/run/user/1000 -- \
@@ -450,9 +450,9 @@ shell_log | grep -q 'page: no longer held' || fail "the page still held after it
 [[ $(services) == *'types=0x40000000'* ]] || fail "the service kept the microphone's type after the call"
 ok "the call held through $(((on - off) / 1000)) s off screen, both ways, and once it ended the service let the microphone and the page go"
 
-# Notifications (M12.3). Desk and the phone's member's DM opens at once,
-# and they compare codes, each typing the code the other reads out
-# (M16.1); the member turns DMs on in the page's settings. Android asked for notifications at the call, which the
+# Notifications. Desk and the phone's member's DM opens at once,
+# and they compare codes, each typing the code the other reads out;
+# the member turns DMs on in the page's settings. Android asked for notifications at the call, which the
 # member allowed, so it doesn't ask again. A DM from desk while the app is
 # behind the others posts through the shell, and its tap opens the page at
 # the message; read on the den, the next is taken back.
@@ -474,7 +474,7 @@ done
 den api POST "/api/dens/$den_id/members/$member_id/compare" "{\"digits\":\"$phone_code\"}" | grep -q '"verified":true' || fail "desk's comparison of codes"
 phone drive api POST "/api/dens/$den_id/members/$desk_id/compare" "{\"digits\":\"$desk_code\"}" | grep -q '^200' || fail "the phone's comparison of codes"
 ok "the phone's DM with desk opened at once, and the two compared codes"
-# A group DM (M16.3): desk makes one of itself, the phone's member and
+# A group DM: desk makes one of itself, the phone's member and
 # third, a member on another instance beside desk's, and writes in it; the
 # phone's Dens checks the group's changes and keys, and opens desk's
 # message, checking desk's signature inside it.
@@ -486,7 +486,7 @@ den say "$group" "a group message for the phone" >/dev/null
 reads() { [[ $(pagejson "/api/dens/$den_id/channels/$group/messages" "v.messages.some((m) => m.text === 'a group message for the phone' && !m.locked)") == true ]]; }
 waitfor 30 "desk's message in the group, on the phone" reads
 ok "the phone reads desk's message in a group of three, its changes, keys and desk's signature checked"
-# The member's notes (M17.3), at version 3 of the protocol, which the
+# The member's notes, at version 3 of the protocol, which the
 # phone's Dens and desk's den both speak: the phone opens them, which the
 # den makes, writes one, and reads it back opened under the key its seal
 # makes; desk's den holds it, sealed, in the member's notes alone.
@@ -515,8 +515,8 @@ first=$(den say "$dm" "a DM for the phone")
 waitfor 20 "the DM's notification" shows "a DM for the phone"
 [[ $(notifications) == *"pkg=$APP"*"channel=messages"* ]] || fail "the notification isn't the app's, in its Messages channel"
 ! shell_log | grep -q 'asking Android for POST_NOTIFICATIONS' || fail "Android was asked for notifications again"
-# The page, which still shows behind the others, takes the tap in place
-# (M13.1), as a call on it needs: what it holds now is there after.
+# The page, which still shows behind the others, takes the tap in place,
+# as a call on it needs: what it holds now is there after.
 phone drive eval 'window.heldOver = true' >/dev/null
 adb shell cmd statusbar expand-notifications
 sleep 2
@@ -543,7 +543,7 @@ ok "read on the den, the DM's notification was taken back"
 # (M16.4).
 den api PUT "/api/dens/$den_id/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null || fail "setting the DM's time"
 
-# An event (M17.4): desk makes one in Lounge, starting within the minute,
+# An event: desk makes one in Lounge, starting within the minute,
 # which the phone's member marks Interested. With the phone's screen off,
 # desk's den tells the phone's Dens as it starts, which posts the
 # notification as a message's, in the Messages channel; awake, its tap
@@ -603,7 +603,7 @@ adb shell input keyevent KEYCODE_BACK
 waitfor 5 "Back to leave the page at its first address" behind
 ok "a link opened outside the page, and Back left it"
 
-# The phone layout (M13), in a page opened afresh, whose history begins at
+# The phone layout, in a page opened afresh, whose history begins at
 # Home. Desk sends a message of two photos, for the viewer's swipe.
 echo ">> Getting around, at 390 pixels"
 random=$(den channel random)
@@ -627,12 +627,12 @@ adb shell settings put secure show_ime_with_hard_keyboard 0
 ok "by Android's own touch, a long press opened a message's actions in a sheet, which a swipe down and Back closed; with the keyboard up, the composer and the newest message stayed in sight, and three lines went by the send button; and a tip opened on a tap"
 phone start
 waitfor 20 "the page in front" front
-# Desk's name in a font and a color (M19.5), which the walk finds drawn in
+# Desk's name in a font and a color, which the walk finds drawn in
 # the WebView.
 den api PATCH "/api/dens/$den_id/me" '{"name_style":{"font":"pacifico","color":"#c084fc"}}' >/dev/null
 walk pages || fail "dialogs, the settings and the viewer at 390 pixels"
 ok "the settings and Manage opened as lists of pages, which Back walked out of, and the phone's settings held no keyboard shortcuts or screen share; the viewer moved to a message's second photo by a swipe, zoomed by a double tap, and Back closed it; a dialog, a sheet, closed by a swipe down; and desk's name showed in its font"
-# Reactions (M15.3): desk reacts to the member's message, which the phone's
+# Reactions: desk reacts to the member's message, which the phone's
 # page shows as a chip; the member reacts to desk's from the long press's
 # quick row, by Android's own touch, which desk's page shows.
 echo ">> Reactions, at 390 pixels"
@@ -653,7 +653,7 @@ reacted() {
 }
 waitfor 20 "the member's reaction on desk's page" reacted
 ok "desk's reaction on the member's message showed as a chip on the phone's page, and the member's from the long press's quick row, by Android's own touch, reached desk's page"
-# Polls (M15.4): desk posts a poll, its totals as votes come in with who
+# Polls: desk posts a poll, its totals as votes come in with who
 # voted for what, and votes on it; the member votes from the phone's page
 # by taps, and desk's den has their vote.
 echo ">> A poll, at 390 pixels"
@@ -674,17 +674,17 @@ polled() {
 }
 waitfor 20 "the member's vote on desk's poll" polled
 ok "desk's poll showed on the phone's page, the member voted on it by Android's own touch, and desk's den counted the vote, with who cast it"
-# Calls on a phone (M13.4): desk, the den's owner in Chromium in
+# Calls on a phone: desk, the den's owner in Chromium in
 # dens-browsers, shares its screen in Lounge and answers the walk over
 # HTTP with what its page shows of the call. The member joins from the
-# list, whose Lounge row shows the call's length as desk's page does
-# (M21.2), and from general, never going back to the list, watches desk's
+# list, whose Lounge row shows the call's length as desk's page does,
+# and from general, never going back to the list, watches desk's
 # share docked there, full screen and back, mutes and unmutes with the
 # call's button, holds it to talk through Android's own touch, which desk
 # sees ring only while it's held, holds it again as the notification shade
 # comes down, which lets it go, and leaves from the bar. The den's
 # soundboard holds Ping, which desk plays for the phone, and the phone from
-# its bar for desk (M14.3).
+# its bar for desk.
 echo ">> A call by the call's button, at 390 pixels"
 den sound Ping >/dev/null
 incus file push -q --uid 1000 --gid 1000 scripts/test/android/desk.mjs dens-browsers/home/tester/browser/desk.mjs
@@ -701,7 +701,7 @@ waitfor 20 "the page in front" front
 walk call || fail "a call by the call's button"
 wait "$desk" || fail "desk's side of the call: $(tail -n 3 "$RUN_LOG_DIR/desk.log")"
 ok "in a call with desk, its length on Lounge's row as desk's page showed it, from general and never back to the list: the bar, desk's share docked above the channel, full screen and back, a tap on the call's button muting and unmuting, the button held to talk while desk saw the member ring and let go as the shade came down, desk's sound played from the call's track through the call's context and the phone's from its bar to desk, and the call left from the bar"
-# Relay (M20.3): an install of the member's own on desk's computer, its
+# Relay: an install of the member's own on desk's computer, its
 # sign-in approved on the phone, as a member's second device's is, so both
 # hold the member's seal; it shares that computer's sound, which the phone
 # plays from its Relay settings.
@@ -740,7 +740,7 @@ phone start
 waitfor 20 "the page in front" front
 walk screens || fail "the screens at 390 pixels"
 ok "every member's screen at 390 pixels fits a finger, its picture and its audit in the logs"
-# Larger text (M13.3): Android's font scale at 1.3, which the WebView's
+# Larger text: Android's font scale at 1.3, which the WebView's
 # text follows, as a member with larger text has it. A new font scale
 # makes the activity, and its page, anew.
 adb shell settings put system font_scale 1.3
@@ -763,12 +763,12 @@ adb shell "run-as $APP sh -c 'mkdir -p files/e2e/t && cp /data/local/tmp/host.te
 ok "the host package's tests passed as the app: $(grep -c '^--- PASS' "$RUN_LOG_DIR/host-tests.log") passed, $(grep -c '^--- SKIP' "$RUN_LOG_DIR/host-tests.log") skipped"
 
 # update_from_fixtures has the release's app update itself from the fixture
-# releases (M12.4), on the emulator at $serial:
+# releases, on the emulator at $serial:
 # v99.0.1-e2e, installed as the browser would, finds v99.0.2-e2e on its
 # release host. Served first with checksums another workflow signed, the
 # updater refuses them before downloading the APK; served as signed, it
 # downloads the APK and checks it, once Dens starts again or, with
-# check-now, at the member's Check now in the page's settings (M17.2),
+# check-now, at the member's Check now in the page's settings,
 # which the page reaches after its local password, set through its form:
 # the page then says the update is ready, and the shell posts that it is.
 # The tap hands it to Android's installer, which updates the app once the
@@ -808,7 +808,7 @@ update_from_fixtures() {
   if [[ ${1:-} == check-now ]]; then
     shows_text() { adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -qE "(text|content-desc)=\"($1)\""; }
     waitfor 60 "the page's form for a local password" shows_text 'Set password'
-    # The form sits in the window's middle (M22.4), so the keyboard moves
+    # The form sits in the window's middle, so the keyboard moves
     # it up as it opens: each field is found as it's typed in.
     for n in 1 2; do
       fields=$(adb exec-out uiautomator dump /dev/tty 2>/dev/null | grep -oE '<node [^>]*password="true"[^>]*>' |
@@ -853,7 +853,7 @@ update_from_fixtures() {
     loop_den up
     adb reverse "tcp:$LOOP_DEN_PORT" "tcp:$LOOP_DEN_PORT" >/dev/null
     tap 20 'Add a den' || fail "Home offers no Add a den"
-    # The den's address comes first, then the invite (M22.6).
+    # The den's address comes first, then the invite.
     type_field 2 "$(loop_den invite)" || fail "Add a den has no field for the invite"
     adb shell input keyevent KEYCODE_ENTER
     tap 30 'Join as someone new' || fail "the invite showed no den to join"
@@ -868,7 +868,7 @@ update_from_fixtures() {
     adb shell input keyevent KEYCODE_ENTER
     waitfor 30 "the recovery codes" shows_text 'Copy'
     # They run past the screen, Copy and Done below them; a copy lets Done
-    # through (M22.4).
+    # through.
     for _ in 1 2 3; do
       adb shell input swipe 540 1700 540 600 300
       sleep 1

@@ -5,8 +5,8 @@
 // videos and what happens to links; Notifications what notifies the
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
-// screen share; Relay this install's links with the member's other devices
-// (M20), and from M20.2 the computer's sound shared and listened to; and
+// screen share; Relay this install's links with the member's other devices,
+// and from M20.2 the computer's sound shared and listened to; and
 // System hosting a den, the cache, updates, backups, the local
 // password, the logs, signing this browser out, and the version.
 
@@ -58,11 +58,11 @@ export const SECTIONS = [
 // SettingsDialog shows a section of the settings. It closes with its ✕,
 // Escape, a click outside it, or Back. On the phone layout it takes the
 // screen, its sections a list of pages, and Back and Escape go from a page
-// to the list. Appearance takes the window at any width (M22.8), and Back
+// to the list. Appearance takes the window at any width, and Back
 // and Escape go from it to the section open before; on a wide window the
 // settings open at Chat, the first section that doesn't. With denID, as on
 // a den's page, it holds that den's sections of the member's own as a
-// group above the app's (M22.3).
+// group above the app's.
 export function SettingsDialog({ section, denID, onSection, onClose, instance, version, pair, navigate }) {
     const narrow = useNarrow();
     const { den, view } = useYourDen(denID);
@@ -170,7 +170,7 @@ function ChatSettings() {
 }
 
 // NotificationSettings turns each kind of notification on or off, and the
-// message's start in them (M12.3). The service keeps them, so every browser
+// message's start in them. The service keeps them, so every browser
 // paired with it shares them; turning a kind on asks this browser to let
 // the page notify, where it hasn't asked, and the card says where they
 // show, by what this browser, the desktop's helper and Android allow.
@@ -187,7 +187,7 @@ function NotificationSettings() {
     }, []);
     function change(kind, on) {
         // The browser asks only in answer to the click, for a kind of its
-        // own: @everyone is among mentions (M15.4).
+        // own: @everyone is among mentions.
         const asked = on && kind !== 'hideText' && kind !== 'everyone' ? askToNotify() : null;
         act.run(async () => {
             if (asked) {
@@ -219,7 +219,7 @@ function NotificationSettings() {
     );
 }
 
-// SoundSettings holds the page's sounds (M14.2), grouped Messages and
+// SoundSettings holds the page's sounds, grouped Messages and
 // Calls: each with its switch, ▶ to hear it, its volume, and Replace…, for
 // a file of the member's own, or once replaced, Reset, which brings its
 // default back. The service keeps them, so every browser paired with it
@@ -329,15 +329,15 @@ function SoundRow({ name, label, s, volume, busy, onOn, onMove, onVolume, onRepl
     );
 }
 
-// VoiceSettings chooses the microphone and speaker, how loud calls play
-// (M12), the noise suppression, how the member sends their voice, their
+// VoiceSettings chooses the microphone and speaker, how loud calls play,
+// the noise suppression, how the member sends their voice, their
 // shortcuts, and how they share their screen. Its meter shows what the
 // voice processor hears and whether it sends it: in the call while there
 // is one, and otherwise in a test the member starts. What the page can't
-// use leaves it, as on a phone (M13.3): the shortcuts where the service
+// use leaves it, as on a phone: the shortcuts where the service
 // says there are no keys, and sharing where the browser can't share. Where
 // the page has the call's button, its role takes the place of how the
-// member sends (M13.4).
+// member sends.
 function VoiceSettings() {
     const [v, setV] = useState(voiceSettings);
     const holds = useHoldsButton();
@@ -564,7 +564,7 @@ const KEYS = [
     ['toggleDeafen', 'Toggle deafen'],
 ];
 
-// ROLES are what the call's button may do (M13.4), its default first.
+// ROLES are what the call's button may do, its default first.
 const ROLES = [
     ['toggleMute', 'Toggle mute'],
     ['pushMute', 'Push to mute'],
@@ -592,7 +592,7 @@ function WorksElsewhere({ id }) {
 
 // KeysNote says in a line where the shortcuts work: in other apps while
 // the helper reads them, or the desktop runs them, and otherwise while
-// Dens has focus. Where the desktop holds them (M7.2), the member sets
+// Dens has focus. Where the desktop holds them, the member sets
 // them up with it, changes them in its settings, or stops.
 function KeysNote({ elsewhere, onDesktop }) {
     const text = 'text-sm text-base-content/70';
@@ -611,7 +611,7 @@ function KeysNote({ elsewhere, onDesktop }) {
         }
         if (elsewhere.binding) return <p class={text} role="status">Confirm the shortcuts in your desktop's dialog.</p>;
         // The desktop binds once a session, and this one has none of them
-        // now, as when they were taken out in its settings (M11).
+        // now, as when they were taken out in its settings.
         if (!elsewhere.bindable) {
             return (
                 <div class="flex flex-col gap-2">
@@ -662,7 +662,7 @@ function Meter({ report, threshold }) {
     );
 }
 
-// ShareSettings chooses how the member shares their screen (M4.2): its
+// ShareSettings chooses how the member shares their screen: its
 // resolution and frame rate, whether it keeps detail or motion, and
 // whether it takes its audio along, which only some browsers can. A den's
 // lower limits show while a call in that den holds them to them.
@@ -710,7 +710,7 @@ function ShareSettings() {
 const DEVICES_EVERY = 3000;
 
 // RelaySettings links this install with the member's other devices on one
-// network (M20): Keybind relay and, from M20.2, Share this computer's
+// network: Keybind relay and, from M20.2, Share this computer's
 // sound, whose switches the service keeps, and the buffer of what this
 // page plays, which the browser keeps; and the devices that answered,
 // each with how its link stands or what it offers, and Listen beside each
@@ -922,7 +922,7 @@ function SystemSettings({ instance, version, pair }) {
     );
 }
 
-// CheckNow checks for an update at once, in the Android app (M17.2),
+// CheckNow checks for an update at once, in the Android app,
 // whatever the daily checks are set to: the service asks the release host,
 // and downloads and checks a newer version before it answers, which Install
 // then hands to Android's installer.
@@ -954,7 +954,7 @@ function CheckNow() {
     );
 }
 
-// OnThisComputer is what only the Flatpak has (M9.3): remembering its key,
+// OnThisComputer is what only the Flatpak has: remembering its key,
 // so it starts unlocked, which turning on takes the local password for,
 // and which the keyring may take a while to answer; starting at sign-in
 // once it remembers; and quitting, which no service manager does for it.
@@ -1049,8 +1049,8 @@ function OnThisComputer({ settings, onChange }) {
 }
 
 // BackUp downloads a backup, as dens backup writes it, after the local
-// password, which protects it (M9.3), saying first about how large it will
-// be (M10).
+// password, which protects it, saying first about how large it will
+// be.
 function BackUp() {
     const [asking, setAsking] = useState(false);
     const [password, setPassword] = useState('');
@@ -1101,14 +1101,14 @@ function BackUp() {
     );
 }
 
-// Hosting turns hosting a den on this computer on and off (M9.1). Turning
+// Hosting turns hosting a den on this computer on and off. Turning
 // it on opens ports to the internet, so it takes the local password, and
 // for a den exported since, says first that another computer may host it
-// by now (M10); turning it off asks first, since members can't reach the
+// by now; turning it off asks first, since members can't reach the
 // den until it's back on. While it's on, it says where Caddy and the
 // router send the den. Once there's a den, it moves it to another
 // computer, with its export, and, once that computer serves it, removes
-// it from this one (M10).
+// it from this one.
 function Hosting() {
     const [hosting, setHosting] = useState(null);
     // asking is what waits on the member: 'on' for the password, 'off' for
@@ -1304,7 +1304,7 @@ function download(url) {
 
 // Cache shows how much of other dens' files this computer keeps, which
 // open without downloading again and while their den is offline, up to a
-// size the member chooses, and empties it (M6).
+// size the member chooses, and empties it.
 function Cache({ settings, onChange }) {
     const save = useAction();
     const reload = async () => onChange(await api.get('/api/settings'));

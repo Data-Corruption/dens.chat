@@ -9,7 +9,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// The installer's Start menu shortcut (M12.3) opens the page, and carries
+// The installer's Start menu shortcut opens the page, and carries
 // Dens's app ID, which Windows shows a desktop app's toasts under only once
 // a shortcut carries it. Go has no shortcuts, so the shell's own objects
 // make it, through COM.

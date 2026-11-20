@@ -22,7 +22,7 @@ const UpdateCheckInterval = 24 * time.Hour
 // ChecksForUpdates reports whether this instance asks the release host for
 // updates, and tells the member of them: an installed one does, given a
 // release host, and so does the Android app, whose release names its host,
-// and which downloads each update for its shell to install (M12). A
+// and which downloads each update for its shell to install. A
 // development build has nothing to update to, and the Flatpak updates
 // through Flatpak.
 func (a *App) ChecksForUpdates() bool {
@@ -99,7 +99,7 @@ func (a *App) CheckForUpdate(ctx context.Context) error {
 // Preferences are reread every hour, so turning checks off takes effect
 // without a restart. It never installs anything: on Android it downloads
 // what it finds, which the shell hands to Android's installer once the
-// member asks it to (M12).
+// member asks it to.
 func (a *App) RunUpdateChecker(ctx context.Context, ready func()) error {
 	ready()
 	if !a.ChecksForUpdates() {

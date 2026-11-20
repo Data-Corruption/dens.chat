@@ -1,5 +1,5 @@
-// What the settings say of hosting the den on this computer (M9.1), and
-// of moving it to another (M10), from what the service reports of it.
+// What the settings say of hosting the den on this computer, and
+// of moving it to another, from what the service reports of it.
 
 // hostingAsk is what moving the switch to on asks of the member: the local
 // password to turn hosting on ('on'), a confirmation to turn it off
@@ -12,7 +12,7 @@ export function hostingAsk(enabled, on) {
 // hostingNote is the line under the switch, or null while hosting is off:
 // why the den doesn't serve while hosting is on, as when another program
 // holds one of its ports, or, while it serves, where Caddy and the router
-// send it. A form that hosts no den, as the Flatpak (M9.3), has no switch,
+// send it. A form that hosts no den, as the Flatpak, has no switch,
 // only the line on what hosting needs.
 export function hostingNote(h) {
     if (h.can_host === false) {
@@ -29,8 +29,8 @@ export function exportedAt(ms, locale) {
     return new Date(ms).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short' });
 }
 
-// moving is what the settings offer of moving the den to another computer
-// (M10), or null before there's a den: its export, and once it's
+// moving is what the settings offer of moving the den to another computer,
+// or null before there's a den: its export, and once it's
 // exported, when, with removing this computer's copy, which the service
 // lets go once another computer serves the den.
 export function moving(h, locale) {
@@ -57,7 +57,7 @@ export function setupNeeded(hosting) {
 // ownRowNote is what home says of the den this computer holds, on its row,
 // while hosting is off, or null: that members can't reach it, leading to
 // the switch, or once it's exported, that this copy goes once another
-// computer hosts it, leading to Hosting (M10).
+// computer hosts it, leading to Hosting.
 export function ownRowNote(den, hosting, locale) {
     if (!den.own || hosting.enabled) return null;
     if (hosting.exported) {

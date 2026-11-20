@@ -1,4 +1,4 @@
-// The den's soundboard (M14.3): sounds staff add, which a member in a call
+// The den's soundboard: sounds staff add, which a member in a call
 // plays for everyone in it. The den streams a sound into the call on a
 // track of the call's own, which every page plays as it plays a voice, so
 // members never fetch the files; this page only prepares the sounds staff

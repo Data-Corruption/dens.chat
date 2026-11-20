@@ -42,7 +42,7 @@ try {
     await pair(bob, BOB);
     await pair(alice, ALICE);
     // The list, largest first, says what uses each file, in the settings'
-    // sections of bob's own on the den's page (M22.3).
+    // sections of bob's own on the den's page.
     const section = SETTINGS;
     const rows = `[...${section}.querySelectorAll('[data-panel] li')].map((li) => li.innerText.replace(/\\s+/g, ' ').trim())`;
     await openYours(bob, BOB.port, den, 'Your files');
@@ -106,7 +106,7 @@ try {
     await waitFor(() => alice.eval(`!document.querySelector('[role=dialog]')`), 'the viewer closed');
     ok('alice moved through the images with → and ‹, which stop at the ends');
 
-    // Spoilers (M17.2): each sends a photo as one, which the other's page
+    // Spoilers: each sends a photo as one, which the other's page
     // shows covered, naming nothing of it, until it's clicked.
     const spoil = async (from, to, channel, name) => {
         await from.attach('input[type=file][multiple]', [`${HOME}/photo.jpg`]);

@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// The den's soundboard (M14.3): staff's page adds a sound by an upload it
+// The den's soundboard: staff's page adds a sound by an upload it
 // prepared, and renames and deletes sounds. Members play them through the
 // page's stream (voice.sound).
 func (rt *router) mountSoundboard(r chi.Router) {

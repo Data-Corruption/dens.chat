@@ -1,4 +1,4 @@
-// Relay's player (M20.2), in an AudioWorklet: another of the member's
+// Relay's player, in an AudioWorklet: another of the member's
 // devices' sound, which the page's worker hands it a packet at a time,
 // each its place in the stream, in frames, 4 bytes little-endian, its
 // rate, 4 more, then its frames of 16-bit stereo, little-endian.

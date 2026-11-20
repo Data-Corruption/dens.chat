@@ -1,4 +1,4 @@
-// The phone check's screens (M13), which the browsers' driver
+// The phone check's screens, which the browsers' driver
 // (drive-phone.mjs) and the Android e2e's walk (scripts/test/android/
 // walk.mjs) share: each step brings the page to a screen, and snap takes
 // its picture with an audit of its layout beside it. Steps reach screens by
@@ -15,14 +15,14 @@
 //                            the writing guide
 //   photos, videos, files    a photo in the composer, comparing its copies, the viewer,
 //                            a video in the list
-//   keys, desktop, notify    the settings, each section, Relay's among them (M20.1)
+//   keys, desktop, notify    the settings, each section, Relay's among them
 //   relay
 //   hosting, move, cache     the System section, as an owner
 //   retention, files         Manage, each section, as a member and as an owner; the
 //   (M22.3)                  member's own sections of the den, from the cog on its page
-//   history, hostile, codes  the den's list, its DMs, a DM, comparing codes (M16.1)
-//   groups                   a group DM, its members beside it, a new group (M16.3)
-//   disappearing             a DM's time, from its header to its setting beside it (M16.4)
+//   history, hostile, codes  the den's list, its DMs, a DM, comparing codes
+//   groups                   a group DM, its members beside it, a new group
+//   disappearing             a DM's time, from its header to its setting beside it
 //   (M8.3, M11)              Home, adding a den, a member's profile, editing one's own,
 //                            removing a member, a channel's and a group's settings
 //   (M17.6)                  a profile card's ⋯ as a sheet
@@ -36,9 +36,9 @@
 //   emoji, reactions         the emoji picker's sheet, completion; a message's sheet
 //   (M15.2, M15.3)           with its quick reactions, its chips and a chip's tip, the
 //                            picker's sheet to react
-//   files (M17.2)            Compact's messages a line each, and a spoiler covered,
+//   files            Compact's messages a line each, and a spoiler covered,
 //                            then shown
-//   review (M22.1)           reviewScreens and callReview: what the walk above lacks,
+//   review           reviewScreens and callReview: what the walk above lacks,
 //                            at any width, by script, for drive-review.mjs
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
@@ -199,12 +199,12 @@ export const AUDIT = `(() => {
 
 // audits reports the audits' findings, screen by screen, for the browser
 // or phone mode names, a touch screen's where touch says. On every screen
-// nothing is under 24 pixels, nor under another control (M13.2), nor past
-// the right edge outside a scroller of its own (M13.3), a channel's
-// message list never scrolls sideways (M13.4), and each button is one of
-// the page's kinds, a dialog leading with one primary (M22.3); on a touch screen
+// nothing is under 24 pixels, nor under another control, nor past
+// the right edge outside a scroller of its own, a channel's
+// message list never scrolls sideways, and each button is one of
+// the page's kinds, a dialog leading with one primary; on a touch screen
 // no list's row is under 44, and nothing shows only on hover; and nothing
-// makes the page itself scroll sideways on a den's panes (M13.1). The rest
+// makes the page itself scroll sideways on a den's panes. The rest
 // is noted.
 export function audits(mode, log, report, touch) {
     for (const shot of log) {
@@ -312,7 +312,7 @@ const PANEL = `document.querySelector('[role=dialog][aria-label="Settings"] [dat
 const MANAGE = `document.querySelector('[role=dialog][aria-label^="Manage "]')`;
 const MANAGE_PANEL = `document.querySelector('[role=dialog][aria-label^="Manage "] [data-panel]')`;
 // A section of the settings or Manage by its name: its tab in a wide
-// window, or its button in the column or the list of them (M13.3).
+// window, or its button in the column or the list of them.
 const section = (frame, name) => `[...document.querySelectorAll(${JSON.stringify(`${frame} [role=tab], ${frame} nav button`)})].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
 const SETTINGS_FRAME = '[role=dialog][aria-label="Settings"]';
 const APPEARANCE = `document.querySelector('[role=dialog][aria-label="Settings"] [data-appearance]')`;
@@ -328,7 +328,7 @@ async function openSettings(h) {
 }
 
 // settingsTab opens a section of the settings by its name: its tab, or on
-// the phone layout its page, from the list (M13.3).
+// the phone layout its page, from the list.
 async function settingsTab(h, name) {
     await openSettings(h);
     await openSection(h, SETTINGS_FRAME, name);
@@ -347,9 +347,9 @@ const sections = (h, frame) => h.ev(`[...document.querySelectorAll(${JSON.string
 
 // memberScreens are the screens every member reaches, in a den with
 // general (text, with a description and every kind of message) and a DM
-// (dm), whose codes they compare (M16.1), and a group DM (group), with its
-// members beside it (M16.3); and where eventCard says general holds an
-// event's link, its card (M17.5).
+// (dm), whose codes they compare, and a group DM (group), with its
+// members beside it; and where eventCard says general holds an
+// event's link, its card.
 export async function memberScreens(h, ctx) {
     const { den, general, dm, group } = ctx;
     await h.step('home', async () => {
@@ -361,7 +361,7 @@ export async function memberScreens(h, ctx) {
         await h.click(h.byText('button', 'Add a den'));
         await h.snap('home-add');
     });
-    // Add device's code, from a den's row (M22.6).
+    // Add device's code, from a den's row.
     await h.step('home-add-device', async () => {
         await h.go('/');
         await h.wait(HOME, 'home');
@@ -379,7 +379,7 @@ export async function memberScreens(h, ctx) {
             await h.snap(`settings-${name}`, { scroll: PANEL, max: 6 });
         }
     });
-    // Appearance, a page of its own (M22.8), each of its columns, or on a
+    // Appearance, a page of its own, each of its columns, or on a
     // phone each tab along its foot: the themes; a built-in one chosen, and
     // Customize's copy in the editor, a color chosen; Messages, with the
     // chat's background, a picture the page draws and sends as its card
@@ -431,7 +431,7 @@ export async function memberScreens(h, ctx) {
         }
     });
     // A member's own sections of the den are the settings', from the cog
-    // on its page, as its group above the app's (M22.3).
+    // on its page, as its group above the app's.
     await h.step('settings-den', async () => {
         await h.go(`/den/${den}`);
         await h.wait(`document.querySelector('button[aria-label="Settings"]')`, "the den's cog");
@@ -474,7 +474,7 @@ export async function memberScreens(h, ctx) {
         await h.snap('description');
     });
     // An event's link in #general, a chip, and its card under the message,
-    // with its badge (M17.5).
+    // with its badge.
     if (ctx.eventCard) {
         await h.step('event-card', async () => {
             await h.go(`/den/${den}/${general}`);
@@ -496,7 +496,7 @@ export async function memberScreens(h, ctx) {
         await h.click(h.byText('[role=dialog] button', 'Cancel'));
     });
     await h.step('edit', async () => {
-        // The newest message but a poll, which can't be edited (M15.4), as
+        // The newest message but a poll, which can't be edited, as
         // a mode before may have left newest.
         await h.click(`[...document.querySelectorAll('[data-scroller] [data-id]')].filter((r) => !r.querySelector('[data-poll]')).at(-1)
             .querySelector('button[aria-label="Message actions"]')`);
@@ -562,7 +562,7 @@ export async function memberScreens(h, ctx) {
     await h.step('edit-profile', async () => {
         await h.go(`/den/${den}`);
         await h.click(h.label('Edit your profile'));
-        // A font and a gradient picked (M19.5), so its two colors show.
+        // A font and a gradient picked, so its two colors show.
         await h.click(`document.querySelector('[data-name-fonts] input[value=pacifico]').closest('label')`, 'the Pacifico tile');
         await h.click(`document.querySelector('[data-name-color] input[value=gradient]')`, 'Gradient');
         await h.wait(`document.querySelector('[data-name-style] [data-color="To"]')`, "the gradient's two colors");
@@ -579,7 +579,7 @@ export async function memberScreens(h, ctx) {
             await h.snap('dm-profile');
         });
         // The time in the DM's header opens what's beside it, where it's
-        // set (M16.4).
+        // set.
         await h.step('dm-disappearing', async () => {
             await h.go(`/den/${den}/${dm}`);
             await h.wait(`document.querySelector('[data-expiry-line]')`, "the line where the DM's time was set");
@@ -596,7 +596,7 @@ export async function memberScreens(h, ctx) {
             await sleep(400);
             await h.snap('dm-disappearing');
         });
-        // The lock in the DM's header opens comparing codes (M16.1).
+        // The lock in the DM's header opens comparing codes.
         await h.step('dm-codes', async () => {
             await h.go(`/den/${den}/${dm}`);
             await h.wait(COMPOSER, 'the DM');
@@ -608,7 +608,7 @@ export async function memberScreens(h, ctx) {
     }
     if (group) {
         // A group DM, its lines, and its members beside it, where its
-        // header's lock and members button lead (M16.3).
+        // header's lock and members button lead.
         await h.step('group', async () => {
             await h.go(`/den/${den}/${group}`);
             await h.wait(COMPOSER, 'the group');
@@ -664,7 +664,7 @@ export async function ownerScreens(h, ctx) {
         await h.snap('owner-list', { scroll: `document.querySelector('aside')`, max: 2 });
     });
     // The den's name opens its menu, and Manage from it, on the phone
-    // layout at the list of its sections (M14.3).
+    // layout at the list of its sections.
     await h.step('owner-den-manage', async () => {
         await h.go(`/den/${den}`);
         await h.click(`document.querySelector('[data-den-menu]')`, "the den's name");
@@ -694,7 +694,7 @@ export async function ownerScreens(h, ctx) {
         await sleep(800);
         await h.snap('settings-system', { scroll: PANEL, max: 8 });
     });
-    // A member's card as staff see it (M17.6): Message, and the rest under
+    // A member's card as staff see it: Message, and the rest under
     // ⋯, a sheet on a phone, from which Remove from den… asks first.
     await h.step('profile-staff', async () => {
         await h.go(`/den/${den}/${general}`);
@@ -709,7 +709,7 @@ export async function ownerScreens(h, ctx) {
         await h.snap('remove-member', { scroll: `document.querySelector('[role=dialog]')`, max: 2 });
     });
     // The den's events, with + Event, the form as a sheet, and a card's
-    // Edit, Cancel and End now (M17.4).
+    // Edit, Cancel and End now.
     await h.step('owner-events', async () => {
         await h.go(`/den/${den}/events`);
         await h.wait(`document.querySelector('[data-event]') && document.querySelector('[data-new-event]')`, 'the events, with + Event');
@@ -724,10 +724,10 @@ export async function ownerScreens(h, ctx) {
     });
 }
 
-// eventing walks the den's events on the phone layout (M17.4): the Events
+// eventing walks the den's events on the phone layout: the Events
 // row atop the Den tab's list, opening them by a tap; a card's Interested
 // marked by a tap and taken back by another; and the header's Channels
-// back to the list. Then (M17.5) the card under an event's link in
+// back to the list. Then the card under an event's link in
 // #general, its Interested the same; and a badge on a profile card, whose
 // tip a tap shows, within the screen.
 export async function eventing(h, ctx, d, report) {
@@ -790,7 +790,7 @@ export async function eventing(h, ctx, d, report) {
     await h.escape();
 }
 
-// CALL is what a page shows of its call on the phone layout (M13.4): the
+// CALL is what a page shows of its call on the phone layout: the
 // call's bar, under the channel's header; the call's button, its role, how
 // it's pressed and what it says, its size and place, above the pane's foot
 // with the composer; and the player docked under the bar, with the share's
@@ -819,7 +819,7 @@ export const CALL = `(() => {
 // LIST_END scrolls the channel's message list to its end, and says how far
 // above the list's foot its newest message ends: its own room at its end,
 // 24 pixels, as the call's button floats over the list rather than making
-// it longer (M13.4).
+// it longer.
 export const LIST_END = `(async () => {
     const s = document.querySelector('[data-pane=chan] [data-scroller]');
     if (!s) return null;
@@ -855,8 +855,8 @@ const BUTTON = `document.querySelector('[data-call-button]')`;
 
 // callScreens joins the den's voice channel from its list, and looks at
 // the call on the list, a member's sheet, in a channel and at Home, and at
-// a share, each screen with its picture and its audit. On the phone layout
-// (M13.4), through the driver's d, as gettingAround and touching have it,
+// a share, each screen with its picture and its audit. On the phone layout,
+// through the driver's d, as gettingAround and touching have it,
 // the call's bar shows across the top of the channel's pane; where the
 // page has the call's button, a touch screen's, d.down(x) and d.up() hold
 // it, as Settings' Voice sets its role, toggling mute with a tap,
@@ -881,7 +881,7 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         const share = await h.has(`[...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Share your screen')`);
         const can = await h.ev(`typeof navigator.mediaDevices?.getDisplayMedia === 'function'`);
         did(share === can, `the call's block shows a share button only where the browser can share: ${share}`);
-        // The call's length at its row's right (M21.2), and no lock there:
+        // The call's length at its row's right, and no lock there:
         // the block's arrow opens the rest of the call's controls, the lock
         // among them, up from it and within the window.
         const row = JSON.parse(await h.ev(`(() => {
@@ -939,7 +939,7 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         const end = await h.ev(LIST_END);
         did(listEnds(end, c), `the list ends at its newest message, ${end} pixels above its foot, and nothing else scrolls: ${JSON.stringify({ row: c.rowScrolls, page: c.pageScrolls })}`);
     });
-    // The bar holds the soundboard and mute (M14.3), which a narrow window
+    // The bar holds the soundboard and mute, which a narrow window
     // with a mouse has no call's button for; the soundboard opens as a sheet
     // from the screen's foot.
     await h.step('call-soundboard', async () => {
@@ -1083,11 +1083,11 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
     });
 }
 
-// staffPress walks staff's long press on a touch screen (M13.4): a
+// staffPress walks staff's long press on a touch screen: a
 // channel's row opens its menu, whose Edit channel opens its settings,
 // and a group's the group's, where a touch screen shows no ⋯ for them, and
 // a tap on a row still opens its channel. Then staff make a channel and a
-// group from each menu a finger reaches (M22.2): the den's name, the Den
+// group from each menu a finger reaches: the den's name, the Den
 // tab's +, and a group's, whose channel goes in it.
 export async function staffPress(h, ctx, d, report) {
     const { den, random } = ctx;
@@ -1396,7 +1396,7 @@ const VIEWER = `(() => {
 // turns the wheel there. The settings open as a list of their sections,
 // each a page, which Back leaves for the list, and Back leaves the list,
 // closing them; Notifications holds the notifications and the
-// sounds (M14.2); where d.phone says, Voice holds no keyboard
+// sounds; where d.phone says, Voice holds no keyboard
 // shortcuts or screen share, which a browser's hold. Manage goes the same
 // way. The viewer, on a message's two photos, moves to the second by a
 // swipe, zooms by a double tap, and by two fingers or the wheel, and Back
@@ -1447,7 +1447,7 @@ export async function pages(h, ctx, d, report) {
     });
     await d.tap(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Manage')`);
     // Each section's page is headed by its name, in Manage as in the
-    // settings (M22.3).
+    // settings.
     await walk(MANAGE_FRAME, 'Manage', '');
     // On a den's page, the settings list the member's own sections of it
     // first, each a page of its own.
@@ -1519,7 +1519,7 @@ export async function pages(h, ctx, d, report) {
     }
 }
 
-// EMOJI_SHEET is the emoji picker as a sheet (M15.2).
+// EMOJI_SHEET is the emoji picker as a sheet.
 const EMOJI_SHEET = `document.querySelector('[data-sheet][aria-label="Emoji"]')`;
 
 // emojiPicking walks M15.2 on the phone layout, by what the driver's d
@@ -1582,13 +1582,13 @@ export async function emojiPicking(h, ctx, d, report) {
     await sleep(500);
 }
 
-// QUICK_ROW is the quick reactions atop a message's sheet (M15.3), and
+// QUICK_ROW is the quick reactions atop a message's sheet, and
 // REACT_SHEET the picker's sheet to react.
 const QUICK_ROW = `document.querySelector('[data-sheet] [data-quick-reactions]')`;
 const REACT_SHEET = `document.querySelector('[data-sheet][aria-label="Add a reaction"]')`;
 
-// quickReacting has the member react from a message's sheet at 390 pixels
-// (M15.3): its quick reactions at its top, ahead of its actions, a tap on
+// quickReacting has the member react from a message's sheet at 390 pixels:
+// its quick reactions at its top, ahead of its actions, a tap on
 // one reacting, the sheet closing, and the message's chip marked as theirs;
 // a long press on the chip, or with a mouse the pointer, saying who; a tap
 // on it taking it back; and the sheet's + opening the picker as a sheet,
@@ -1668,7 +1668,7 @@ export async function quickReacting(h, ctx, d, report, { at, keep } = {}) {
     return made;
 }
 
-// polling is a poll on the phone layout (M15.4): the composer's + as a
+// polling is a poll on the phone layout: the composer's + as a
 // sheet, whose Poll opens the poll's editor above the box, two choices
 // written and who voted for what always shown, and the question sent;
 // then a tap on a choice's row and on Vote votes, and a tap on its count
@@ -1724,8 +1724,8 @@ export async function polling(h, ctx, d, report) {
     await h.escape();
 }
 
-// compact walks Appearance's Density and spoilers (M17.2): Compact
-// picked by a tap, in Appearance's Messages (M22.8), a channel's messages a line each, every one named and
+// compact walks Appearance's Density and spoilers: Compact
+// picked by a tap, in Appearance's Messages, a channel's messages a line each, every one named and
 // none with a picture, a long press opening a message's sheet there too;
 // then a photo bob sent as a spoiler in random, covered, and shown by a tap;
 // and Default picked again, for whatever comes after.
@@ -1777,7 +1777,7 @@ export async function compact(h, ctx, d, report) {
     did(back === 'default', `a tap on Default picks it again: ${back}`);
 }
 
-// noting is the member's notes at 390 pixels (M17.3): their row at the top
+// noting is the member's notes at 390 pixels: their row at the top
 // of the Direct messages list, opened by a tap, their header with nothing
 // beside it, and a note written and sent, by the send button with a finger
 // and Enter with a mouse, which nothing marks unread; and the notes opened
@@ -1840,7 +1840,7 @@ const setValue = (field, value) => `(() => { const el = ${field}; const set = Ob
     set.call(el, ${JSON.stringify(value)}); el.dispatchEvent(new Event('input', { bubbles: true })); return true; })()`;
 
 // reviewScreens are the screens memberScreens lacks, for a review of the
-// page (M22.1), reached by script at any width: the emoji picker and
+// page, reached by script at any width: the emoji picker and
 // completion, a reaction made and the picker to react, the composer's poll
 // and a poll sent and voted on, the notes, the events, a message's and a
 // member's right-click menus where ctx.right clicks so, the member's own
@@ -1975,7 +1975,7 @@ export async function reviewScreens(h, ctx) {
 }
 
 // callReview joins the den's voice channel and shoots the call at any
-// width, by script (M22.1): its block on the list, the rest of its
+// width, by script: its block on the list, the rest of its
 // controls, a member's menu, the soundboard, the lock, the call from a
 // channel and from Home, and a share, where ctx.share says one comes.
 export async function callReview(h, ctx) {

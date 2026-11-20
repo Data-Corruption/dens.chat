@@ -102,8 +102,8 @@ func typingFrom(member string) func(denproto.Event) bool {
 	}
 }
 
-// TestRelayBoxesReachTheMembersDevices checks the den's part in Relay
-// (M20): a box passed to the member's other devices, or to the one it
+// TestRelayBoxesReachTheMembersDevices checks the den's part in Relay:
+// a box passed to the member's other devices, or to the one it
 // names, never back to the device it came from nor to another member's,
 // one of the wrong size or for another member's device passed to no one,
 // and nothing of any kept for a device that comes back.

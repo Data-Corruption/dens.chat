@@ -11,7 +11,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Sound (M20.2): one computer's sound, read by its helper, crosses a link
+// Sound: one computer's sound, read by its helper, crosses a link
 // as RTP to the device that listens, whose service hands each piece to the
 // page that asked. A page listens to one device at a time, and a device's
 // sound goes to one listener: a new one takes over, and the one before is

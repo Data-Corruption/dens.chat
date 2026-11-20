@@ -1,4 +1,4 @@
-// Zoom (M13.3): a picture fitted to its stage, zoomed and panned, as the
+// Zoom: a picture fitted to its stage, zoomed and panned, as the
 // viewer and comparing show one. On a touch screen two fingers pinch it, a
 // double tap zooms in at the spot or back out, and once it's larger than
 // the stage a finger pans it; with a mouse the wheel zooms at the pointer,

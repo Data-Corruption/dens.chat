@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Reactions (M15.3). A channel's pass through as the den sends them, each
+// Reactions. A channel's pass through as the den sends them, each
 // emoji with the members who reacted with it, and each change as one
 // member's one emoji, which the cache and the page apply to a set. A DM's
 // are each member's set, sealed here with the DM's key, padded to one
@@ -49,7 +49,7 @@ type PageDMReactions struct {
 }
 
 // openSetLocked opens a member's sealed set on a DM's message with the key
-// it names, M1.7's or a signed one (M16.1), and reports false for one this
+// it names, M1.7's or a signed one, and reports false for one this
 // device can't open. The caller holds c.mu.
 func (c *conn) openSetLocked(channel, message string, r denproto.SealedReactions) (PageReactionSet, bool) {
 	key, locked := c.dmKeyLocked(channel, r.KeyID)
@@ -65,7 +65,7 @@ func (c *conn) openSetLocked(channel, message string, r denproto.SealedReactions
 	var set denproto.ReactionSet
 	var err error
 	if c.den.channels[channel].Kind == denproto.KindGroupDM {
-		// Signed by its member, whose identity its key names (M16.3).
+		// Signed by its member, whose identity its key names.
 		stmt, serr := c.den.signed[r.KeyID].Statement(c.j.denID)
 		if serr != nil {
 			return PageReactionSet{}, false
@@ -373,7 +373,7 @@ func (c *conn) nextSet(ctx context.Context, channelID, messageID string, sets []
 	ad := denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who, KeyID: kid, Revision: revision + 1}
 	var sealed denproto.Bytes
 	if c.isGroup(channelID) {
-		// A group's set is signed by its member (M16.3).
+		// A group's set is signed by its member.
 		err = c.ownIdentity(func(ik *denproto.IdentityKeys) error {
 			var err error
 			sealed, err = denproto.SealGroupReactions(key, ad, ik, denproto.ReactionSet{Emoji: next})

@@ -34,39 +34,39 @@ const (
 	OpPair   = "pair"
 	OpBackup = "backup"
 	// OpShortcuts opens the stream between the desktop user's shortcut
-	// helper and the service (M7).
+	// helper and the service.
 	OpShortcuts = "shortcuts"
 	// OpOwnerInvite makes an invite that hands the den this instance hosts
-	// to whoever redeems it (M8).
+	// to whoever redeems it.
 	OpOwnerInvite = "owner-invite"
 	// OpQuit stops a session form's service, which has no service manager
-	// to stop it (M9.3).
+	// to stop it.
 	OpQuit = "quit"
 	// OpHosting turns hosting on or off, as the switch in the settings
-	// does (M10).
+	// does.
 	OpHosting = "hosting"
 	// OpExport streams the den's export, which moves it to another
-	// computer, as OpBackup streams a backup (M10).
+	// computer, as OpBackup streams a backup.
 	OpExport = "export"
 	// OpRemoveDen deletes this install's copy of its den once another
-	// computer serves it (M10).
+	// computer serves it.
 	OpRemoveDen = "remove-den"
 	// OpPassword sets the local password, or changes it given the current
-	// one, so a server never needs the page (M10).
+	// one, so a server never needs the page.
 	OpPassword = "password"
 	// OpCreateDen creates the den this instance hosts, with no account on
-	// this computer, and makes its owner invite (M10).
+	// this computer, and makes its owner invite.
 	OpCreateDen = "create-den"
 	// OpLogs streams the newest logs, as the settings' Logs card
 	// downloads them, or with Level sets how much they say, as the card's
-	// level does (M11), so a server needs the page for neither.
+	// level does, so a server needs the page for neither.
 	OpLogs = "logs"
 	// OpShell opens the stream the Android app's shell keeps with the
-	// service (M12).
+	// service.
 	OpShell = "shell"
 	// OpSound opens the stream that carries this computer's sound from
 	// the desktop user's shortcut helper to the service, in frames, while
-	// Relay shares it (M20.2).
+	// Relay shares it.
 	OpSound = "sound"
 )
 
@@ -112,13 +112,13 @@ type Status struct {
 	Instance    string `json:"instance"`
 	ClientURL   string `json:"clientURL"`
 	PasswordSet bool   `json:"passwordSet"`
-	// Locked is the Flatpak waiting for the local password (M9.3).
+	// Locked is the Flatpak waiting for the local password.
 	Locked     bool `json:"locked,omitempty"`
 	DenEnabled bool `json:"denEnabled"`
-	// DenProblem says why the den doesn't serve while hosting is on (M9.1).
+	// DenProblem says why the den doesn't serve while hosting is on.
 	DenProblem string `json:"denProblem,omitempty"`
 	// Den names the den this instance holds, and DenExported is when it
-	// was exported, if it hasn't been hosted here since (M10).
+	// was exported, if it hasn't been hosted here since.
 	Den             string    `json:"den,omitempty"`
 	DenExported     time.Time `json:"denExported,omitzero"`
 	UpdateAvailable string    `json:"updateAvailable,omitempty"`
@@ -141,7 +141,7 @@ type Backup struct {
 	Size int64  `json:"size"`
 }
 
-// Hosting is the result of OpHosting (M10): the switch, whether the den
+// Hosting is the result of OpHosting: the switch, whether the den
 // serves and why not, and, where this instance holds a den, its name and
 // address, with the port Caddy forwards it to and its media ports.
 type Hosting struct {
@@ -172,7 +172,7 @@ type OwnerInvite struct {
 }
 
 // PasswordChanged is the result of OpPassword: whether the password it set
-// was the first (M10).
+// was the first.
 type PasswordChanged struct {
 	First bool `json:"first"`
 }
@@ -217,7 +217,7 @@ type Server struct {
 
 // Serve accepts connections until ctx is cancelled or ln closes, then
 // closes ln. A failed accept is tried again after a pause, as net/http
-// does, rather than ending the service over one client (M8).
+// does, rather than ending the service over one client.
 func (s *Server) Serve(ctx context.Context, ln net.Listener) error {
 	stop := context.AfterFunc(ctx, func() { _ = ln.Close() })
 	defer stop()
@@ -619,7 +619,7 @@ type Stream struct {
 
 // NewStream is a stream on conn with no request before it, as the
 // Flatpak's shortcut helper keeps with its hub over a pipe, inside the
-// service (M9.3).
+// service.
 func NewStream(conn net.Conn) *Stream {
 	return &Stream{conn: conn, r: bufio.NewReader(conn)}
 }
@@ -661,7 +661,7 @@ func (s *Stream) Recv() (Message, error) {
 }
 
 // SendFrame writes b as a frame, a 4-byte big-endian length and its bytes,
-// as a stream of binary data carries it in place of lines (M20.2).
+// as a stream of binary data carries it in place of lines.
 func (s *Stream) SendFrame(b []byte) error {
 	if len(b) > maxFrame {
 		return fmt.Errorf("a frame of %d bytes is more than one holds", len(b))

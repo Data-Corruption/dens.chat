@@ -12,7 +12,7 @@ import (
 
 // The page's copy goes to 1080p, steps down through 720p to 480p, keeps a
 // fifth of the limit for its encoder's overshoot, and is planned for what
-// the module doesn't decode too (M5.5).
+// the module doesn't decode too.
 func TestPlanPageCopy(t *testing.T) {
 	v, s := phoneVideo()
 	p, err := PlanVideoCopy(v, s, 34_941_781, 0, ByPage, 8)
@@ -86,7 +86,7 @@ func TestPageDecoding(t *testing.T) {
 
 // The module's own demux and copies name themselves as the page decodes
 // them, and a copy the page made, stood in for by the module's AV1
-// packets, goes together with the video's sound (M5.5).
+// packets, goes together with the video's sound.
 func TestPageCopyFromTheModule(t *testing.T) {
 	if raceOn {
 		t.Skip("the race detector slows encoding in the module some fifty times over")

@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 )
 
-// Copies the page makes (M5.5). In Chrome and Edge, the page makes a
+// Copies the page makes. In Chrome and Edge, the page makes a
 // video's copy itself with WebCodecs, often on the graphics card and many
 // times faster than the module: the module hands it the video's packets
 // (ffmpeg.Runner.Demux), with what WebCodecs decodes them by, and puts the

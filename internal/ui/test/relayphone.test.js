@@ -1,4 +1,4 @@
-// Relay in the Android app (M20.3), with stand-ins for the browser and the
+// Relay in the Android app, with stand-ins for the browser and the
 // service: a listening plays through the phone's call's context while the
 // call lasts and through one of its own around it, the worker feeding
 // whichever node plays, and its own opened for playback, not as a call's;

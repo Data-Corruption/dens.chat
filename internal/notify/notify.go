@@ -57,7 +57,7 @@ type Message struct {
 	ID     string
 	Author string
 	// Mention is whether it mentions the member by name, and Everyone
-	// whether it's staff's @everyone (M15.4), which notifies as a mention
+	// whether it's staff's @everyone, which notifies as a mention
 	// unless the member silenced it.
 	Mention  bool
 	Everyone bool
@@ -70,7 +70,7 @@ type Message struct {
 // Notification is what a place shows for a channel: its newest message
 // that notifies, by its den, channel and ID, with the den's name, a title
 // naming who sent it and where, and the start of what it says. An event's
-// start names the event in place of a channel and message (M17.4).
+// start names the event in place of a channel and message.
 type Notification struct {
 	// Key names the channel's notification, which a newer message's
 	// replaces, and which reading the channel takes back; or the event's.
@@ -87,8 +87,8 @@ type Notification struct {
 	Path string `json:"path"`
 }
 
-// Start is an event that started, which the member is interested in
-// (M17.4), with its den's name, and its place: a voice channel's name, or
+// Start is an event that started, which the member is interested in,
+// with its den's name, and its place: a voice channel's name, or
 // the line of text its maker wrote.
 type Start struct {
 	Den, DenName string
@@ -133,7 +133,7 @@ type Place interface {
 
 // Event goes to a page: the status, at first and as it changes; a
 // notification to show through the browser, whose sound the page plays
-// with it, or to take back; or a message's sound alone (M14.2).
+// with it, or to take back; or a message's sound alone.
 type Event struct {
 	Status   *Status
 	Show     *Notification
@@ -141,7 +141,7 @@ type Event struct {
 	Sound    *Sounded
 }
 
-// Sounded is a message whose sound a page plays alone (M14.2), by its den,
+// Sounded is a message whose sound a page plays alone, by its den,
 // channel and ID.
 type Sounded struct {
 	Den     string `json:"den"`
@@ -151,7 +151,7 @@ type Sounded struct {
 
 // Status is what a page learns of notifications: the member's settings,
 // the page's sounds among them; the sounds they replaced with files of
-// their own (M14.2); and on Android, whether Android lets the app post
+// their own; and on Android, whether Android lets the app post
 // notifications, as its shell last said, which the settings show.
 type Status struct {
 	types.Notifications
@@ -175,7 +175,7 @@ type Hub struct {
 	helper Place
 	// android is the Android form, whose page counts as on screen only
 	// while its shell says the app is in front: the shell holds the page
-	// as shown through a call, whatever the screen does (M12.2).
+	// as shown through a call, whatever the screen does.
 	android bool
 
 	mu       sync.Mutex
@@ -188,7 +188,7 @@ type Hub struct {
 	// shell says.
 	allowed bool
 	// own is each sound the member replaced with a file of their own, by
-	// name, with its file's version (M14.2).
+	// name, with its file's version.
 	own map[string]int64
 	// shown is each channel's notification, by key, oldest first in order,
 	// or its message whose sound played alone.
@@ -212,12 +212,12 @@ type page struct {
 // shown is a notification out: its message, whether it's for a DM, and
 // where it shows, a page's ID, or the helper or the shell, or "" for a page
 // that's gone, or a message whose sound played alone, which shows nowhere.
-// An event's start names the event alone (M17.4).
+// An event's start names the event alone.
 type shown struct {
 	den, channel, message string
 	event                 string
 	dm                    bool
-	// everyone is a notification staff's @everyone made alone (M15.4),
+	// everyone is a notification staff's @everyone made alone,
 	// which turning @everyone off takes back.
 	everyone bool
 	at       string
@@ -237,7 +237,7 @@ func (s shown) key() string {
 	return s.den + "/" + s.channel
 }
 
-// eventKey is the key an event's start shows under (M17.4).
+// eventKey is the key an event's start shows under.
 func eventKey(den, event string) string { return den + "/event-" + event }
 
 // New returns a hub with the member's settings, which keep stores as they
@@ -308,11 +308,11 @@ func (h *Hub) Muted(den string) types.Muted {
 // whether they show their messages' text; nil leaves one as it is.
 type Kinds struct {
 	DMs, Mentions, HideText *bool
-	// Everyone is staff's @everyone (M15.4), on unless the member turns it
+	// Everyone is staff's @everyone, on unless the member turns it
 	// off.
 	Everyone *bool
-	// Events are the events the member is interested in, as they start
-	// (M17.4), on unless the member turns them off.
+	// Events are the events the member is interested in, as they start,
+	// on unless the member turns them off.
 	Events *bool
 }
 
@@ -339,14 +339,14 @@ func (h *Hub) SetKinds(k Kinds) error {
 	})
 }
 
-// SoundChange changes one of the page's sounds (M14.2): off or on, and its
+// SoundChange changes one of the page's sounds: off or on, and its
 // volume in percent; nil leaves either as it is.
 type SoundChange struct {
 	Off    *bool
 	Volume *int
 }
 
-// SetSounds changes the page's sounds, by name, as changes say (M14.2). A
+// SetSounds changes the page's sounds, by name, as changes say. A
 // sound back on at its default volume leaves the settings, as it was before
 // the member touched it.
 func (h *Hub) SetSounds(changes map[string]SoundChange) error {
@@ -376,7 +376,7 @@ func (h *Hub) SetSounds(changes map[string]SoundChange) error {
 
 // SetOwn records that the member replaced a sound with a file of their own,
 // by its version, or with version 0 that they put its default back, and
-// tells the pages (M14.2). The database keeps the files; the hub, which
+// tells the pages. The database keeps the files; the hub, which
 // ones there are.
 func (h *Hub) SetOwn(name string, version int64) {
 	h.mu.Lock()
@@ -457,7 +457,7 @@ func ptr[T any](v T) *T { return &v }
 
 // notifiesLocked is whether a message in a channel notifies, as a DM or as
 // a mention, by the settings and mutes. Staff's @everyone is a mention the
-// member may silence apart (M15.4).
+// member may silence apart.
 func (h *Hub) notifiesLocked(m Message) bool {
 	s := h.settings
 	mention := m.Mention || m.Everyone && !s.EveryoneOff
@@ -468,7 +468,7 @@ func (h *Hub) notifiesLocked(m Message) bool {
 }
 
 // eventNotifiesLocked is whether an event's start in a den notifies: unless
-// the member turned events off, or muted the den (M17.4).
+// the member turned events off, or muted the den.
 func (h *Hub) eventNotifiesLocked(den string) bool {
 	return !h.settings.EventsOff && !h.settings.Muted[den].Den
 }
@@ -627,7 +627,7 @@ func (h *Hub) latestLocked(allowed bool) (string, *page) {
 }
 
 // soundLocked sends a message's sound alone to the page on screen most
-// lately, and reports whether there was one to play it (M14.2). On Android
+// lately, and reports whether there was one to play it. On Android
 // the page plays it only while the app is in front: behind, the shell may
 // hold it as shown through a call, or it may be frozen, to play what it
 // missed as it thaws.
@@ -641,7 +641,7 @@ func (h *Hub) soundLocked(rec shown) bool {
 }
 
 // Message notifies the member of a message where it should, and places its
-// sound (M14.2): a DM, or a message that mentions them, of a kind they
+// sound: a DM, or a message that mentions them, of a kind they
 // turned on, in a den and channel they haven't muted and no page shows on
 // screen, makes one sound. The page showing its notification plays it;
 // the helper's or the shell's notification has the desktop's or Android's
@@ -730,7 +730,7 @@ func (h *Hub) deliverLocked(key string, rec shown, n Notification, last shown, h
 }
 
 // Started notifies the member of an event that started, which they're
-// interested in (M17.4), where a message would show, unless they turned
+// interested in, where a message would show, unless they turned
 // events off or muted its den. It shows once, though a socket that
 // resumes may hear of it again; a page showing the den doesn't keep it
 // from showing, since the event may be off its screen.

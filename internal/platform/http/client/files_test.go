@@ -9,7 +9,7 @@ import (
 )
 
 // The part of an animated picture a member framed comes as four whole
-// numbers, and anything else is the page's mistake, said as such (M15.1).
+// numbers, and anything else is the page's mistake, said as such.
 func TestParseCrop(t *testing.T) {
 	if r, err := parseCrop("10,20,300,100"); err != nil || r != image.Rect(10, 20, 310, 120) {
 		t.Fatalf("%v %v", r, err)

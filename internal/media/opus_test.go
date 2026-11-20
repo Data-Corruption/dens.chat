@@ -18,7 +18,7 @@ import (
 )
 
 // soundCase is testdata/ogg.json: Opus packets, and the file the page
-// writes of them as a sound (M14.3), which the page's tests check it
+// writes of them as a sound, which the page's tests check it
 // writes too.
 type soundCase struct {
 	Channels int      `json:"channels"`

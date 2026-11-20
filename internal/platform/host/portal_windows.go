@@ -7,7 +7,7 @@ import (
 )
 
 // DesktopKeys is a desktop that owns the keys, as Wayland's global
-// shortcuts portal does (M7.2). Windows has none: the helper reads the keys
+// shortcuts portal does. Windows has none: the helper reads the keys
 // itself (KeyState).
 type DesktopKeys struct{}
 

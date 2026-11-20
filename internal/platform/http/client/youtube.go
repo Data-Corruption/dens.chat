@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// mountYouTube serves the covers of YouTube's players (M4.1): a linked
+// mountYouTube serves the covers of YouTube's players: a linked
 // video's title and channel, and its picture, a larger one for a larger
 // player, or a Short's portrait one.
 // The page asks only while a member has players on, and only for covers
