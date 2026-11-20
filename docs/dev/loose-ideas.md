@@ -23,6 +23,7 @@ From a review of every screen of the page, and what it found members would want.
 - A status line under a member's name, set from their own card, cleared after a time they pick, or never.
 - No display name in a dialog's sentence, where a name another member chose reads as words: Remove's and Ban's says `${display_name} is signed out of this den at once`, which "Everyone" makes another sentence. "They're signed out", as its other branch has it, and the rule in [The page's words](design/page.md#the-pages-words): a dialog about keys and codes names nobody, and one about a member names them by @username alone.
 - The settings' Voice misses a change to the keys or the helper that comes between its first render and its effect, until the next: `VoiceSettings` reads them in `useState` and subscribes with `onKeys`, which doesn't call back at once, in `useEffect`. Reading them again in the effect, as `NotificationSettings` does, with a page test.
+- The security checklist's missing items, for identities, group DMs, notes, spoilers, events and badges, and call records ([security.md](design/security.md)), each checked against the code as it's written.
 
 ## Big
 
@@ -58,6 +59,7 @@ From a review of every screen of the page, and what it found members would want.
 - The shortcut helper's X11 path is tested against Xvfb alone. Untried: a real X11 session, and a session manager that runs autostart entries itself, as cinnamon-session does, rather than as systemd units, with `StartHelper`'s check of `DISPLAY` there.
 - NixOS's installs are refused with a pointer to the Flatpak's guide, which has no NixOS lines: by NixOS's own docs, Flatpak needs `services.flatpak.enable = true;` and a rebuild, and the app shows in the menu after signing in again. Untried on NixOS.
 - Relay's worklet steps between sample rates by linear interpolation with no low-pass, so a call's context below 48 kHz would alias. The rate of a phone's call context hasn't been read.
+- The binary carries the page's sources, 1.4 MB that nothing serves: `//go:embed assets` takes the whole directory, so leaving them out means moving them out of it.
 - Each move of a call's route on the phone leaves a gap of 120 to 700 ms while the voice processor's stream opens on the new device (android.md's Calls). Untried: the processor's context with `sinkId: {type: 'none'}`, off the output device.
 - On the phone, a watched share's sound plays through the player's `<video>`, not the call's context, so it may play as media rather than on the call's route, as a Bluetooth headset or the earpiece. Untried on a phone.
 
