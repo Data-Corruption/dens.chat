@@ -91,7 +91,7 @@ Dens installs in an unprivileged LXC system container, as Incus and LXD make the
 
 ### Testing the Linux service in containers
 
-The lifecycle and den harnesses run the service in Incus containers, which change how units behave:
+The lifecycle and den harnesses ([testing.md](testing.md) says how to run them) run the service in Incus containers, which change how units behave:
 
 - In unprivileged containers LXC adds `/run/systemd/system/service.d/zzz-lxc-service.conf` to every service. It turns off `NoNewPrivileges`, credentials (including encrypted ones), `ProtectProc`, `ProcSubset`, `ProtectControlGroups` and `ProtectKernelTunables`, so a unit starts and passes while running unhardened and without its data key. The harness masks it (a `/dev/null` symlink at `/etc/systemd/system/service.d/zzz-lxc-service.conf`) and starts containers with `security.nesting=true`.
 - systemd before 256 (Debian 12, Ubuntu 24.04) can't create its credential host secret in an unprivileged container, so those distros run in privileged containers.

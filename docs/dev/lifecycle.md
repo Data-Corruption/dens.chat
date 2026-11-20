@@ -55,6 +55,8 @@ The same binary's `open`, `status` and `backup` talk to the development instance
 
 ## Testing the lifecycle
 
+[testing.md](testing.md) says how to run these harnesses and the den's below: what they need, what they leave behind, and where their logs land.
+
 Both harnesses install unsigned fixture releases built by `scripts/test/fixture-releases.sh`: one version to install and a newer one to update to, with `--skip-verify`. Their binaries carry no signing identity, as a release's do, so `dens update` takes the flag from them, and their versions sort after every real release's. Every backup they make uses the test password `correct horse battery staple`.
 
 Each harness starts from Dens's first release, v1.0.0, as `scripts/vendor.sh` pins it by its signed checksums (`scripts/test/first-release.sh` stages it): it installs it with its den option, creates a den, and updates to the fixture, whose hosting switch must take the den role and serve the den as it was. The update runs every migration since v1.0.0 on a real install, and the Linux harness checks what they made: a member's own sound kept and read back; the den's soundboard, its limits at their defaults and a sound added to it; the den's limit for emoji and an emoji added, a reaction of it, and a poll that takes a vote. It also opens a DM between two of v1.0.0's members, a second instance's and the first's, their digits checked as v1.0.0 asks, which after the update reads and sends under the same key. Then it uninstalls, and the flows below start from a clean machine. Installed copies hold what v1.0.0 wrote, so every release keeps this check, and the release host keeps v1.0.0 past its retention rule.
@@ -63,9 +65,7 @@ Each harness starts from Dens's first release, v1.0.0, as `scripts/vendor.sh` pi
 
 `./scripts/test.sh -e2e` runs `scripts/test-lifecycle-e2e.sh`, which runs `scripts/test/lifecycle-guest.sh` in a fresh Incus system container for each supported distro. On each it installs through `install.sh` as root with a desktop user's `SUDO_UID` and `SUDO_USER`, as `sudo` would set them, the fresh install piped into `sh -s`, as the guide's line pipes it, and checks permissions, the sandbox, the unit's `systemd-analyze security` rating, and the shortcut helper's autostart entry, `.desktop` file and icon, which the last uninstall removes. Then it pairs a browser, sets the password, checks the install hosts nothing until hosting is on, turns hosting on and off with `dens den hosting`, checks another local user is refused, backs up, reboots, updates, checks that neither `dens update` nor the installer puts the older release over the newer one, adds a second instance, sets its password with `dens password` and turns its hosting on, restores, which leaves hosting off, and uninstalls, the second instance with its phrase typed, after a y that cancels. Before all that, it checks the installer refuses v1.0's den option.
 
-- `--distros "debian arch"` picks distros; `--backup FILE` has the first distro restore FILE; `KEEP_FAILED=true` keeps failed containers.
-- Each distro after the first restores the backup of the last distro that passed. Logs and backups land in `out/lifecycle-e2e-logs/<run>/`.
-- A local image alias `dens-e2e/<distro>` takes precedence over the `images:` remote.
+- Each distro after the first restores the backup of the last distro that passed, which it leaves in its log directory.
 - Debian 12 and Ubuntu 24.04 run privileged, since their systemd can't create its credential host secret in an unprivileged container. Privileged containers mount `binfmt_misc` read-only so systemd's shutdown can't clear the host's table, which on WSL holds Windows interop.
 
 `--release-dir DIR` tests a staged release snapshot instead, without the update step, though still updating from the first release to it; the release pipeline uses it to test changed installers. The flows check this tree's behavior, which a release built from another commit may not have, as v1.0.0 has no hosting switch, so for such a release `--installer-only` installs it through `install.sh`, verifying its signature with cosign, checks that the service answers as that release, and uninstalls. The release pipeline passes it for every release it didn't build in that run.
@@ -73,20 +73,6 @@ Each harness starts from Dens's first release, v1.0.0, as `scripts/vendor.sh` pi
 ### Windows
 
 `scripts/test-lifecycle-e2e.ps1` runs the Linux harness's flows against the real SCM service, with a service restart standing in for the reboot, but for three the Linux harness alone has: the older release refused over the newer one, the checks of what the first update's migrations made, and v1.0.0's DM. Its fresh install runs `install.ps1` as text, as the guide's line does, from a script block that gives it the fixture's flags; elevated, as the harness runs, the script installs in place. Every other install runs it as a file, as `dens update` does. It also checks the service's virtual account, restricted SID and single privilege, the directory DACLs, the `PATH` entry, the error-reporting exclusion, each instance's media firewall rules, and the shortcut helper's scheduled task, which the last uninstall removes. It refuses to run where Dens is installed and uninstalls on failure. CI runs it with the exact installer candidate (`-InstallerCandidate`).
-
-To run it on a spare Windows machine:
-
-```sh
-bash scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
-```
-
-Then, from an elevated PowerShell in the checkout:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\test-lifecycle-e2e.ps1 -ReleaseDir out\windows-e2e
-```
-
-From WSL, build the fixtures into a Windows path such as `%TEMP%`, and copy the harness beside them, since an elevated process may not reach `\\wsl$` paths. With WSL's mirrored networking, a port that a WSL process listened on (a development instance, say) can stay reserved on the Windows side after the process exits, until WSL restarts. `-ClientPort` and `-SecondClientPort` move the harness off such ports.
 
 ### Across platforms
 
@@ -100,14 +86,5 @@ The den e2e harnesses check that a member on another machine can join a den thro
 
 On Linux, before the recovery, the den moves to a server: the host's export from the command line is refused while hosting is on, and runs once it's off, and refuses to remove its copy while nothing else answers as the den. A third container, on the den's distro, installs this build, restores the export, turns hosting on with `dens den hosting on`, and serves it behind Caddy with the first host's certificate authority, which the members trust already. Then `den.test` points at the server, the first host's Caddy stops, and the first host removes its copy. The member must reconnect by themselves, the owner's install must reach the den at its address as its owner, with its history and DMs, and refuse the export, which would replace its account there, leaving no file its service can't open; and the two chat and call through the server, where everything after the move happens, the owner invite from the server included. They share the fixture releases, and on Linux the container helpers in `scripts/test/incus.sh`, with the lifecycle harnesses.
 
-- **Linux:** `./scripts/test.sh -den-e2e` runs `scripts/test-den-e2e.sh`. A Debian 13 container runs the den behind the pinned Caddy, serving `https://den.test` with Caddy's internal certificate authority. A Fedora 44 container trusts that authority, installs Dens, and joins with an invite from the owner; a second instance on it, `fresh`, stands in for the member's new machine. A third container, on the den's distro, is the server the den moves to. `--den` and `--client` pick other distros. Logs land in `out/den-e2e-logs/<run>/`.
-- **Windows:** `scripts/test-den-e2e.ps1` runs both ends on one machine. Instance `main` hosts the den behind Caddy running as a Windows service, instance `second` joins it through `https://den.test:18443`, and instance `fresh` stands in for the member's new machine. It trusts Caddy's authority in the machine certificate store and points `den.test` at loopback in the hosts file, and undoes both at the end. It builds the voice probe with the Go on `PATH` and reads test media from the tree, so it runs from a whole checkout on a Windows path, not one under `\\wsl$`, and its call runs Pion under the den's restricted service SID. Like the lifecycle harness, it installs real services, so it runs in CI or on a Windows machine without Dens, elevated:
-
-```sh
-bash scripts/test/fixture-releases.sh out/windows-e2e windows-amd64
-bash scripts/vendor.sh caddy-windows   # prints caddy-windows=<the zip's path>
-```
-
-```powershell
-powershell -ExecutionPolicy Bypass -File scripts\test-den-e2e.ps1 -ReleaseDir out\windows-e2e -CaddyZip <the zip's path>
-```
+- **Linux:** `./scripts/test.sh -den-e2e` runs `scripts/test-den-e2e.sh`. A Debian 13 container runs the den behind the pinned Caddy, serving `https://den.test` with Caddy's internal certificate authority. A Fedora 44 container trusts that authority, installs Dens, and joins with an invite from the owner; a second instance on it, `fresh`, stands in for the member's new machine. A third container, on the den's distro, is the server the den moves to.
+- **Windows:** `scripts/test-den-e2e.ps1` runs both ends on one machine. Instance `main` hosts the den behind Caddy running as a Windows service, instance `second` joins it through `https://den.test:18443`, and instance `fresh` stands in for the member's new machine. It trusts Caddy's authority in the machine certificate store and points `den.test` at loopback in the hosts file, and undoes both at the end. Its call runs Pion under the den's restricted service SID.

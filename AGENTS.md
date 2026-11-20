@@ -96,6 +96,8 @@ holds.
   and the plan for the one under way.
 - [docs/dev/loose-ideas.md](docs/dev/loose-ideas.md): ideas and fixes no
   milestone has taken up yet.
+- [docs/dev/testing.md](docs/dev/testing.md): running the harnesses: what each
+  needs, takes, leaves behind and logs, and cleaning up after one.
 - [docs/dev/lifecycle.md](docs/dev/lifecycle.md): the lifecycle state and
   locks every form shares, development instances, and the lifecycle e2e
   harnesses.
@@ -298,7 +300,8 @@ The e2e harnesses' logs land under `out/`, the browser checks' stay in their
 container; `./scripts/build.sh` empties `out/` in every mode but `--android`,
 and with it the media module's build cache. The Windows harnesses (`scripts/test-lifecycle-e2e.ps1`,
 `scripts/test-den-e2e.ps1`) install real services, so they run in CI or on a
-Windows machine without Dens; see [docs/dev/lifecycle.md](docs/dev/lifecycle.md).
+Windows machine without Dens. [docs/dev/testing.md](docs/dev/testing.md) says
+what each harness needs, leaves behind and logs, and how to clean up after one.
 
 Third-party tools and frontend inputs (Tailwind, DaisyUI, esbuild, Preact,
 cosign, rclone, shellcheck, Hugo, Node.js for the page's tests,
