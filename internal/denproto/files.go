@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// Limits for M1.4.
+// Limits for files.
 const (
 	MaxAttachments   = 10  // files on one message
 	MaxFilenameBytes = 255 // a file's name, cut without splitting a character

@@ -584,8 +584,7 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 		}
 		info.SoundLimits = *req.SoundLimits
 	}
-	// As for sounds, lowering the count leaves the emoji already added
-	// (M15.2).
+	// As for sounds, lowering the count leaves the emoji already added.
 	if req.EmojiLimits != nil {
 		if err := denproto.CheckEmojiLimits(*req.EmojiLimits); err != nil {
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "emoji_limits: %v", err)

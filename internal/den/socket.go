@@ -49,8 +49,7 @@ type socket struct {
 	voiceOut chan denproto.Event
 	// sub is the socket's subscription, set before it reads a frame, which
 	// takes what goes to the call's members alone. It's set under
-	// the socket set's lock, which a box between devices reads it under
-	// (M20).
+	// the socket set's lock, which a box between devices reads it under.
 	sub *Sub
 	// forGood marks a socket the den closed because its device or member is
 	// done here, whose call ends rather than waits for the device.

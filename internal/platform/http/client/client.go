@@ -328,8 +328,7 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		"voiceKeys":              rt.a.Shortcuts.Keys(),
 		"notifications":          rt.a.Notify.Status(),
 		// What this install relays to the member's others, and
-		// Keybind relay's switch and from M20.2 Share this computer's
-		// sound.
+		// Keybind relay's switch and Share this computer's sound.
 		"relay": map[string]any{"can": rt.a.Relay.Can(), "keys": cfg.RelayKeys, "sound": cfg.RelaySound},
 	}
 	// The Android app downloads the updates it finds, for Android's
@@ -535,8 +534,7 @@ func (rt *router) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleUnlock opens a locked Flatpak with the local password, and keeps or
-// forgets the copy of its key that opens it without, as the member chose
-// (M9.3).
+// forgets the copy of its key that opens it without, as the member chose.
 func (rt *router) handleUnlock(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Password string `json:"password"`

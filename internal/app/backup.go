@@ -28,8 +28,7 @@ type Archive struct {
 	io.ReadCloser
 }
 
-// ErrNoDen is a den's export or removal where this instance holds no den
-// (M10).
+// ErrNoDen is a den's export or removal where this instance holds no den.
 var ErrNoDen = errors.New("this instance holds no den")
 
 // ErrNotExported is removing a den that hasn't been exported since hosting

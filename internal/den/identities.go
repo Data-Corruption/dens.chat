@@ -186,7 +186,7 @@ func publishedIdentity(ctx context.Context, q querier, member int64) (published,
 // MakeSignedKey makes a DM's key from its maker's statement and a copy
 // for each member, sealed to their identities, or a group DM's for its
 // members as they are. A DM has one live key: a key both members
-// checked before M16.1 stays live, as does a signed key that names the
+// checked before v1.9.0 stays live, as does a signed key that names the
 // identities its members have now, and a second made at once gets 409
 // key_exists, so the slower takes the live one. A signed key that names an
 // identity its member no longer has, or a group's members as they were,
@@ -248,7 +248,7 @@ func (d *Den) MakeSignedKey(ctx context.Context, s *Session, channelID string, r
 // putKey makes a signed key for a DM's or a group's members within tx,
 // which its maker's statement names, each with the identity they publish
 // now, with a copy for each, and the maker's signature; the caller holds
-// d.keys. A live key both members checked before M16.1 stays (key_exists),
+// d.keys. A live key both members checked before v1.9.0 stays (key_exists),
 // as does a live signed key naming these members with the identities they
 // publish now, unless replace says a change to a group made its
 // membership new; any other retires as replaced. A group's key may carry
@@ -306,7 +306,7 @@ func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, mem
 			return 0, nil, err
 		}
 		if statement == nil && !replace {
-			return 0, nil, errKeyExists // checked by both members before M16.1
+			return 0, nil, errKeyExists // checked by both members before v1.9.0
 		}
 		var kept keptStatement
 		if statement != nil {

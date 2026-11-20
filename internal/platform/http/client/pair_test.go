@@ -34,8 +34,7 @@ func TestPairCommands(t *testing.T) {
 }
 
 // The page may start audio without a click in the Android app's WebView
-// alone, where it then makes its call's audio once the microphone is open
-// (M12).
+// alone, where it then makes its call's audio once the microphone is open.
 func TestAutoplaysInTheAndroidAppAlone(t *testing.T) {
 	for form, want := range map[layout.Form]bool{layout.Installed: false, layout.Development: false, layout.Flatpak: false, layout.Android: true} {
 		a := app.New(build.BuildInfo{Name: "dens", Version: "v1.1.0"})

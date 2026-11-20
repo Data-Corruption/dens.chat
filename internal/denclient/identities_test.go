@@ -158,7 +158,7 @@ func TestKeysChangedHold(t *testing.T) {
 	}
 }
 
-// A DM whose key both members checked before M16.1 reads and sends as it
+// A DM whose key both members checked before v1.9.0 reads and sends as it
 // did: messages go out under that key, sealed with each member's copy
 // under their seal, and no new key is made for it.
 func TestLegacyDMs(t *testing.T) {
@@ -192,7 +192,7 @@ func TestLegacyDMs(t *testing.T) {
 		copies[denproto.FormatID(who)] = sealed
 		checks = append(checks, denproto.DMKeyCheck{MemberID: denproto.FormatID(who), At: 2})
 	}
-	// Each member's Dens hears of it as the den sent it before M16.1.
+	// Each member's Dens hears of it as the den sent it before v1.9.0.
 	for who, sealed := range copies {
 		k := denproto.DMKey{ID: denproto.FormatID(id), ChannelID: dm, StartedBy: me(t, owner, denID).ID, StartedAt: 1,
 			Stage: denproto.StageRevealed, Checks: checks, Sealed: sealed}

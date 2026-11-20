@@ -12,8 +12,8 @@ import (
 // Notices hears what the dens' events say of the member's notifications:
 // each message another member sends, as it arrives, and what
 // takes a notification back, the member reading the channel, from any of
-// their devices, or the message, its channel or its den going; and from
-// M17.4 each event the member is interested in as it starts, and its end.
+// their devices, or the message, its channel or its den going; and
+// each event the member is interested in as it starts, and its end.
 // It's notify.Hub, or nil, as in most tests.
 type Notices interface {
 	Message(notify.Message)
@@ -35,8 +35,7 @@ func (c *conn) noticeLocked(m denproto.Message, locked bool) *notify.Message {
 	if c.m.Notices == nil || c.den == nil || m.AuthorID == me.ID || c.m.pastTime(m) {
 		return nil
 	}
-	// Nothing in the member's notes notifies them, being all their own
-	// (M17.3).
+	// Nothing in the member's notes notifies them, being all their own.
 	ch, ok := c.den.channels[m.ChannelID]
 	if !ok || ch.Kind == denproto.KindNotes {
 		return nil

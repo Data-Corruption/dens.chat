@@ -3,7 +3,7 @@
 package denproto
 
 // EmojiVersion is the newest Emoji version the list of Unicode's emoji
-// holds (M15.2).
+// holds.
 const EmojiVersion = "16.0"
 
 // emojiList is every fully qualified emoji up to EmojiVersion, skin tones

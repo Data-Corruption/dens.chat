@@ -20,7 +20,7 @@ import (
 
 // shortcutsCommand is the shortcut helper: it runs as the desktop user
 // in their session, for every instance that answers them, and carries the
-// voice keys to the page's call from other programs, and from M20.2 the
+// voice keys to the page's call from other programs, and the
 // computer's sound to Relay while it shares it.
 func shortcutsCommand(bi build.BuildInfo) *cli.Command {
 	return &cli.Command{

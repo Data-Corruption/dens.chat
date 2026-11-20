@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// Limits for M1.3.
+// Limits for profiles, and the channels a connection views.
 const (
 	MaxBioRunes = 300
 	MaxBioBytes = 4 * MaxBioRunes

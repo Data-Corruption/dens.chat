@@ -126,8 +126,7 @@ func TestCachedFilesOutlastRestarts(t *testing.T) {
 	check := func(when string) {
 		t.Helper()
 		before := h.files.Load()
-		// Without the den, the page can't load the channel's history
-		// until M6.2 keeps it, but what it showed still opens.
+		// Without the den, what the page showed still opens.
 		full, _, err := fetch(t, member, denID, photo.ID, false)
 		if err != nil {
 			t.Fatalf("%s: %v", when, err)

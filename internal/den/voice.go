@@ -26,7 +26,7 @@ import (
 // that socket closes, the den holds the call for its device to take back
 // on another, unless the den closed the socket for good.
 //
-// From M16.2 every call is sealed end to end: each member's page seals
+// Every call is sealed end to end: each member's page seals
 // what it sends under a key their Dens makes, which the den passes to each
 // other member of the call sealed to their identity, and keeps the latest
 // of while the call lasts. The SFU forwards what it can't open, as it

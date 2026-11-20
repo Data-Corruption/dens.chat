@@ -16,20 +16,20 @@ import (
 // shell opens it once the service answers, and again whenever it closes,
 // as when the shell starts the service again. Lines on it, besides pings:
 // the service sends hello first, saying what the shell needs to show the
-// page, and from M12.3 notify for a notification to post, which replaces
+// page, then notify for a notification to post, which replaces
 // its channel's, unnotify for those to take back, and notifying, whether
 // the member has any turned on, which the shell asks Android to let it
-// post. From M12.4 it sends update, a newer release's APK the updater
+// post. It sends update, a newer release's APK the updater
 // checked, which the shell posts is ready, and install, the member asking
 // the page to install it, which the shell hands to Android's installer.
-// From M13.3 it sends bars, the page's background, which the shell paints
+// It sends bars, the page's background, which the shell paints
 // its status and navigation bars with, as the stream opens, where the page
-// has said one, and as it changes. From M20.3 it sends relay, what Relay
+// has said one, and as it changes. It sends relay, what Relay
 // wants of Android: on, for which the shell asks the member to let the app
 // reach its network, and listening, for which it plays as media with Wi-Fi
 // kept awake and the page held as shown. The shell sends front as the app
 // comes in front and leaves it, notifies, whether Android lets it post
-// notifications, and from M20.3 local, whether Android lets it reach its
+// notifications, and local, whether Android lets it reach its
 // network and whether the member refused that, as the stream opens and as
 // each changes.
 const (

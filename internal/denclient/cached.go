@@ -18,7 +18,7 @@ import (
 )
 
 // The client's cache: another den's files come through it, kept as
-// they're read, and from M6.2 its messages, kept as pages and events bring
+// they're read, and its messages, kept as pages and events bring
 // them, with the den's state. What went leaves it as exactly that: a
 // deleted message and its files, a file taken off one, a deleted channel,
 // what retention reached and a replaced picture. After a ready, the den's
@@ -90,8 +90,7 @@ func (c *conn) noteOwnFiles(files []denproto.OwnFile) {
 }
 
 // ownerOf says what a file is on, as far as this service knows: a message,
-// in a channel or a DM, a member's picture, or one of the den's emoji
-// (M15.2).
+// in a channel or a DM, a member's picture, or one of the den's emoji.
 func (c *conn) ownerOf(fileID string) cache.Owner {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -488,8 +487,7 @@ func (c *conn) applyChanges(ctx context.Context, synced cache.Synced) error {
 		}
 		// A message's tallies, its reactions and its poll's votes, change
 		// without its revision, so the cache takes each as the den sent it,
-		// with the events that came since it was asked for applied again
-		// (M15.3, M15.4).
+		// with the events that came since it was asked for applied again.
 		c.replayTallies(mark, page.Messages)
 		for _, m := range page.Messages {
 			id, _ := denproto.ParseID(m.ID)
@@ -737,8 +735,7 @@ func (c *conn) catchUp(ctx context.Context, channelID string, channel, gen int64
 // the channel's start when nothing comes before it. A page that reaches
 // the newest does so in the connection it was fetched in, if that's still
 // the one. The events that changed messages' tallies since mark, while it
-// was out, apply to it again, since the den may have read it before them
-// (M15.3, M15.4).
+// was out, apply to it again, since the den may have read it before them.
 func (c *conn) keepPage(channel int64, q HistoryQuery, h denproto.History, gen int64, mark uint64) {
 	ms := h.Messages
 	c.replayTallies(mark, ms)

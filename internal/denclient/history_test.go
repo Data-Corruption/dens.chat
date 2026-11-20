@@ -93,8 +93,7 @@ func TestHistoryComesFromTheCache(t *testing.T) {
 	}
 }
 
-// The done-when of M6: a client restarted after a day offline downloads
-// only what changed.
+// A client restarted after a day offline downloads only what changed.
 func TestADayAwayDownloadsOnlyWhatChanged(t *testing.T) {
 	h, owner, _, denID, channelID := chatDen(t)
 	ctx := context.Background()

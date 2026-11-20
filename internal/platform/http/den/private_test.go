@@ -161,8 +161,9 @@ func mustID(s string) int64 {
 	return id
 }
 
-// The routes of M1.7 and M16.1 answer as the protocol says, and a waiting
-// sign-in is asked after only with its own token.
+// The routes of DM keys, device approval and identities answer as the
+// protocol says, and a waiting sign-in is asked after only with its own
+// token.
 func TestPrivateRoutes(t *testing.T) {
 	f := newFixture(t)
 	alice, _ := f.owner()

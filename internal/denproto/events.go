@@ -22,7 +22,7 @@ import (
 // the list and forgets who was interested. One to come can be canceled,
 // which deletes it; one live can only be ended.
 //
-// From M17.5 an event's link shows as a card where it's posted, which asks
+// An event's link shows as a card where it's posted, which asks
 // the den for an event not among those to come, an ended one included; and
 // staff attach a badge to an event in a voice channel, a picture of an
 // emoji's size and a title, which a member earns by a minute at a stretch

@@ -26,12 +26,12 @@ import (
 // slower takes the live one.
 //
 // Opening a copy takes X-Wing, so once one opened here its key is kept in
-// memory sealed with the seal, as M1.7's copies are, and opened from that
+// memory sealed with the seal, as legacy keys' copies are, and opened from that
 // as it's used.
 
 var errCommit = errors.New("a key's copy opened to another key than its statement names")
 
-// PageKey is a DM key as the page sees it, M1.7's or a signed one,
+// PageKey is a DM key as the page sees it, legacy or signed,
 // without its copies, exchange or statement, which are this service's.
 // Signed keys need no checks, and come with their maker as StartedBy.
 type PageKey struct {
@@ -47,7 +47,7 @@ type PageKey struct {
 	Signed    bool                  `json:"signed,omitempty"`
 }
 
-// pageKey is an M1.7 key as the page sees it.
+// pageKey is a legacy key as the page sees it.
 func pageKey(k denproto.DMKey) PageKey {
 	return PageKey{ID: k.ID, ChannelID: k.ChannelID, StartedBy: k.StartedBy, StartedAt: k.StartedAt, Stage: k.Stage, Checks: k.Checks,
 		RetiredAt: k.RetiredAt, RetiredBy: k.RetiredBy, Retired: k.Retired}
@@ -225,7 +225,7 @@ func (c *conn) partnerLocked(channel string) (string, bool) {
 }
 
 // canMakeKeyLocked says why a DM can't get a new key, if it can't: on a
-// den older than M16.1, which keeps no identities; with a member whose
+// den older than v1.9.0, which keeps no identities; with a member whose
 // Dens publishes none, being older; or while it holds, since the other's
 // keys changed after this member verified them. The caller holds c.mu.
 func (c *conn) canMakeKeyLocked(channel string) error {

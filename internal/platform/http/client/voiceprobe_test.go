@@ -25,7 +25,7 @@ import (
 // a voice channel through an install's page socket, answers the den's
 // offers as the page does, with Pion in the browser's place, and passes
 // once it has heard another member, and whatever DENS_PROBE_THEN asks for
-// after. It joins as a page that seals its frames, as a den with M16.2
+// after. It joins as a page that seals its frames, as the den
 // takes no other, and waits for the call's keys, the other member's among
 // them, which shows their services passed their keys through the den; it
 // sends Pion's numbered packets as they are, which the den forwards all
@@ -49,14 +49,14 @@ import (
 //	                    same way once the socket is dialed again; "silence",
 //	                    the member goes quiet, as staff muted them;
 //	                    "ended:REASON", the call ends for that reason; and
-//	                    from M4.2 "share", this side shares its screen, with
+//	                    "share", this side shares its screen, with
 //	                    sound, and the den asks it for a keyframe as the
 //	                    other side starts watching; "watch:MEMBER", this
 //	                    side watches MEMBER's share, once it has started, and
 //	                    sees its screen and hears its sound; or
 //	                    "bitrate:BITS", an offer comes asking for that Opus
 //	                    bitrate, as after staff change the channel's; or
-//	                    from M20.1 "relayed", in place of hearing anyone:
+//	                    "relayed", in place of hearing anyone:
 //	                    another of the member's installs, linked to this
 //	                    one, holds push to talk, which reaches the page as
 //	                    a relayed press

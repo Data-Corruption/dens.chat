@@ -51,8 +51,7 @@ type Message struct {
 	Den, DenName         string
 	Channel, ChannelName string
 	DM                   bool
-	// Group is a group DM's name, or its members', where the DM is a group's
-	// (M16.3).
+	// Group is a group DM's name, or its members', where the DM is a group's.
 	Group  string
 	ID     string
 	Author string

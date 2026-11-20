@@ -159,7 +159,7 @@ func TestOwnSounds(t *testing.T) {
 		t.Fatalf("after Reset the database opens it with %v", err)
 	}
 
-	// With every kind off, a DM makes no sound (M14's manual pass); with
+	// With every kind off, a DM makes no sound; with
 	// DMs on, and nothing to show its notification, as the browser won't
 	// let the page notify and no helper runs, its sound plays alone, on the
 	// page on screen.

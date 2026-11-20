@@ -81,7 +81,7 @@ func (linuxSystem) Preflight() error {
 }
 
 // flatpakGuide is the install guide's page for the Flatpak, which runs on
-// the distributions the installer refuses. Releases before M17.1
+// the distributions the installer refuses. Releases before v1.10.0
 // link /docs/install/#the-flatpak, which lands on the guide's choice of
 // platform, the Flatpak among them.
 const flatpakGuide = "https://dens.chat/docs/install/flatpak/"

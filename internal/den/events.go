@@ -601,8 +601,7 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 	} else if err := d.Hub.Publish(denproto.EventEventUpdated, after.view(nil), after.audience()); err != nil {
 		return none, err
 	}
-	// A badge attached, or the event moved, may bring an award sooner
-	// (M17.5).
+	// A badge attached, or the event moved, may bring an award sooner.
 	if after.startsAt != before.startsAt || after.endsAt != before.endsAt || badge.asked || after.channel != before.channel {
 		d.planTimer()
 	}
@@ -946,8 +945,7 @@ func (d *Den) departEvents(ctx context.Context, tx *sql.Tx, member int64) (event
 
 // channelEvents takes a voice channel's events out of the den within tx,
 // as it's deleted: those to come go, with their banners, and the live one
-// ends. Those that stay, ended, keep whether the channel was staff's alone
-// (M17.5).
+// ends. Those that stay, ended, keep whether the channel was staff's alone.
 func (d *Den) channelEvents(ctx context.Context, tx *sql.Tx, channel int64) (eventsGone, [][]byte, error) {
 	var gone eventsGone
 	if _, err := tx.ExecContext(ctx, `UPDATE den_events SET staff_only = (SELECT staff_only FROM den_channels WHERE id = ?1)

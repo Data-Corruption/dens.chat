@@ -20,24 +20,24 @@ const (
 	EventVoiceOffer  = "voice.offer"
 	EventVoiceEnded  = "voice.ended"
 	EventVoiceState  = "voice.state"
-	// From M3: a client asks for an ICE restart, and the den says it took a
+	// A client asks for an ICE restart, and the den says it took a
 	// held call back.
 	EventVoiceRestart = "voice.restart" // a client frame
 	EventVoiceResumed = "voice.resumed"
-	// From M4.2: a member shares their screen, or watches another's, and
+	// A member shares their screen, or watches another's, and
 	// the den refuses either.
 	EventVoiceShare   = "voice.share" // a client frame
 	EventVoiceWatch   = "voice.watch" // a client frame
 	EventVoiceRefused = "voice.refused"
-	// From M11: a member holds push to talk, or lets go, and the den tells
+	// A member holds push to talk, or lets go, and the den tells
 	// the call's members who holds it.
 	EventVoiceTalk    = "voice.talk" // a client frame
 	EventVoiceTalking = "voice.talking"
-	// From M14.3: a member plays one of the den's sounds in their call, and
+	// A member plays one of the den's sounds in their call, and
 	// the den tells the call's members whose sound plays.
 	EventVoiceSound    = "voice.sound" // a client frame
 	EventVoiceSounding = "voice.sounding"
-	// From M17.2: staff moved the member to another voice channel's call,
+	// Staff moved the member to another voice channel's call,
 	// which their page joins.
 	EventVoiceMove = "voice.move"
 )
@@ -148,7 +148,7 @@ const (
 type VoiceJoin struct {
 	ChannelID string `json:"channel_id"`
 	Muted     bool   `json:"muted,omitempty"`
-	Deafened  bool   `json:"deafened,omitempty"` // M3.3
+	Deafened  bool   `json:"deafened,omitempty"`
 	Resume    bool   `json:"resume,omitempty"`
 	Sealed    bool   `json:"sealed,omitempty"`
 }
@@ -172,8 +172,8 @@ type VoiceWatch struct {
 	On       bool   `json:"on"`
 }
 
-// What a refusal refuses, and why, and from M14.3 a sound, refused
-// as off with the soundboard off, as staff muted, as not found for a sound
+// What a refusal refuses, and why. A sound is refused as off with the
+// soundboard off, as staff muted, as not found for a sound
 // the den no longer has, or for one of its own reasons.
 const (
 	RefusedShare = "share"
@@ -282,10 +282,10 @@ type VoiceEnded struct {
 	Reason    string `json:"reason"`
 }
 
-// Call is who is in a voice channel's call, in the order they joined. From
-// M21.2, ElapsedMS is how long it has gone on since its first member
-// joined, held calls counting, and RecordMS its channel's longest call as
-// it began, 0 for none. A den older than M21.2 sends neither, and its
+// Call is who is in a voice channel's call, in the order they joined.
+// ElapsedMS is how long it has gone on since its first member joined,
+// held calls counting, and RecordMS its channel's longest call as it
+// began, 0 for none. A den older than v1.13.0 sends neither, and its
 // calls show no length.
 type Call struct {
 	ChannelID string       `json:"channel_id"`

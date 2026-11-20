@@ -110,8 +110,7 @@ func TestFlatpakLayoutUsesTheAppsDirectories(t *testing.T) {
 }
 
 // The Android app keeps everything in the files directory its shell names,
-// the cache and the control socket too, beside the key its shell wraps
-// (M12).
+// the cache and the control socket too, beside the key its shell wraps.
 func TestAndroidLayoutUsesTheAppsFiles(t *testing.T) {
 	files := filepath.Join(t.TempDir(), "data", "user", "0", "chat.dens.Dens", "files")
 	t.Setenv("XDG_DATA_HOME", files)

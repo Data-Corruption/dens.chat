@@ -13,17 +13,17 @@ import (
 // DM's key, before they leave for the den, and opened here when they come
 // back; the page never holds a key, and the den never sees one.
 //
-// From M16.1 a DM's key is 32 random bytes this service or the other
+// A DM's key is 32 random bytes this service or the other
 // member's makes as the DM first needs one, sealed to both members'
 // identities and signed by its maker's (see signedkeys.go), so a DM opens
-// at once. The keys both members checked before M16.1, from an exchange
+// at once. The keys both members checked before v1.9.0, from an exchange
 // whose check code each typed, stay live, and open with the member's copy
 // sealed with their seal.
 
 // Why a DM message can't be opened, for the page.
 const (
 	lockedNoSeal    = "no_seal"   // this device doesn't have the member's DM seal
-	lockedUnchecked = "unchecked" // sealed before M16.1 with a key the member never checked
+	lockedUnchecked = "unchecked" // sealed before v1.9.0 with a key the member never checked
 	lockedLost      = "lost"      // the member started over since; their copy of the key is gone
 	lockedBroken    = "broken"    // it doesn't open: someone changed it
 	lockedKeys      = "keys"      // its key names identities other than those this Dens kept
@@ -82,7 +82,7 @@ const maxDMFiles = 20_000
 func (c *conn) meLocked() string { return c.profile.Member.ID }
 
 // dmKeyLocked opens the key of a DM a message or set of reactions names,
-// M1.7's or a signed one, or says why it can't; in the member's notes,
+// a legacy key or a signed one, or says why it can't; in the member's notes,
 // the key their seal makes, which a message names by the notes'
 // channel. The caller holds c.mu, and clears the key once it's used.
 func (c *conn) dmKeyLocked(channel, keyID string) ([]byte, string) {
@@ -250,7 +250,7 @@ func (c *conn) isDM(channel string) (other string, ok bool) {
 }
 
 // sendKey opens the key this member sends with in a DM: its live key,
-// once it's one both members can use, which an M1.7 key is once both
+// once it's one both members can use, which a legacy key is once both
 // checked it, and a signed key once it names their identities as this
 // Dens kept them. A DM without one gets a new key, sealed to both
 // members' identities.

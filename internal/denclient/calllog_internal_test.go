@@ -59,8 +59,7 @@ func TestCallNotesLogTheirFieldsAlone(t *testing.T) {
 			"packets_received": 0, "bytes_received": 0, "packets_lost": 0, "jitter": 0, "rtt": 0, "send_rate": 0, "target_rate": 0, "frames": {}}}`,
 			"over udp, from a host candidate to a host one: sent 0 packets, 0 bytes; received 0 packets, 0 bytes, 0 lost; jitter 0 ms, round trip 0 ms; " +
 				"sending 0 kbit/s; no frames yet"},
-		// A sender the browser sent around its seal, which the page stopped
-		// (M18).
+		// A sender the browser sent around its seal, which the page stopped.
 		{`{"what": "unsealed", "track": "sound", "sent": 50}`, "its browser sent its share's sound unsealed, 50 packets, so it stopped the sound"},
 		{`{"what": "unsealed", "track": "screen", "sent": 31}`, "its browser sent its screen unsealed, 31 frames, so it ended the share"},
 		{`{"what": "unsealed", "track": "voice", "sent": -4}`, "its browser sent its voice unsealed, 0 packets, so it left the call"},

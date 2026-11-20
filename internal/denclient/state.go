@@ -40,7 +40,7 @@ type denState struct {
 	sealCheck denproto.Bytes
 	// signed are this member's DM keys sealed to identities, by ID, with
 	// their own copies; identities says the den keeps identities at all,
-	// which one older than M16.1 doesn't.
+	// which one older than v1.9.0 doesn't.
 	signed     map[string]denproto.SignedKey
 	identities bool
 	// calls are who is in each voice channel's call, and starts when
@@ -63,8 +63,7 @@ type denState struct {
 	// the time their members set.
 	disappearing bool
 	// spoilers says the den keeps which of a channel's files went as
-	// spoilers, and moveMembers that staff move members between calls
-	// (M17.2).
+	// spoilers, and moveMembers that staff move members between calls.
 	spoilers, moveMembers bool
 	// nameStyles says the den keeps a style for each member's name.
 	nameStyles bool
@@ -72,8 +71,7 @@ type denState struct {
 	// The cache doesn't keep it: it matters only while connected.
 	relay bool
 	// groupDMs says the snapshot came on a socket speaking the protocol's
-	// version with group DMs, and notes the one with notes to self
-	// (M17.3).
+	// version with group DMs, and notes the one with notes to self.
 	groupDMs, notes bool
 	// events are the den's events to come and live that the member sees,
 	// by ID, each with their own mark, and eventLimits its limits for them,
@@ -94,12 +92,11 @@ type View struct {
 	Limits     denproto.Limits      `json:"limits"`
 	CallLimits denproto.CallLimits  `json:"call_limits"`
 	Retention  int                  `json:"retention"`
-	// DMKeys are the keys of this member's DMs, M1.7's and those sealed to
-	// identities, without anything secret.
+	// DMKeys are the keys of this member's DMs, legacy ones and those
+	// sealed to identities, without anything secret.
 	DMKeys []PageKey `json:"dm_keys"`
 	// Identities are the identities this member's Dens kept here, by
-	// member, and KeepsIdentities whether the den keeps identities at all
-	// (M16.1).
+	// member, and KeepsIdentities whether the den keeps identities at all.
 	Identities      map[string]PageIdentity `json:"identities"`
 	KeepsIdentities bool                    `json:"keeps_identities"`
 	// Calls are the calls with someone in them.
@@ -144,7 +141,7 @@ type View struct {
 // PageCall is a call as the page sees it: the den's, its length given as
 // StartedAt, when it began on this computer's clock, which the page's timer
 // counts from, so the den's clock and this one may disagree. A den
-// older than M21.2 gives no length, and its calls none.
+// older than v1.13.0 gives no length, and its calls none.
 type PageCall struct {
 	denproto.Call
 	StartedAt int64 `json:"started_at,omitempty"`
@@ -527,7 +524,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		}
 		next.keys[k.ID] = k
 	}
-	// A den older than M16.1 sends no signed keys at all.
+	// A den older than v1.9.0 sends no signed keys at all.
 	next.identities = r.SignedKeys != nil
 	for _, k := range r.SignedKeys {
 		if !next.cleanSigned(denID, k) || next.keys[k.ID].ID != "" {
@@ -572,19 +569,19 @@ type keptState struct {
 	Reads     []denproto.ReadState `json:"reads"`
 	Keys      []denproto.DMKey     `json:"keys"`
 	SealCheck denproto.Bytes       `json:"seal_check"`
-	Sounds    []denproto.Sound     `json:"sounds,omitempty"` // M14.3
-	Emoji     []denproto.Emoji     `json:"emoji,omitempty"`  // M15.2
-	// M16.1: the DM keys sealed to identities, and whether the den keeps
+	Sounds    []denproto.Sound     `json:"sounds,omitempty"`
+	Emoji     []denproto.Emoji     `json:"emoji,omitempty"`
+	// The DM keys sealed to identities, and whether the den keeps
 	// identities.
 	SignedKeys []denproto.SignedKey `json:"signed_keys,omitempty"`
 	Identities bool                 `json:"identities,omitempty"`
-	// M16.3: the member's group DMs as their changes, checked, made them,
+	// The member's group DMs as their changes, checked, made them,
 	// and whether the den has them for this Dens.
 	GroupStates map[string]*groupState `json:"group_states,omitempty"`
 	GroupDMs    bool                   `json:"group_dms,omitempty"`
-	// M17.3: whether the den has notes to self for this Dens.
+	// Whether the den has notes to self for this Dens.
 	Notes bool `json:"notes,omitempty"`
-	// M17.4: the den's events to come and live that the member saw, each
+	// The den's events to come and live that the member saw, each
 	// with their own mark, as the connection last knew them.
 	Events []denproto.DenEvent `json:"events,omitempty"`
 }

@@ -13,7 +13,7 @@ import (
 // clock, the frame's arrival less elapsed_ms: a later frame moves
 // the start only earlier, and one later by more than startSlack is a new
 // call; a call that empties takes its start with it, a full state keeps
-// the start of a call going on, and a den older than M21.2 gives none. A
+// the start of a call going on, and a den older than v1.13.0 gives none. A
 // ready keeps the starts the state held before it, by the same rule.
 func TestCallStartsOnThisClock(t *testing.T) {
 	s := newState()
@@ -53,7 +53,7 @@ func TestCallStartsOnThisClock(t *testing.T) {
 	if v := s.view(Status{}, denproto.Member{}); len(v.Calls) != 1 || v.Calls[0].StartedAt != t0+19000 || v.Calls[0].ElapsedMS != nil {
 		t.Fatalf("the view's calls are %+v", v.Calls)
 	}
-	// From a den older than M21.2, a call has no length.
+	// From a den older than v1.13.0, a call has no length.
 	starts(t0+21000, 0, call("11", nil, 0))
 
 	// A full state keeps a call going on, and drops the rest.

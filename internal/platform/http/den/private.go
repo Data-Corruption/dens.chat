@@ -11,9 +11,9 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Private DMs and device approval: the DM keys made before M16.1,
+// Private DMs and device approval: the DM keys made before v1.9.0,
 // starting over with a new seal, and sign-ins waiting for approval; and
-// from M16.1 identities, the DM keys sealed to them, and members' records.
+// identities, the DM keys sealed to them, and members' records.
 
 func (h *handler) dmKeys(w http.ResponseWriter, r *http.Request) {
 	list, err := h.d.DMKeys(r.Context(), session(r), chi.URLParam(r, "id"))

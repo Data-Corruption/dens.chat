@@ -49,7 +49,7 @@ type PageDMReactions struct {
 }
 
 // openSetLocked opens a member's sealed set on a DM's message with the key
-// it names, M1.7's or a signed one, and reports false for one this
+// it names, legacy or signed, and reports false for one this
 // device can't open. The caller holds c.mu.
 func (c *conn) openSetLocked(channel, message string, r denproto.SealedReactions) (PageReactionSet, bool) {
 	key, locked := c.dmKeyLocked(channel, r.KeyID)

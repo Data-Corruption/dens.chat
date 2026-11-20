@@ -417,7 +417,7 @@ func (p pageServer) read(ctx context.Context, cancel context.CancelFunc, c *webs
 // an ICE restart, muting, sharing its screen and watching others',
 // holding push to talk and its notes for the log, playing one of the
 // den's sounds, asking for its keys again, and leaving;
-// and from M12.3 "page", whether it's on screen and whether the browser
+// "page", whether it's on screen and whether the browser
 // lets it notify; and "relay.key", a press of the call's button on a page
 // that holds no call, for the call another of the member's devices holds.
 type pageMessage struct {

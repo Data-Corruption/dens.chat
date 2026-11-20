@@ -42,12 +42,12 @@ const AppID = layout.DesktopID
 // Lines on the stream, besides pings. The service sends hello first, then
 // state whenever the keys, its call or the member's use of the desktop's
 // keys change, desktop for what the member asks of the desktop, replaced
-// when a newer helper takes over, and from M12.3 notify for a notification
+// when a newer helper takes over, and notify for a notification
 // to show, which replaces its channel's, and unnotify for those to take
 // back. The helper sends source, what it can watch and whether it shows
 // notifications, after each state and whenever that changes, press for
 // each press and release of a bound key, bound once the desktop took
-// the keys the member asked it to, and from M20.2 sound, what keeps it
+// the keys the member asked it to, and sound, what keeps it
 // from reading the computer's sound while the state asks it to.
 const (
 	msgHello    = "hello"
@@ -76,7 +76,7 @@ type desktopRequest struct {
 	Do string `json:"do"`
 }
 
-// hello is the service's version, and from M12.3 its page's origin, which a
+// hello is the service's version and its page's origin, which a
 // notification's click opens.
 type hello struct {
 	Version string `json:"version"`
@@ -92,7 +92,7 @@ type unnotify struct {
 // instance holds a call or Relay takes them for another of the member's
 // devices', and whether the member uses the desktop's keys, which
 // the helper then binds as it starts, without a dialog where the desktop
-// remembers them; and from M20.2 whether it reads the computer's sound.
+// remembers them; and whether it reads the computer's sound.
 type state struct {
 	Keys    map[string]types.VoiceKey `json:"keys"`
 	Call    bool                      `json:"call"`

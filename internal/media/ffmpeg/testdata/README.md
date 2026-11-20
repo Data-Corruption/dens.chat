@@ -19,7 +19,7 @@ ffmpeg -i av.mp4 -i chapters.txt -i coords.srt -i cover.jpg -map 0:v -map 0:a -m
   -metadata make=TestPhone -metadata model=TP-1 meta.mp4
 ```
 
-`grain-60fps.mp4` is made the same way, with OpenH264 for its video, as BtbN's LGPL build of FFmpeg 9.0.2 carries it: H.264 at 60 frames a second, as phones record it, for six seconds, a keyframe every second, of the test pattern at 640 × 360 under a still grain, with a 440 Hz tone in AAC. At 1.3 MB it's over the smallest limit a den takes, 1 MiB, so its smaller copy is fitted to that, and it copies in moments (M5.4).
+`grain-60fps.mp4` is made the same way, with OpenH264 for its video, as BtbN's LGPL build of FFmpeg 9.0.2 carries it: H.264 at 60 frames a second, as phones record it, for six seconds, a keyframe every second, of the test pattern at 640 × 360 under a still grain, with a 440 Hz tone in AAC. At 1.3 MB it's over the smallest limit a den takes, 1 MiB, so its smaller copy is fitted to that, and it copies in moments.
 
 ```sh
 ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=60:duration=6,noise=alls=40:allf=u" \
@@ -28,7 +28,7 @@ ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=60:duration=6,noise=alls=40:allf=
   -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact -movflags +faststart grain-60fps.mp4
 ```
 
-`vp9.webm` is made with libvpx and libopus from the same build: VP9 at 640 × 360 and 30 frames a second for two seconds, a keyframe every second, of the test pattern under the still grain, with the tone in Opus, at 1.5 Mbps, so a smaller copy is worth making. The module doesn't decode VP9, so only a browser makes the copy (M5.5).
+`vp9.webm` is made with libvpx and libopus from the same build: VP9 at 640 × 360 and 30 frames a second for two seconds, a keyframe every second, of the test pattern under the still grain, with the tone in Opus, at 1.5 Mbps, so a smaller copy is worth making. The module doesn't decode VP9, so only a browser makes the copy.
 
 ```sh
 ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=30:duration=2,noise=alls=40:allf=u" \
@@ -36,7 +36,7 @@ ffmpeg -f lavfi -i "testsrc2=size=640x360:rate=30:duration=2,noise=alls=40:allf=
   -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact vp9.webm
 ```
 
-`late-sound.mp4` is made the same way: H.264 at 160 × 120 and 30 frames a second for a second, of the test pattern, its track counted at 90 kHz as phones count video, with the tone in AAC at 44.1 kHz starting 50 ms late, less AAC's own lead-in. The late start is an empty edit, which Firefox played seconds late in a movie whose timescale is the two's least common multiple, as FFmpeg 9 picks it (M11).
+`late-sound.mp4` is made the same way: H.264 at 160 × 120 and 30 frames a second for a second, of the test pattern, its track counted at 90 kHz as phones count video, with the tone in AAC at 44.1 kHz starting 50 ms late, less AAC's own lead-in. The late start is an empty edit, which Firefox played seconds late in a movie whose timescale is the two's least common multiple, as FFmpeg 9 picks it.
 
 ```sh
 ffmpeg -f lavfi -i "testsrc2=size=160x120:rate=30:duration=1" -itsoffset 0.05 -f lavfi -i "sine=frequency=440:duration=1:sample_rate=44100" \
@@ -44,7 +44,7 @@ ffmpeg -f lavfi -i "testsrc2=size=160x120:rate=30:duration=1" -itsoffset 0.05 -f
   -map_metadata -1 -fflags +bitexact -flags:v +bitexact -flags:a +bitexact -movflags +faststart late-sound.mp4
 ```
 
-`tone.mp3` is made the same way, for the soundboard's browser check (M14.3), whose page prepares sounds from the kinds of files members have: a 660 Hz tone for a second and a half, in MP3 at 64 kbps, with no tags.
+`tone.mp3` is made the same way, for the soundboard's browser check, whose page prepares sounds from the kinds of files members have: a 660 Hz tone for a second and a half, in MP3 at 64 kbps, with no tags.
 
 ```sh
 ffmpeg -f lavfi -i "sine=frequency=660:duration=1.5:sample_rate=44100" -c:a libmp3lame -b:a 64k -ac 1 \

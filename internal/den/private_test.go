@@ -134,8 +134,8 @@ func (f *fixture) keyRequest(a, b, channel int64, key []byte) denproto.SignedKey
 	return req
 }
 
-// legacyKey writes a DM key both members checked before M16.1, with each
-// one's copy sealed with their seal, as M1.7's exchange left it.
+// legacyKey writes a DM key both members checked before v1.9.0, with each
+// one's copy sealed with their seal, as its exchange left it.
 func (f *fixture) legacyKey(a, b, channel int64) testKey {
 	f.t.Helper()
 	info, _ := f.d.Info()
@@ -179,7 +179,7 @@ func (f *fixture) signedKeyAs(s *Session, dm, id string) denproto.SignedKey {
 	return denproto.SignedKey{}
 }
 
-// keyAs finds one of a DM's keys from before M16.1 as a member sees it.
+// keyAs finds one of a DM's legacy keys as a member sees it.
 func (f *fixture) keyAs(s *Session, dm, id string) denproto.DMKey {
 	f.t.Helper()
 	list, err := f.d.DMKeys(context.Background(), s, dm)
@@ -311,8 +311,8 @@ func (f *fixture) signIn(approver *Session, username, password string, dev devic
 // its members publish now, checks against its maker's, and has a copy for
 // each of the two; a second made at once is refused, so the slower takes
 // the live one; one made after an identity changed replaces the live key.
-// Each member hears of it with their own copy alone, beside the keys from
-// before M16.1, never among them.
+// Each member hears of it with their own copy alone, beside the legacy
+// keys, never among them.
 func TestSignedDMKeys(t *testing.T) {
 	f, owner, bob := chatFixture(t)
 	ctx := context.Background()
@@ -378,7 +378,7 @@ func TestSignedDMKeys(t *testing.T) {
 	// Bob's Dens, making one at the same moment, finds the live one.
 	_, err = f.d.MakeSignedKey(ctx, bob, dm.ID, f.keyRequest(bob.MemberID, owner.MemberID, cid, denproto.Random(denproto.DMKeySize)))
 	wantCode(t, err, denproto.CodeKeyExists)
-	// Signed keys come beside M1.7's, never among them, whose copies an
+	// Signed keys come beside legacy keys, never among them, whose copies an
 	// older Dens checks to be its own 72 bytes.
 	snap, err := f.d.snapshot(ctx, bob.MemberID, false, 0, nil)
 	if err != nil || len(snap.SignedKeys) != 1 || len(snap.DMKeys) != 0 || !denproto.Equal(snap.SignedKeys[0].Copy, heard.Copy) {
@@ -425,7 +425,7 @@ func mustID(s string) int64 {
 
 func bytesEqualKeys(a, b []byte) bool { return len(a) == denproto.DMKeySize && denproto.Equal(a, b) }
 
-// A DM's key both members checked before M16.1 stays live: both send and
+// A DM's key both members checked before v1.9.0 stays live: both send and
 // read under it, an older Dens still sees it among the DM's keys, a signed
 // key can't take its place, and the den starts no exchange.
 func TestLegacyDMKeys(t *testing.T) {

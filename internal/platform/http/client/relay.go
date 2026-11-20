@@ -15,7 +15,7 @@ import (
 )
 
 // Relay: the member's other installs, as they said they're here,
-// and from M20.2 another device's sound, played by the page that listens,
+// and another device's sound, played by the page that listens,
 // and this computer's, which the member stops sending.
 func (rt *router) mountRelay(r chi.Router) {
 	r.Get("/api/relay/devices", rt.handleRelayDevices)

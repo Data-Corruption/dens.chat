@@ -118,7 +118,7 @@ type conn struct {
 	// time, and the worker's wake for one.
 	fillMu  sync.Mutex
 	fillDue chan struct{}
-	// From M6.2: the connection's generation, new with each snapshot, in
+	// The connection's generation, new with each snapshot, in
 	// which a run of messages that reached a channel's newest still does;
 	// where the kept list of members stands, and whether the state and
 	// the members changed since the cache last kept them.

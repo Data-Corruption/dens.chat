@@ -47,7 +47,7 @@ type CallNote struct {
 // CallStats sums a call's statistics up, from the page's getStats: the
 // path's protocol and its candidates' types, packets and bytes each way,
 // packets lost on the way in, and jitter and round-trip time in
-// milliseconds. From M12, what the page sent a second since its last
+// milliseconds; what the page sent a second since its last
 // summary and what its encoder aims at, in kbit/s, the aim 0 where the
 // browser doesn't say, and how far its voice processor runs behind the
 // clock, in milliseconds, where one runs: together they tell a renderer
@@ -68,7 +68,7 @@ type CallStats struct {
 	TargetRate      int64  `json:"target_rate"`
 	Behind          *int64 `json:"behind,omitempty"`
 	// Frames counts what a sealed call's page did with its frames,
-	// by count alone, and from M18 on each track.
+	// by count alone, on each track.
 	Frames *FrameCounts `json:"frames,omitempty"`
 }
 

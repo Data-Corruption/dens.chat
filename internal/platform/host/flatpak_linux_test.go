@@ -310,8 +310,7 @@ func TestBackgroundSpawnAndNotify(t *testing.T) {
 }
 
 // The update monitor reports what it finds, and installs an update: done,
-// nothing to update, or refused, by the desktop or for a new permission
-// (M9.3).
+// nothing to update, or refused, by the desktop or for a new permission.
 func TestUpdateMonitor(t *testing.T) {
 	conn := sessionBus(t)
 	f := startFlatpakPortals(t, conn)

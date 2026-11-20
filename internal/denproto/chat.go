@@ -48,8 +48,7 @@ const (
 	EventReadStateUpdated  = "read_state.updated"
 )
 
-// MaxRetention is the longest retention period an owner sets, in days
-// (M5).
+// MaxRetention is the longest retention period an owner sets, in days.
 const MaxRetention = 3650
 
 // CheckRetention checks a retention period: days a message is kept, or 0
@@ -365,7 +364,7 @@ func CheckMessage(m Message) error {
 		if err := checkSealed(m.Sealed, m.KeyID, m.Nonce, m.Revision); err != nil || m.Text != "" || len(m.Attachments) > 0 {
 			return errors.New("message has an invalid sealed text")
 		}
-		// A DM's other member, or from M16.3 a group's others.
+		// A DM's other member, or a group's others.
 		if len(m.Editors) > MaxGroupMembers-1 {
 			return errors.New("message has too many editors")
 		}

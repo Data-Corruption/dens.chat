@@ -231,8 +231,7 @@ func (m *Manager) ShareCall(page, denID string, on, sound bool) {
 	}
 }
 
-// TalkCall tells the den whether the page's member holds push to talk
-// (M11).
+// TalkCall tells the den whether the page's member holds push to talk.
 func (m *Manager) TalkCall(page, denID string, on bool) {
 	if m.currentCall(page, denID) == nil {
 		return
@@ -252,8 +251,7 @@ func (m *Manager) PlaySound(page, denID, sound string) {
 	}
 }
 
-// WatchCall starts or stops the page's call watching a member's share
-// (M4.2).
+// WatchCall starts or stops the page's call watching a member's share.
 func (m *Manager) WatchCall(page, denID, member string, on bool) {
 	if m.currentCall(page, denID) == nil || !validID(member) {
 		return

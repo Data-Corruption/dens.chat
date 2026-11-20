@@ -18,7 +18,7 @@ import (
 // cancels and ends them, and marks Interested, through the den; what comes
 // back as the den's events changes the state. An event that starts, which
 // the den tells only the members interested in it, notifies the member.
-// From M17.5 a link's card reads an event by its ID: from the state when
+// A link's card reads an event by its ID: from the state when
 // it's among those to come, and otherwise from the den, which answers for
 // an ended one too.
 

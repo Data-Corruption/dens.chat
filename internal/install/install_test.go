@@ -756,8 +756,7 @@ func TestRestore(t *testing.T) {
 }
 
 // A den's export restores as a backup does, and the restore names it, and
-// ends with how to turn hosting on, where a backup's says to pair a browser
-// (M10).
+// ends with how to turn hosting on, where a backup's says to pair a browser.
 func TestRestoreNamesAnExport(t *testing.T) {
 	f := newFake(t)
 	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {

@@ -294,12 +294,12 @@ type Den struct {
 	URL  string `json:"url"`
 	// Limits, CallLimits, Retention, SoundLimits, EmojiLimits and
 	// EventLimits come to members, in ready and den.updated, and not in a
-	// join preview. CallLimits are from M4.2, Retention, the days a message
-	// is kept, 0 for ever, from M5, SoundLimits, the soundboard's, from
-	// M14.3, EmojiLimits from M15.2 and EventLimits from M17.4. Emoji turned
-	// off are a count of 0, which a den sends as it is, so it needs telling
-	// from a den older than emoji, which sends none; and a den sends
-	// EventLimits to say it has events at all.
+	// join preview. Retention is the days a message is kept, 0 for ever.
+	// A den older than v1.7.0 sends no SoundLimits, the soundboard's, one
+	// older than v1.8.0 no EmojiLimits, and one older than v1.10.0 no
+	// EventLimits. Emoji turned off are a count of 0, which a den sends as
+	// it is, so it needs telling from a den older than emoji, which sends
+	// none; and a den sends EventLimits to say it has events at all.
 	Limits      Limits       `json:"limits,omitzero"`
 	CallLimits  CallLimits   `json:"call_limits,omitzero"`
 	Retention   int          `json:"retention,omitempty"`
@@ -407,8 +407,7 @@ type JoinRequest struct {
 	DeviceLabel string `json:"device_label"`
 	Nonce       Bytes  `json:"nonce"`
 	Proof       Bytes  `json:"proof"`
-	// SealCheck identifies the DM seal the joining member's client holds
-	// (M1.7).
+	// SealCheck identifies the DM seal the joining member's client holds.
 	SealCheck Bytes `json:"seal_check"`
 }
 
@@ -456,9 +455,9 @@ type DenUpdateRequest struct {
 	CallLimits *CallLimits `json:"call_limits,omitempty"`
 	// Retention is the days a message is kept, or 0 to keep them all.
 	Retention   *int         `json:"retention,omitempty"`
-	SoundLimits *SoundLimits `json:"sound_limits,omitempty"` // M14.3
-	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"` // M15.2
-	EventLimits *EventLimits `json:"event_limits,omitempty"` // M17.4
+	SoundLimits *SoundLimits `json:"sound_limits,omitempty"`
+	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"`
+	EventLimits *EventLimits `json:"event_limits,omitempty"`
 }
 
 // Ready is the snapshot that starts a connection, or replaces the client's
@@ -473,25 +472,25 @@ type Ready struct {
 	Channels   []Channel   `json:"channels"`
 	ReadStates []ReadState `json:"read_states"`
 	Online     []string    `json:"online"`
-	// M1.7: the member's seal check, the keys of their DMs without their
+	// The member's seal check, the keys of their DMs without their
 	// exchanges, and sign-ins waiting for their approval.
 	SealCheck      Bytes           `json:"seal_check"`
 	DMKeys         []DMKey         `json:"dm_keys"`
 	DeviceRequests []DeviceRequest `json:"device_requests"`
-	// M2: the calls the member can see that have someone in them.
+	// The calls the member can see that have someone in them.
 	Calls []Call `json:"calls"`
-	// M6: where the den's changes stand, for a client to check what it
+	// Where the den's changes stand, for a client to check what it
 	// cached against.
 	Sync Sync `json:"sync"`
-	// M14.3: the den's sounds, by name.
+	// The den's sounds, by name.
 	Sounds []Sound `json:"sounds"`
-	// M15.2: the den's emoji, by name.
+	// The den's emoji, by name.
 	Emoji []Emoji `json:"emoji"`
-	// M16.1: the keys of the member's DMs sealed to identities, each with
-	// their own copy. A den older than M16.1 sends none, which tells a
+	// The keys of the member's DMs sealed to identities, each with
+	// their own copy. A den older than v1.9.0 sends none, which tells a
 	// client it keeps no identities.
 	SignedKeys []SignedKey `json:"signed_keys"`
-	// M17.4: the den's events to come and live that the member sees, live
+	// The den's events to come and live that the member sees, live
 	// first and then by their start, each with the member's own mark.
 	Events []DenEvent `json:"events"`
 }

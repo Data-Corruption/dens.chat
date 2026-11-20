@@ -23,8 +23,7 @@ type Flatpak interface {
 	Update() FlatpakUpdate
 	// CheckInstalled asks the newest build installed which version it is,
 	// which the monitor learns of only at its next check, every 30
-	// minutes, where something else, as the software center, installed it
-	// (M9.4).
+	// minutes, where something else, as the software center, installed it.
 	CheckInstalled(ctx context.Context)
 	// InstallUpdate has the monitor install the update. Nothing to update
 	// means something else installed it first: either way the newest build

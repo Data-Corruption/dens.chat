@@ -9,7 +9,7 @@ import (
 // and keeps. The cryptography is in identity.go; the den never holds a key
 // that opens any of it.
 
-// Events for M16.1.
+// Events for identities, signed DM keys and the record.
 const (
 	// EventDMSignedKey is a DM key sealed to its members' identities that
 	// was made or retired, as the member sees it, with their own copy.
@@ -19,7 +19,7 @@ const (
 	EventRecordUpdated = "record.updated"
 )
 
-// Limits for M16.1.
+// Limits for identities, signed DM keys and the record.
 const (
 	// MaxIdentities bounds the members whose identities one request
 	// fetches.
@@ -30,7 +30,7 @@ const (
 
 // RetiredReplaced is a signed key replaced by a newer one, as after a
 // member's identity changed. The den's table keeps it as restarted, since
-// a retired key's reason is checked to be one of M1.7's.
+// a retired key's reason is checked to be one of a legacy key's.
 const RetiredReplaced = RetiredRestarted
 
 // MemberIdentity is a member's identity, as fetched.

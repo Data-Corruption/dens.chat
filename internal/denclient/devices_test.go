@@ -99,7 +99,7 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 		if err := approver.ApproveSignIn(ctx, denID, request.ID, fresh.Half); err != nil {
 			t.Fatalf("approve: %v", err)
 		}
-		// Closed by hand, as a den older than M22.6 leaves it, or by the
+		// Closed by hand, as a den older than v1.14.0 leaves it, or by the
 		// new device connecting, whichever comes first.
 		if err := approver.DismissApproved(denID, request.ID); err != nil {
 			t.Fatal(err)

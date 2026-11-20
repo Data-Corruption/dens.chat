@@ -28,9 +28,9 @@ const CodeChangesGone = "changes_gone"
 // Sync is where a den's changes stand, in ready. A client keeps what it
 // cached only when it last synced in the same Epoch, at a version no older
 // than Floor and no newer than Version. Expired is the last message
-// retention deleted, once it has deleted any. MembersSince, from M6.2, is
-// set when ready's members are only those changed since that version, the
-// one the client named on the socket's upgrade.
+// retention deleted, once it has deleted any. MembersSince is set when
+// ready's members are only those changed since that version, the one the
+// client named on the socket's upgrade.
 type Sync struct {
 	Epoch        Bytes  `json:"epoch"`
 	Version      int64  `json:"version"`

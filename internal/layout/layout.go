@@ -125,8 +125,7 @@ func New(app, instance string, form Form) (Layout, error) {
 
 // Instances lists the instances of app in form on this computer by the
 // names of their roots, which every account may list, whether or not it
-// may read them. The shortcut helper tries each one's control endpoint
-// (M7).
+// may read them. The shortcut helper tries each one's control endpoint.
 func Instances(app string, form Form) ([]string, error) {
 	l, err := New(app, DefaultInstance, form)
 	if err != nil {

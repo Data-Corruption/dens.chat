@@ -132,8 +132,7 @@ func (d *Den) reactable(ctx context.Context, s *Session, messageID string) (denp
 	if err != nil {
 		return denproto.Channel{}, 0, 0, errMessageNotFound
 	}
-	// A group's member reacts to what they can read, from their joining
-	// (M16.3).
+	// A group's member reacts to what they can read, from their joining.
 	if since, err := groupSince(ctx, d.db, c, cid, s.MemberID); err != nil || mid <= since {
 		return denproto.Channel{}, 0, 0, errMessageNotFound
 	}

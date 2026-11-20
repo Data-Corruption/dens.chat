@@ -52,10 +52,10 @@ type Options struct {
 // Caller stands in for a member's browser in tests and in the den e2e's
 // voice probe: a Pion peer with no STUN or TURN servers that answers a
 // den's offers as the page does, sends numbered packets as its microphone,
-// and counts the packets that reach it from each member. From M4.2 it
+// and counts the packets that reach it from each member. It
 // shares a screen, with sound, when asked, counts what reaches it of the
 // shares it watches, and asks for keyframes as a viewer's browser does.
-// From M14.3 it keeps what reaches it on the call's soundboard.
+// It keeps what reaches it on the call's soundboard.
 type Caller struct {
 	pc     *webrtc.PeerConnection
 	mic    *webrtc.TrackLocalStaticRTP

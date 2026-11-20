@@ -100,7 +100,7 @@ type Response struct {
 	Error  string          `json:"error,omitempty"`
 	Result json.RawMessage `json:"result,omitempty"`
 	// Body is true when a body follows the line, and Frames when it comes
-	// in frames. A service before M10 ran a body raw to the end of the
+	// in frames. A service older than v1.3.0 ran a body raw to the end of the
 	// stream, where one cut short looks whole, so a client refuses that.
 	Body   bool `json:"body,omitempty"`
 	Frames bool `json:"frames,omitempty"`

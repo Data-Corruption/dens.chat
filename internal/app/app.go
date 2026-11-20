@@ -130,8 +130,7 @@ type Hosting interface {
 	// and fails, changing nothing, while another program holds one.
 	Set(ctx context.Context, on bool) error
 	// WhileOff runs f with hosting held off: turning it on waits for f,
-	// which doesn't run while hosting is on, failing with ErrHostingOn
-	// (M10).
+	// which doesn't run while hosting is on, failing with ErrHostingOn.
 	WhileOff(f func() error) error
 }
 
@@ -643,8 +642,7 @@ func (a *App) prepareSession(opts OpenOptions) error {
 			cfg.ClientPort = instance.AndroidDevClientPort
 		case l.Form == layout.Android:
 			// The app's updater checks the release host its release
-			// names, as an installer records where it installed from
-			// (M12).
+			// names, as an installer records where it installed from.
 			cfg.ReleaseURL = a.buildInfo.ReleaseURL
 		}
 		if opts.DevClientPort != 0 {
