@@ -1,25 +1,25 @@
-// Package notify decides what notifies the member, and where it shows
-// (M12.3). The service decides, since a page may be hidden, frozen or
-// closed: a DM, or a message that mentions the member, in a den and
-// channel they haven't muted, notifies them unless a page shows that
-// channel on screen. Each channel's newest such message shows in one
-// place: a page that may notify, the one on screen most lately, which
-// shows it through the browser; with none, the desktop's helper; and on
-// Android, the app's shell. Reading the channel takes it back wherever it
-// shows.
+// Package notify decides what notifies the member, and where it shows. The
+// service decides, since a page may be hidden, frozen or closed: a DM, or
+// a message that mentions the member, in a den and channel they haven't
+// muted, notifies them unless a page shows that channel on screen. Staff's
+// @everyone notifies as a mention does, unless the member turns it off.
+// Each channel's newest such message shows in one place: a page that may
+// notify, the one on screen most lately, which shows it through the
+// browser; with none, the desktop's helper; and on Android, the app's
+// shell. Reading the channel takes it back wherever it shows.
 //
-// From M14.2 it places the message's sound too, so a message makes one
-// sound: with the page's notification, which the page plays, the browser's
-// own made silent; with the helper's or the shell's, the desktop's or
-// Android's own; and where none shows, as with the kind turned off, alone,
-// to the page on screen most lately. It keeps the member's choices for the
-// page's sounds beside their notifications', and knows which sounds they
-// replaced with files of their own, which the pages hear with the status.
+// It places the message's sound too, so a message makes one sound: with
+// the page's notification, which the page plays, the browser's own made
+// silent; with the helper's or the shell's, the desktop's or Android's
+// own; and where none shows, as with the kind turned off, alone, to the
+// page on screen most lately. It keeps the member's choices for the page's
+// sounds beside their notifications', and knows which sounds they replaced
+// with files of their own, which the pages hear with the status.
 //
-// From M17.4 an event the member is interested in notifies them as it
-// starts, where a message would show, unless they turned events off or
-// muted its den, and goes as the event ends. Events notify by default:
-// each is one the member marked.
+// An event the member is interested in notifies them as it starts, where
+// a message would show, unless they turned events off or muted its den,
+// and goes as the event ends. Events notify by default: each is one the
+// member marked.
 package notify
 
 import (

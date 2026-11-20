@@ -1,9 +1,8 @@
-// Package steam fetches what Steam's cards show (M22.2): a linked game's
-// name, developer, description, tags, reviews, price, platforms, Steam
-// Deck's rating and release, how many play it now, and its pictures, from
-// Steam's store API, which needs no key. The page shows them from its own
-// origin, so nothing on it contacts Steam until a member opens one of its
-// links.
+// Package steam fetches what Steam's cards show: a linked game's name,
+// developer, description, tags, reviews, price, platforms, Steam Deck's
+// rating and release, how many play it now, and its pictures, from Steam's
+// store API, which needs no key. The page shows them from its own origin,
+// so nothing on it contacts Steam until a member opens one of its links.
 //
 // It asks only at addresses it builds from a checked app ID, and fetches
 // pictures only from Steam's store's own host, at paths inside that app's

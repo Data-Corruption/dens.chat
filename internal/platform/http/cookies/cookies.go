@@ -1,3 +1,5 @@
+// Package cookies reads a request's cookies and sets the client listener's,
+// HTTP-only and SameSite=Strict.
 package cookies
 
 import (

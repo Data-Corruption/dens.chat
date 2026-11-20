@@ -1,11 +1,27 @@
-// Package host holds the operating-system-specific runtime pieces of Dens.
-// Each piece is a small function pair in _linux.go and _windows.go, so
-// nothing above this package needs build tags: running under the service
-// manager, the host-bound data key, the local control endpoint and its peer
-// identity, locked memory for key material, low-priority child processes,
-// service control, opening a URL, and free disk space. Go builds _linux.go
-// files for Android too, so where Android differs, an _android.go file
-// takes the piece's place and its Linux one says !android (M12).
+// Package host holds the operating system's side of Dens at run time, each
+// seam a small function pair in _linux.go and _windows.go: running under
+// the service manager, and starting, stopping and querying a service; the
+// host-bound data key (systemd-creds or DPAPI), and a development
+// instance's plain one; the control endpoint and its peer's identity, and
+// looking up accounts; locked memory for key material; low-priority child
+// processes; opening a URL; free disk space; telling a refused connection;
+// and running a newer binary in this process's place. The shortcut
+// helper's seams are here too: the keys, through Windows' key state, X11's
+// (x11_linux.go) or Wayland's global shortcuts portal (portal_linux.go);
+// the desktop's notifications, through the freedesktop service, the
+// Flatpak's portal or Windows' toasts, with the Start menu shortcut toasts
+// need; and the computer's sound for Relay, WASAPI's loopback on Windows
+// and the default output's monitor over PulseAudio's protocol on Linux
+// (sound.go). The Flatpak's own portals are in flatpak_linux.go.
+//
+// Go builds _linux.go files for Android too, so where Android differs, an
+// _android.go file takes the seam's place and its Linux one says !android:
+// locked memory, the data key, which the app's shell hands over, and the
+// computer's sound, which Android doesn't capture.
+//
+// Install-time steps sit behind internal/install's System instead. Beyond
+// these two packages, a package that owns a path, a lock or a log file
+// holds its own files for each system.
 package host
 
 import (

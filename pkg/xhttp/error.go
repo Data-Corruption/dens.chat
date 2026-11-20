@@ -1,3 +1,5 @@
+// Package xhttp holds an HTTP error that carries a status and a message
+// safe to send, and Error, which logs an error and answers with it.
 package xhttp
 
 import (

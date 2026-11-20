@@ -1,7 +1,23 @@
 // Package denproto is the client-to-den protocol shared by both sides: wire
 // types, the byte layouts that get signed, password verifiers, invite
-// strings and name rules. docs/dev/protocol.md is its specification; keeping
-// one implementation for the den and the client means the two can't drift.
+// strings, name rules and the rule that takes tracking out of links.
+// docs/dev/protocol.md is its specification; keeping one implementation for
+// the den and the client means the two can't drift.
+//
+// It holds every rule both sides apply alike: the cryptography of private
+// DMs and device approval; members' identities, their codes, the DM keys
+// sealed to them and the record of those kept (identity.go); a sealed
+// call's keys, their copies, commitments and statements (callkeys.go);
+// group DMs' changes and their rules, their names, and the messages and
+// sets signed inside the seal (groups.go); the times after which a DM's or
+// a group's messages disappear (disappearing.go); the key a member's notes
+// are sealed under, made from their seal (notes.go); the boxes between a
+// member's devices for Relay, their key and their seal (relay.go); what of
+// a poll each member sees; events' limits, wire types and checks, and
+// badges (events.go); a name's style, its fonts and its checks
+// (namestyle.go); and sign-in codes, Add device's and the digits', made and
+// read by one grammar (signincode.go). emojilist.go, the list of Unicode's
+// emoji, is written by scripts/emoji.sh.
 package denproto
 
 import (

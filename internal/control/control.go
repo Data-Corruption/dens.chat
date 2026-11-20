@@ -1,10 +1,10 @@
 // Package control is the protocol between the dens CLI, run by the desktop
 // user, and the service. Each connection carries one request: a JSON line
 // from the client, then a JSON line back, optionally followed by a body or
-// by a stream of JSON lines both ways, as the shortcut helper keeps (M7),
-// or of frames, as the helper's sound for Relay (M20.2).
-// A body comes in frames and ends with an empty one, so a client tells a
-// body cut short, by a failure or a stall, from a whole one (M10).
+// by a stream, of JSON lines both ways, as the shortcut helper keeps, or of
+// frames, as the helper's sound for Relay. A body comes in frames and ends
+// with an empty one, so a client tells a body cut short, by a failure or a
+// stall, from a whole one.
 //
 // The endpoint is a Unix socket or named pipe from internal/platform/host.
 // The service answers only the one desktop user recorded at install, by the

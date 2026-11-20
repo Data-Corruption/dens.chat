@@ -1,6 +1,25 @@
-// Package den is the den this install hosts: its identity key, members,
-// devices, invites, sessions and event stream. The den listener's router
+// Package den is the den this install hosts. The den listener's router
 // (internal/platform/http/den) is a thin HTTP layer over it.
+//
+// It owns the den's identity key; its members, invites, sessions and
+// devices, a sign-in on a new device waiting for the member's approval;
+// the event hub, its sockets and the change log clients sync from;
+// channels, messages, reactions, polls and staff's @everyone; uploads and
+// files, spoilers among them, and retention; the den's emoji and its
+// soundboard's sounds; calls' rules, staff moving members between calls,
+// and each call's length and each voice channel's longest call
+// (callrecords.go); events and their badges (events.go, badges.go); and
+// members' profiles and name styles. One timer (timer.go) ends polls,
+// deletes disappearing messages, starts and ends events, gives badges, and
+// writes the length of a call past its channel's record, each at its time.
+//
+// What members seal it keeps without reading, and passes on: DMs and group
+// DMs, with the keys sealed to their members' identities and each group's
+// changes, checked and kept in order; a sealed call's keys; each member's
+// sealed record and their notes; and the boxes Relay sends between a
+// member's devices, which it keeps nowhere. A client speaking an older
+// protocol version gets none of what it can't read: no group DMs below
+// version 2, and no notes below 3.
 //
 // Every method returns protocol errors (*denproto.Error) for anything a
 // client did wrong, and plain errors for the den's own failures.

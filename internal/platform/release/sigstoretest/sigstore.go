@@ -1,9 +1,9 @@
 // Package sigstoretest stands in for Sigstore's public-good instance, for
-// tests and the Android e2e's fixture releases (M12): a certificate
-// authority that issues signing certificates, as Fulcio does, and a log
-// that promises each signature's entry, as Rekor does, whose trusted root a
-// test build checks releases against in place of Sigstore's. It signs a
-// file as cosign sign-blob does, into the same bundle.
+// tests and the Android e2e's fixture releases: a certificate authority
+// that issues signing certificates, as Fulcio does, and a log that promises
+// each signature's entry, as Rekor does, whose trusted root a test build
+// checks releases against in place of Sigstore's. It signs a file as cosign
+// sign-blob does, into the same bundle.
 package sigstoretest
 
 import (

@@ -1,7 +1,7 @@
-// Package sounds keeps the member's own sounds (M14.2): files of theirs that
-// take the place of the page's sounds, each by the sound's name, sealed with
-// the data key as the vault's fields are. They stay on this install: the
-// page plays them from the client listener.
+// Package sounds keeps the member's own sounds: files of theirs that take
+// the place of the page's sounds, each by the sound's name, sealed with the
+// data key as the vault's fields are. They stay on this install: the page
+// plays them from the client listener.
 package sounds
 
 import (

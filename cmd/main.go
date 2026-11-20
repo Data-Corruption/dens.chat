@@ -1,3 +1,9 @@
+// Command dens is the one binary every form of Dens runs: the service, the
+// desktop user's commands and the elevated maintenance commands, which live
+// in internal/app/commands. main reads the global flags, turns the
+// process's signals into a canceled context, and prints the final error.
+// The rsrc_windows_*.syso objects beside it put dens.exe's manifest in the
+// Windows builds; internal/build/winres writes them.
 package main
 
 import (

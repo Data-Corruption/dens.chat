@@ -1,6 +1,9 @@
-// Package cache is the client's cache of what it fetches from other dens
-// (M6): files and their previews, kept as they're read, a chunk at a time,
-// and where each den's changes stood when the client last synced with it.
+// Package cache is the client's cache of what it fetches from other dens,
+// under data/cache: files and their previews, kept as they're read, a chunk
+// at a time; message history; each den's state and members; and where each
+// den's changes stood when the client last synced with it. It stays within
+// its size by evicting what the member read least lately, and lets
+// disappearing messages go at their time, on a timer of its own.
 //
 // It holds only copies of what dens hold, so backups leave it out, and a
 // cache of another format, or one sealed under another data key, is
