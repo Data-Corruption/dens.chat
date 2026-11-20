@@ -69,7 +69,7 @@ holds.
 | `scripts/install.sh`, `scripts/install.ps1` | The installer bootstraps; templated by `build.sh` |
 | `scripts/flatpak.sh`, `scripts/flatpak/` | Makes the Flatpak's commit from a release's binary and commits it to a repository with its deltas and summary; beside them, the public key it's signed with (`dens.asc`) |
 | `scripts/test.sh`, `scripts/test-*`, `scripts/test/` | Test entrypoints, lifecycle harnesses, fixture releases, the docs' link check (`scripts/test/links/`), the browser checks (`scripts/test/browser/`), and the Android e2e's container, drivers and den (`scripts/test/android/`), whose `phone.sh` and `bg.sh` also work a real phone |
-| `scripts/dev/` | Manual testing's helpers: a Flatpak made from this tree for a VM, and a development den filled with messages or files |
+| `scripts/dev/` | Manual testing's helpers: a manual test's builds staged as a prerelease (`stage.sh`), a Flatpak made from this tree for a VM, and a development den filled with messages or files |
 | `spikes/` | When one is under way, a throwaway experiment that answers a design question before code depends on it, in its own Go module; it goes when the work it informs lands, its findings in the design docs, which name the commit that last held it |
 | `docs/dev/` | Internal docs: the design (`design.md` and `design/`, a part per area) and each deployment form's, the den protocol (`protocol.md` and `protocol/`), the milestones and loose ideas, the lifecycle and the release process |
 | `docs/` (everything else) | The public dens.chat site (Hugo and Hextra), with its own `README.md` and `DEPLOYMENT.md` |
