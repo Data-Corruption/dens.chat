@@ -243,7 +243,7 @@ test('a colon and two characters complete an emoji where one may start, and an @
     assert.deepEqual(completeMember('tab', members).map((m) => m.username), ['bob']);
 });
 
-test('completing @ offers staff @everyone first where it matches, and others only members (M15.4)', () => {
+test('completing @ offers staff @everyone first where it matches, and others only members', () => {
     const members = [{ id: '2', username: 'bob', display_name: 'Bobby Tables' }, { id: '3', username: 'carol', display_name: 'Carol B' }];
     const offered = (q, everyone) => completeMention(q, members, everyone).map((x) => (x.everyone ? '@everyone' : x.member.username));
     assert.deepEqual(offered('', true), ['@everyone', 'bob', 'carol']);

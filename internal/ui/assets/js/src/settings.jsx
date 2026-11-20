@@ -6,7 +6,7 @@
 // member and the page's sounds; Voice the microphone and speaker, noise
 // suppression, how the member sends their voice, their shortcuts and their
 // screen share; Relay this install's links with the member's other devices,
-// and from M20.2 the computer's sound shared and listened to; and
+// and the computer's sound shared and listened to; and
 // System hosting a den, the cache, updates, backups, the local
 // password, the logs, signing this browser out, and the version.
 
@@ -710,7 +710,7 @@ function ShareSettings() {
 const DEVICES_EVERY = 3000;
 
 // RelaySettings links this install with the member's other devices on one
-// network: Keybind relay and, from M20.2, Share this computer's
+// network: Keybind relay and Share this computer's
 // sound, whose switches the service keeps, and the buffer of what this
 // page plays, which the browser keeps; and the devices that answered,
 // each with how its link stands or what it offers, and Listen beside each

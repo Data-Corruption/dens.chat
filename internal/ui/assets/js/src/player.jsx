@@ -3,9 +3,9 @@
 // it by its bar and resize it from its corners, and the browser keeps
 // where it was and its size. It holds every share side by side; clicking
 // one makes it fill the player, while the others go on out of sight, and
-// clicking it again puts it back. From M11 a share they watch can play in
-// a window of its own, while the player keeps its place. From M13.4 the
-// phone layout docks it instead, across the top of the channel's pane.
+// clicking it again puts it back. A share they watch can play in a
+// window of its own, while the player keeps its place. The phone layout
+// docks it instead, across the top of the channel's pane.
 
 import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';

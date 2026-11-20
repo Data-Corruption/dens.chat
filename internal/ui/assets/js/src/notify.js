@@ -8,7 +8,7 @@
 // channel, wherever it shows. Android's WebView has no notifications: the
 // app's shell posts them there.
 //
-// From M14.2 the service places the message's sound too, so a message
+// The service places the message's sound too, so a message
 // makes one: a page plays it with the notification it shows, which it asks
 // the browser to show silently, and alone where the service says, as when
 // the member turned the kind off. It also carries the sounds' settings in

@@ -10,7 +10,7 @@ import org.json.JSONObject
 
 // Notes posts the member's notifications: each one Dens gives the
 // shell, in a Messages channel of their own, grouped by den, and a tap
-// opens the page at the message, or from M17.4 at an event that started.
+// opens the page at the message, or at an event that started.
 // Dens decides what notifies the member, and takes a notification back as
 // they read its channel, wherever they read it, or as its event ends. A
 // channel's newer notification replaces its last, under the channel's key.

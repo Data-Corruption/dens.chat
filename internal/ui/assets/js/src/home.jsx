@@ -181,8 +181,7 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
 // this device or its member go, signing in again or forgetting it; on the
 // phone layout they sit under the den's name, which keeps the row's width.
 // The den this computer hosts, with hosting off, says so, with
-// note, and leads to the switch, or to Hosting once it's exported
-// (M10).
+// note, and leads to the switch, or to Hosting once it's exported.
 function DenRow({ den, note, navigate, onChanged, onSignIn }) {
     const [dot, label] = note ? ['bg-base-content/40', note.label] : STATES[den.state] || ['bg-base-content/40', den.state];
     const gone = den.state === 'revoked' || den.state === 'removed';

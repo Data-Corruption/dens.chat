@@ -10,7 +10,7 @@ test("an installed Dens's notice gives the update command, and no update gives n
         { text: 'Dens v1.2.0 is available. To update, run:', command: 'sudo dens update' });
 });
 
-test("the Android app's notice installs an update it downloaded and checked (M12.4)", () => {
+test("the Android app's notice installs an update it downloaded and checked", () => {
     assert.deepEqual(updateNotice({ updateReady: 'v1.5.1' }), { text: 'Dens v1.5.1 is ready to install.', action: 'install', label: 'Install' });
 });
 

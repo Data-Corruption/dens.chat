@@ -548,8 +548,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     );
     // What waits on this device shows above the channel, and on the phone
     // layout above whichever pane is open: an update's notice, and
-    // sign-ins waiting for this member's approval whose dialog they closed
-    // (M22.6).
+    // sign-ins waiting for this member's approval whose dialog they closed.
     const notices = (
         <div class="flex flex-col gap-2 p-2 empty:hidden" data-den-notices>
             <UpdateNotice status={service} dismissible />

@@ -1,15 +1,14 @@
 // A call's controls, which follow the call from den to den: in a block at
 // the foot of a den's channel list, and boxed on the other pages; and who
 // is in each voice channel's call, with who is speaking, how loud each
-// plays here, and staff's controls. From M4.2 the call's block has a
+// plays here, and staff's controls. The call's block has a
 // row for sharing the member's screen, and the list marks who shares,
-// which a click watches. From M13.4 the phone layout shows the call in a
+// which a click watches. The phone layout shows the call in a
 // bar across the top of the channel's pane, and a touch screen holds the
-// microphone on the call's button, by the thumb. From M14.3 the block,
-// the bar and the box open the den's soundboard, and the channel's row in
-// the list shows how the call stands, where the block's speaker did. From
-// M16.2 the call's lock stands beside how it stands, and the list marks
-// each member verified, and one whose keys changed. From M20.3 the call's
+// microphone on the call's button, by the thumb. The block, the bar and
+// the box open the den's soundboard, and the channel's row in the list
+// shows how the call stands. The call's lock stands beside how it stands, and the list marks
+// each member verified, and one whose keys changed. The call's
 // button presses for a call another of the member's devices holds.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -39,8 +38,8 @@ import {
 } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
-// it, how loud each member plays here, and from M4.2 its share, the shares
-// it watches, and what it knows of the call's den; and from M14.3 whose
+// it, how loud each member plays here, its share, the shares it
+// watches, and what it knows of the call's den; and whose
 // sound plays in it, and the member's soundboard.
 export function useCall() {
     const [state, setState] = useState({
@@ -634,7 +633,7 @@ function LeaveIcon() {
 // member who shares their screen has a LIVE mark, which watches or
 // stops watching in the page's own call, inCall, and elsewhere joins the
 // call as label names it and watches; watched holds the members whose
-// shares the page watches. From M16.2 the identities this member's Dens
+// shares the page watches. The identities this member's Dens
 // kept mark those they verified, and those whose keys changed since, or
 // since the page's call began, since. Where the den moves members, moving
 // gives staff Move to in the menu of anyone but the owner, with the voice

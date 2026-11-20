@@ -1,7 +1,7 @@
 // The geometry of the player shares play in, apart from its
 // component so the tests can check it: where it sits and how large it is,
 // which the browser keeps, kept inside the window; resizing from a corner;
-// and how its shares lay out. From M13.4, which share the phone layout's
+// and how its shares lay out, and which share the phone layout's
 // docked player shows.
 
 // The smallest the player gets, its margin from the window's edges where

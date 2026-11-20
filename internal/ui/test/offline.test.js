@@ -12,7 +12,7 @@ test('the note shows only while the den failed to connect', () => {
     assert.equal(showsOffline(false, 'offline'), false);
 });
 
-test("Leave den leaves a den that answers, and removes one Dens can't reach from this computer (M10)", () => {
+test("Leave den leaves a den that answers, and removes one Dens can't reach from this computer", () => {
     assert.equal(leaveOffer({ state: 'connected' }), 'leave');
     for (const state of ['offline', 'connecting']) assert.equal(leaveOffer({ state }), 'unreachable', state);
     for (const state of ['revoked', 'removed']) assert.equal(leaveOffer({ state }), 'gone', state);

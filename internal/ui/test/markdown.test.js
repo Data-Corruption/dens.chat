@@ -119,7 +119,7 @@ test("a mention of the reader looks different from anyone else's", () => {
     assert.notEqual(mine.props.class, theirs.props.class);
 });
 
-test("staff's @everyone mentions every reader, and anyone else's only a member of that name (M15.4)", () => {
+test("staff's @everyone mentions every reader, and anyone else's only a member of that name", () => {
     const [mine] = mentioned(render('@alice', { username: 'alice' }));
     const [marked] = mentioned(parse('@everyone, lunch', { username: 'alice', everyone: true }));
     const [unmarked] = mentioned(parse('@everyone, lunch', { username: 'alice' }));

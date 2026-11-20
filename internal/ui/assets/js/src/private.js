@@ -17,8 +17,8 @@ export const LOCKED = {
 
 // keyChanges finds where a DM's messages move from one key to the next,
 // and says why, where the change has words: who started over or started
-// the check again before M16.1, and when the two checked the new key. From
-// M16.1 a DM's keys change as identities do, which their own lines say
+// the check again before v1.9.0, and when the two checked the new key. From
+// v1.9.0 a DM's keys change as identities do, which their own lines say
 // (keysChangedAt), so only this member's own start over has one here. It
 // returns, by the ID of the first message under a new key, what its
 // divider says.
@@ -50,7 +50,7 @@ export function dividerText(old, next, names, me) {
     }
     if (old?.signed) return '';
     if (next?.signed) {
-        // From before M16.1 to a key sealed to identities.
+        // From a legacy key to a key sealed to identities.
         if (old?.retired === 'started_over') return `${who(old.retired_by)} started over on ${when(old.retired_at)}.`;
         return 'The keys changed.';
     }
@@ -98,11 +98,11 @@ export function placeAt(messages, items, timeOf, { hasOlder = false, hasNewer = 
 
 // dmGate says what stands in a DM's composer's place, or '' when it takes
 // messages: no_seal, on a device without the member's DM recovery key;
-// den, on a den older than M16.1, which keeps no identities, without a key
+// den, on a den older than v1.9.0, which keeps no identities, without a key
 // both members checked before it; update, while the other member's Dens
 // publishes no identity, being older; and held, once the other's keys
 // changed since this member verified them. A key both checked before
-// M16.1 goes on as it did. A DM whose other member left is closed apart.
+// v1.9.0 goes on as it did. A DM whose other member left is closed apart.
 export function dmGate(view, channel) {
     const me = view.me?.id;
     const other = (channel.members || []).find((id) => id !== me);

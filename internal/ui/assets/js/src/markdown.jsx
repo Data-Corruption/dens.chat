@@ -104,8 +104,7 @@ export function gamesIn(text) {
     return [...new Set(ctx.games)].slice(0, MAX_GAMES);
 }
 
-// MAX_EVENT_CARDS is how many events' cards a message gets at most
-// (M17.5).
+// MAX_EVENT_CARDS is how many events' cards a message gets at most.
 export const MAX_EVENT_CARDS = 3;
 
 // eventsIn lists the events a message's links point to, for their cards

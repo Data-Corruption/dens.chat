@@ -193,8 +193,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
 // then, under a thin line, their bio as text and how long they've been in
 // the den. The bio and the badges come as the den sends them with the
 // card. In a panel the bio runs its full length, which the panel
-// scrolls. Its pictures play while it shows, since the member opened it
-// (M15.1).
+// scrolls. Its pictures play while it shows, since the member opened it.
 function Profile({ denID, member, me, online, panel = false, verified = false, actions, fixed, children }) {
     const [fetched, setBio] = useState(null);
     const [badgesFetched, setBadges] = useState([]);
@@ -269,8 +268,8 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
 }
 
 // ProfilePanel shows the other member of a DM beside it, in the member
-// list's place, as the profile card shows them, and from
-// M16.1 whether this member verified them, with Compare codes. kept is
+// list's place, as the profile card shows them, and
+// whether this member verified them, with Compare codes. kept is
 // what this member's Dens kept of their identity, null on a den that keeps
 // none. expiry is the DM, whose time either member sets, where the
 // den keeps one.

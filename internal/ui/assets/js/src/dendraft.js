@@ -1,7 +1,7 @@
 // The owner's edits to a den in its Manage dialog: its name and
 // address, its upload limits, how long it keeps messages, its limits for
-// calls, from M14.3 for its soundboard, from M15.2 for its emoji, and from
-// M17.4 how many events each member may have. They gather in one draft,
+// calls, for its soundboard and for its emoji, and how many events each
+// member may have. They gather in one draft,
 // kept as the fields' text, and go to the den as one update of what
 // changed.
 

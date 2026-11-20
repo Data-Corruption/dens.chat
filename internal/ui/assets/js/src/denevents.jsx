@@ -6,7 +6,7 @@
 // it, cancel it while it's to come, and end it early while it's live, or
 // move its end. What they are, without a screen, lives in denevents.js.
 //
-// From M17.5 an event's Copy link gives a link that shows the event's card
+// An event's Copy link gives a link that shows the event's card
 // under the message it's in, Interested and all, and staff attach a badge
 // to an event in a voice channel, which the card shows.
 

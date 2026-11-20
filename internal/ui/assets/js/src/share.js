@@ -227,7 +227,7 @@ export function mbps(bits) {
 }
 
 // uploadNeeded is the upload a den's calls take at full load, video and
-// voice together, and from M14.3 the soundboard's sounds, which the
+// voice together, and the soundboard's sounds, which the
 // owner's settings show as the limits change.
 export function uploadNeeded(limits, voiceBitrate, soundboard = false) {
     const cost = shareCost(limits, voiceBitrate, soundboard);

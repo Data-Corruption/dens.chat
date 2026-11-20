@@ -2,8 +2,8 @@
 // through: RFC 9605's own cases, both ways, for the header, the key and
 // salt a key ID derives, and a frame under AES_128_GCM_SHA256_128; then
 // the worker's rules: a track's key, a counter seen again, a key it lacks,
-// a frame in the clear and the soundboard's, and changing keys; and from
-// M18 what it counts on each track, and why it drops each frame.
+// a frame in the clear and the soundboard's, and changing keys; and
+// what it counts on each track, and why it drops each frame.
 
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';

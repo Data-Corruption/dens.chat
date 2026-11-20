@@ -1,7 +1,7 @@
 // The local event stream, shared by every view: one WebSocket to the
 // service, which pushes den statuses and den events. The page sends on it
-// too: the channel it shows in each den, typing, from M12.3 whether it's
-// on screen and may notify, and from M13.3 its background, which the
+// too: the channel it shows in each den, typing, whether it's
+// on screen and may notify, and its background, which the
 // Android app's shell paints its bars with. The service is on this computer, so a
 // lost stream retries quickly; after a reconnect, views reload, since
 // events may have been missed while it was down.

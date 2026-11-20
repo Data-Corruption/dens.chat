@@ -5,7 +5,7 @@
 // names no STUN or TURN server, and a call reaches nothing but the den.
 // The den makes every offer; the page only answers.
 //
-// From M3 a call rides out a dropped connection: when the den's connection
+// A call rides out a dropped connection: when the den's connection
 // drops, the den holds the call, and this page keeps its peer connection
 // and takes the call back once the den is back. When the browser's own
 // connection to the den's media ports breaks, the page asks for an ICE
@@ -15,35 +15,35 @@
 // turned it off, and the gate that sends only what they mean to, by
 // voice activity or while they push to talk.
 //
-// From M4.2 the page shares its member's screen in the call, and plays the
+// The page shares its member's screen in the call, and plays the
 // shares they watch, which the player shows. It follows what the den says
 // of the call's den, to know its limits and who shares and watches.
 //
-// From M11 a member holding push to talk rings for everyone in the call,
+// A member holding push to talk rings for everyone in the call,
 // through the den, and the page notes what its connection does for the
 // service's log.
 //
-// From M12 the page plays its call again as it thaws from a freeze. Where
+// The page plays its call again as it thaws from a freeze. Where
 // audio may start without a click, as in Android's app, it makes its call's
 // audio contexts once the microphone is open, and plays the members' voices
 // through one of them, which Android then plays as a call's: under the
 // call's volume, and on the route the app's shell sets.
 //
-// From M13.4 a touch screen's call's button presses the actions the keys
+// A touch screen's call's button presses the actions the keys
 // do, as its role says, which sets how the member sends there.
 //
-// From M14.2 the call sounds as it changes: as members join and leave it,
+// The call sounds as it changes: as members join and leave it,
 // the member too, as shares start and end, and as the member's microphone
 // opens and closes, whatever moves it. Its sounds play as its voices do,
 // through the call's context where that plays them.
 //
-// From M14.3 the den streams its soundboard's sounds into the call on a
+// The den streams its soundboard's sounds into the call on a
 // track of the call's own, which the page plays as it plays a member, at
 // the member's soundboard volume, and silent while they're deafened. The
 // member plays a sound for the call through the den, which says whose
 // sound plays, and that player's ring lights as it does.
 //
-// From M16.2 a den that seals its calls takes a page only where it seals
+// A den that seals its calls takes a page only where it seals
 // what it sends: each frame of the member's voice, screen and share's
 // sound, in a worker of its own (sframe.worker.js), with WebRTC's Encoded
 // Transform, under keys the member's Dens makes for the call and hands the
@@ -53,7 +53,7 @@
 // the device no seal to open the call's keys with, the page says why
 // rather than join.
 //
-// From M18 the page seals every section it sends on in the task its offer
+// The page seals every section it sends on in the task its offer
 // was applied in, before anything else awaits, which is when Chromium
 // takes a sender's transform, and puts tracks only on senders it sealed
 // then. It holds what each sender sent against the frames its worker saw
@@ -205,8 +205,8 @@ let shareNotice = null;
 // stream once it comes, and how loud its sound plays.
 const watched = new Map();
 // denView is what the page knows of the call's den: this member's ID, the
-// den's limits, its calls the member can see, and members' names; and from
-// M14.3 the member's role, the den's sounds and its limits for them.
+// den's limits, its calls the member can see, and members' names; and
+// the member's role, the den's sounds and its limits for them.
 let denView = null;
 // sounding is the member whose sound plays in the call, by the den's word,
 // or ''; board is the member's soundboard: when their wait after
@@ -738,10 +738,10 @@ async function reopenMic() {
 // level in dBFS, or while they push to talk ("ptt"), which the browser
 // keeps, with how long push to talk stays open after its key's release,
 // in milliseconds. Their keys for push to talk, toggle mute, push to mute
-// and toggle deafen live in the service from M7, so its helper can read
+// and toggle deafen live in the service, so its helper can read
 // them in other programs.
 //
-// From M13.4 the call's button, on a touch screen, has a role, one of
+// The call's button, on a touch screen, has a role, one of
 // those three actions, which sets how the member sends there: push to talk
 // sends while it's held, and toggle mute, the default, and push to mute by
 // voice activity. The role and the mode never disagree: settings kept from
@@ -2250,7 +2250,7 @@ async function loadDen(c) {
             names: new Map((v.members || []).map((m) => [m.id, m.display_name])),
             sounds: v.sounds || [],
             soundLimits: readSoundLimits(v.sound_limits),
-            // From M16.2: whether the den seals its calls, whether this
+            // Whether the den seals its calls, whether this
             // device holds the member's seal, and the identities their Dens
             // kept, for the call's lock.
             sealed: !!v.sealed_calls,

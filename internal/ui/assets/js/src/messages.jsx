@@ -144,8 +144,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const [menu, setMenu] = useState(null);
     const [deleting, setDeleting] = useState(null);
     // reacting is the message whose picker is open to react to it, with
-    // what opened it, and removing the one whose reactions staff take off
-    // (M15.3).
+    // what opened it, and removing the one whose reactions staff take off.
     const [reacting, setReacting] = useState(null);
     const [removing, setRemoving] = useState(null);
     // A den older than reactions, which came with its emoji, takes none,
@@ -189,8 +188,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // layout their actions open as a sheet.
     const narrow = useNarrow();
     const touch = useCoarse();
-    // The call's button floats above the pane's foot, where the composer is
-    // (M13.4).
+    // The call's button floats above the pane's foot, where the composer is.
     const foot = useRef(null);
     const scroller = useRef(null);
     const content = useRef(null);
@@ -620,8 +618,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // up to what a message holds. Uploads go ahead while they write. A
     // photo or video goes as a smaller copy unless the member turned copies
     // off, and one over the den's limit may still go as its copy. Each
-    // upload has a key the chip follows it by while a video's copy is made
-    // (M5.4).
+    // upload has a key the chip follows it by while a video's copy is made.
     function addFiles(list) {
         const picked = [...list];
         const room = MAX_ATTACHMENTS - filesRef.current.length;
@@ -737,7 +734,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const byId = new Map(list.messages.map((m) => [m.id, m]));
     const rows = [];
     let prev = null;
-    // In a DM, dividers mark where its keys changed before M16.1, and
+    // In a DM, dividers mark where its keys changed before v1.9.0, and
     // lines where the other member's keys changed since.
     const dividers = sealed && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id))), me.id) : new Map();
     // In a group, lines where its members changed, and where each one's
@@ -1515,8 +1512,7 @@ function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
 // EditBox edits a message against the revision it started from. If the
 // message changed meanwhile, it shows the newer text and keeps the draft.
 // Under it, one row: Save, Cancel and the keys; who else may edit
-// it is its ⋯'s. With a finger, touch, ↵ starts a line, and Save saves
-// (M13.2).
+// it is its ⋯'s. With a finger, touch, ↵ starts a line, and Save saves.
 function EditBox({ m, denID, channelID, touch, onDone }) {
     const [text, setText] = useState(m.text);
     const [base, setBase] = useState(m);

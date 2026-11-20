@@ -16,8 +16,7 @@ import { isPrivate } from './private.js';
 // LinkContext is what a den's page gives the links on it: the den open
 // (denID, and view, its state), the dens joined (dens, as /api/dens lists
 // them), open(denID, channelID, messageID), which shows a message, and
-// openEvent(denID, eventID), which shows an event in its den's events
-// (M17.5).
+// openEvent(denID, eventID), which shows an event in its den's events.
 export const LinkContext = createContext(null);
 
 export const CHANNEL_GONE = "That channel is gone, or you can't see it.";

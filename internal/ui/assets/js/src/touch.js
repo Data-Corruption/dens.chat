@@ -1,6 +1,6 @@
 // Touch in place of hover: whether the page's pointer is a
-// finger's, a long press, and when a sheet swiped down closes; and from
-// M13.4 a press held for as long as it acts, as on the call's button. The
+// finger's, a long press, and when a sheet swiped down closes; and
+// a press held for as long as it acts, as on the call's button. The
 // ways of working the page follow the primary pointer, a long press,
 // sheets' rows and bigger targets for a coarse one and hover for one that
 // hovers, as its layout follows the window's width (nav.js).

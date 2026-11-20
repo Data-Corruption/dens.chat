@@ -2,7 +2,7 @@
 // limits as the den holds them, the order the pane lists them in, what the
 // Events row says, an event's times in the member's time zone, which the
 // form takes in and the pane shows, what the form sends, who may change an
-// event, and the events the den sends, applied to the view; and from M17.5
+// event, and the events the den sends, applied to the view; and
 // what the form sends of a badge, what a badge's tip says, and what a
 // link's card says of when.
 //
