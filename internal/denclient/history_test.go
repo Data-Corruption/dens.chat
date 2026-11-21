@@ -172,10 +172,18 @@ func TestOfflineReading(t *testing.T) {
 	dm := openDM(t, owner, member, denID)
 	readyDM(t, owner, member, denID, dm)
 	sendDM(t, owner, denID, dm, "a private word")
-	online := pageOf(t, member, denID, channelID, denclient.HistoryQuery{Limit: 50})
-	if p := pageOf(t, member, denID, dm, denclient.HistoryQuery{Limit: 50}); len(p.Messages) != 1 || p.Messages[0].Text != "a private word" {
-		t.Fatalf("the DM online: %+v", p.Messages)
-	}
+	// The member's Dens answers from what it has heard, so the pages wait
+	// for the messages' events: a DM it has heard nothing in reads empty.
+	var online denclient.PageHistory
+	eventually(t, "the channel online", func() bool {
+		online = pageOf(t, member, denID, channelID, denclient.HistoryQuery{Limit: 50})
+		got := texts(online)
+		return len(got) > 0 && got[len(got)-1] == "message 4"
+	})
+	eventually(t, "the DM online", func() bool {
+		p := pageOf(t, member, denID, dm, denclient.HistoryQuery{Limit: 50})
+		return len(p.Messages) == 1 && p.Messages[0].Text == "a private word"
+	})
 
 	// The member's service starts where it can't reach the den: example.com
 	// leads to a server that hangs up at once.
