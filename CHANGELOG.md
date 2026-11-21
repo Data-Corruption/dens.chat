@@ -1,5 +1,18 @@
 # Changelog
 
+## [v1.14.1] - 2026-11-21
+
+### Fixed
+
+- Since v1.0.0, a den that set out to read a DM could tell your Dens the DM was an ordinary channel. Your Dens believed it, showed it as a channel, and sent what you wrote there next unencrypted, as it does in channels. Group DMs and notes went the same way. Dens now remembers what each one is for good, and stops talking to a den that says otherwise, which then shows as out of reach. What you sent before stayed encrypted.
+- Since v1.9.0, while a DM or a group DM waited on you after someone you'd verified got new keys, an edit to one of your messages there, or a ticked task, could still go out, encrypted to their new keys, before you chose Compare or Send anyway. Nothing goes now until you choose.
+- Since v1.10.0, a photo sent as a spoiler that was too large to preview showed uncovered, as a card with its name. It's covered until you click it, as any spoiler is.
+- Since v1.0.0, the settings' Voice could open without your shortcuts showing, until one of them changed.
+
+### Changed
+
+- A dialog about someone names them by @username alone: Remove, Ban, and deleting another member's message.
+
 ## [v1.14.0] - 2026-11-19
 
 ### Added

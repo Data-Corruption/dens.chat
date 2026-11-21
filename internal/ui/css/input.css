@@ -1,8 +1,10 @@
 
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 
-/* downloaded build tools live in tools/ at the repo root */
-@source not "../../../tools";
+/* The page's own sources alone: Tailwind would otherwise read every file
+   Git tracks, so a word in a doc could add a rule, or drop one. */
+@source "../src";
+@source "../templates";
 
 /* Every theme DaisyUI has, for the settings' theme picker; Light and Dark
    follow the device's light or dark preference until a member picks one. */

@@ -398,6 +398,28 @@ func (c *conn) addSignedKeys(keys ...denproto.SignedKey) {
 	}
 }
 
+// heldLocked says why nothing may be sealed to a DM's or a group's
+// members, if one of them holds since their keys changed: under a key
+// another member's Dens made too, not only under a new one of this
+// Dens's. The caller holds c.mu.
+func (c *conn) heldLocked(channel string) error {
+	ch := c.den.channels[channel]
+	members := ch.Members
+	if ch.Kind == denproto.KindGroupDM {
+		g, err := c.groupLocked(channel)
+		if err != nil {
+			return err
+		}
+		members = g.Members
+	}
+	for _, id := range members {
+		if k := c.ids.Record.Members[id]; id != c.meLocked() && k != nil && k.Held {
+			return inputError(fmt.Errorf("%s's keys changed since you compared codes: compare them again, or send anyway", c.den.members[id].DisplayName))
+		}
+	}
+	return nil
+}
+
 // canMakeGroupKeyLocked says why a group can't get a new key, if it
 // can't, as canMakeKeyLocked does a DM's: its changes don't check,
 // nobody else is in it, or one of its members is gone, has a Dens that

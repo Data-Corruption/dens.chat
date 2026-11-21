@@ -1354,7 +1354,7 @@ function DeleteDialog({ denID, m, author, me, onClose }) {
         };
     }, []);
     const files = m.attachments?.length ? ', with its files' : '';
-    const whose = m.author_id === me.id ? '' : `This is ${name(author)}'s message${author ? `, @${author.username}` : ''}. `;
+    const whose = m.author_id === me.id ? '' : author ? `This is @${author.username}'s message. ` : "This is another member's message. ";
     function remove() {
         act.run(async () => {
             await api.del(`/api/dens/${denID}/messages/${m.id}`);

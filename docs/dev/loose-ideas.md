@@ -2,29 +2,16 @@
 
 Ideas and fixes no milestone has taken up yet. A lot of these are still loose, and not all of them may turn out possible or practical. One leaves this list when a milestone's plan in [milestones.md](milestones.md) takes it up. Those weighed and set aside are under Probably not doing, with why.
 
-## Probably M23
+## Probably M24
 
-From a review of every screen of the page, and what it found members would want.
+What M23 left of M22's review of every screen, and of what it found members would want.
 
-- A call gets a pane of its own: a voice channel opens in the main pane as a text channel does, each member a tile that lights as they talk, shares as large tiles, the controls along its foot, the lock and the timer in its header. Leaving for a text channel keeps the call, as today's strip and floating player; the phone's docked player becomes the same pane. With it, the call's row loses its cog, which sits 50 pixels above the settings' and opens something else.
-- An audit log, in Manage, for staff: each of staff's actions, who, when and where, a kick, a ban, a role, a channel made or deleted, another member's message deleted, a limit changed, and never a message's content. To settle in its plan: how long it keeps, since Dens collects less; what stays of a member who leaves; and members' own deletions, which the user wants listed behind a toggle, though a line that outlasts the message is what a delete promises not to leave.
-- Away in a call: a toggle in the call's block that marks the member with z's on their row, and mutes them until they're back. Not set from the page going quiet: a member in a game touches the page for hours at a time not at all.
-- Steam's trailers in its cards. Steam gives them only as DASH or HLS, so the first step is a probe: whether a page plays one rendition through Media Source Extensions from segments the service fetches, in Chromium, Firefox and the WebView. The media module isn't the tool; it converts files a job at a time.
-- Steam's cards sized with YouTube's players, under one setting for both. A card is 460 pixels wide, its header picture's own width, so a larger one takes a larger picture from Steam, and its rows laid out for each size.
-- Members in Manage: a searchable list of everyone, with role, joined and last seen, and the member's menu on each row.
-- A quick switcher: Ctrl+K finds any channel, DM or den by a few letters, unread first; the front door for search when that comes. With it, a list of the page's keyboard shortcuts, and a few more: Alt+↑/↓ between channels, Esc to mark read.
-- #channel links: # completes a channel as @ does a member, and shows as a chip that opens it, in messages and descriptions.
-- A channel's bell with three levels: everything, mentions, nothing.
-- Do not disturb: one switch that holds every notification and sound for an hour, until tomorrow, or until turned off.
-- Pinned messages: a channel's own, pinned by staff and listed from its header, with no cap on how many.
-- Mark as read, in a channel's and a den's menu.
-- Forward a message to another channel or DM, from its menu.
+- Pinned messages: a channel's own, pinned by staff and listed from its header, with no cap on how many. A pin is one more of staff's acts for M23's audit log.
+- Forward a message to another channel or DM, from its menu, in one step where a pasted link takes several. M23's quick switcher finds where it goes.
 - Names for a member's devices, given by them, shown in Devices, Relay and a sign-in's approval.
 - A status line under a member's name, set from their own card, cleared after a time they pick, or never.
-- No display name in a dialog's sentence, where a name another member chose reads as words: Remove's and Ban's says `${display_name} is signed out of this den at once`, which "Everyone" makes another sentence. "They're signed out", as its other branch has it, and the rule in [The page's words](design/page.md#the-pages-words): a dialog about keys and codes names nobody, and one about a member names them by @username alone.
-- The settings' Voice misses a change to the keys or the helper that comes between its first render and its effect, until the next: `VoiceSettings` reads them in `useState` and subscribes with `onKeys`, which doesn't call back at once, in `useEffect`. Reading them again in the effect, as `NotificationSettings` does, with a page test.
-- The security checklist's missing items, for identities, group DMs, notes, spoilers, events and badges, and call records ([security.md](design/security.md)), each checked against the code as it's written.
-- Tailwind reads class names from every file Git tracks, docs and comments among them, so a word in a doc can add rules to the page's stylesheet, and taking one out can drop them: removing a section of milestones.md dropped DaisyUI's typography rules, which nothing in the page used. `input.css` naming the page's own sources ends that: `source(none)` on its import, and an `@source` each for the page's scripts, its templates and any Go that writes a class. Done when output.css loses only rules no source of the page uses, and the phone and settings checks pass.
+- Steam's trailers in its cards. Steam gives them only as DASH or HLS, so the first step is a probe: whether a page plays one rendition through Media Source Extensions from segments the service fetches, in Chromium, Firefox and the WebView. The media module isn't the tool; it converts files a job at a time.
+- Steam's cards sized with YouTube's players, under one setting for both. A card is 460 pixels wide, its header picture's own width, so a larger one takes a larger picture from Steam, and its rows laid out for each size, with a trailer's place among them once the probe says there's one.
 
 ## Big
 
@@ -36,6 +23,7 @@ From a review of every screen of the page, and what it found members would want.
 
 - Android, staying connected while the phone sleeps (android.md's *A phone sleeps* and *Staying connected*). Go's timers stop while a phone sleeps, so after a drop Dens reconnects only once something else wakes the phone, 4 to 6 minutes later on a desk in the spike, and a notification in that gap shows late. Dens checks the session's renewal against the wall clock each time the den's ping wakes the phone, which ends the hourly drop that made most of the gaps. The fixes left: a dropped connection reconnecting under the shell's wake lock, with an alarm behind it; the app saying so when Android restricts its battery, as Restricted and Samsung's deep sleep stop it; and the install guide's steps, which it has already. Done when a member's phone shows a DM within seconds, eight hours after they last opened Dens, which takes a night of the S24 asleep to test.
 - Sharing to Dens from other Android apps: Dens registered for Android's share sheet, opening a page with a search over every channel and DM in every den the member is in, several picked at once, and a text box and a send button at its foot. It takes the shell taking the share's intent, its text, links or files, handing those files to the service, a send that goes to several dens and DMs at once, each DM's sealed with its own key, and a phone to try it on. Members have asked for it.
+- Moderation, as a milestone of its own: members blocking other members, and what else members and staff need against one who misbehaves. With it, members' own deletions in the audit log, who, where and when, behind a toggle, weighed against what a delete leaves now: the message's ID and channel, never its author.
 - Bookmarks, per member and per den, so a den's bookmarks always resolve against that den. Maybe bookmarks bypass the cache limit cause opening them and missing could result in non contiguous random reads across a channels.
 - Search (a different algorithm than Discord's. Exact match + fuzzy? Future AI metadata generation?)
 - Onboarding in the page's own first steps: a few screens the first time someone uses Dens, each saying in a line what's unusual about it (the local password and den passwords, recovery codes, the DM recovery key, approving a device, who can read what) and linking the guide, their words tried on people who haven't seen Dens. Until then the page's links to the guides stand in for it ([What the site holds](../README.md#what-the-site-holds)).

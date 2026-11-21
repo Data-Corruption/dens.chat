@@ -48,6 +48,53 @@ func openDM(t *testing.T, a, b *denclient.Manager, denID string) string {
 	return dm.ID
 }
 
+// A den that names a DM a text channel breaks the protocol, by deleting
+// it and making a channel of its ID or in its next snapshot: the
+// member's Dens keeps the DM as it was, and nothing it sends there
+// reaches the den unsealed.
+func TestADMStaysADM(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	id, _ := denproto.ParseID(dm)
+	if _, err := h.s.db.Exec(`UPDATE den_channels SET kind = 'text', name = 'lounge', dm_low = NULL, dm_high = NULL WHERE id = ?`, id); err != nil {
+		t.Fatal(err)
+	}
+	upgrades := func() int {
+		h.upgradeMu.Lock()
+		defer h.upgradeMu.Unlock()
+		return len(h.upgrades)
+	}
+	// Deleted and made again as a text channel, in one breath: the Dens
+	// refuses the second, and comes back without it.
+	before := upgrades()
+	alice, _ := denproto.ParseID(me(t, owner, denID).ID)
+	if err := h.d.Hub.Publish(denproto.EventChannelDeleted, denproto.ChannelDeleted{ID: dm}, den.OnlyMember(alice)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.d.Hub.Publish(denproto.EventChannelCreated, denproto.Channel{ID: dm, Kind: denproto.KindText, Name: "lounge"}, den.OnlyMember(alice)); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "alice's Dens refusing the channel made again", func() bool { return upgrades() > before })
+	waitFor(t, owner, "alice connected again", connected)
+	if v, _ := owner.View(denID); slices.ContainsFunc(v.Channels, func(c denproto.Channel) bool { return c.ID == dm && c.Kind != denproto.KindDM }) {
+		t.Fatalf("the DM's ID came as a text channel, and was taken: %+v", v.Channels)
+	}
+
+	before = upgrades()
+	h.restart()
+	// Refused, both members' Dens come back again and again, where a
+	// snapshot taken would keep each connected after one.
+	eventually(t, "both Dens refusing the snapshot", func() bool { return upgrades() >= before+3 })
+	if _, err := owner.Send(context.Background(), denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Text: "for bob alone"}); err == nil {
+		t.Error("a message went to a DM the den deleted")
+	}
+	var plain int
+	if err := h.s.db.QueryRow(`SELECT count(*) FROM den_messages WHERE channel_id = ? AND key_id IS NULL`, id).Scan(&plain); err != nil || plain != 0 {
+		t.Fatalf("%d messages reached the den unsealed: %v", plain, err)
+	}
+}
+
 func sendDM(t *testing.T, m *denclient.Manager, denID, dm, text string) denclient.PageMessage {
 	t.Helper()
 	msg, err := m.Send(context.Background(), denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Text: text})

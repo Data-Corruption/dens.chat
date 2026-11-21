@@ -10,6 +10,7 @@ group   = {"id", "name", "position"}
 ```
 
 - `group_id` is null for a channel outside any group.
+- A channel's `kind` is its ID's for good: a den gives no ID out twice, and a client that held or opened an ID as one kind, deleted since or not, takes it as another as the den breaking the protocol, since a DM taken for a text channel would have its next message go unsealed.
 - Names are 1 to 32 characters, with the same stripping as display names. A text channel's `description` is the markdown subset, up to 4,000 characters. Voice channels have none.
 - A voice channel's `bitrate` is what its call's Opus may send, in bits a second: 16000 to 128000, in steps of 8000, and 96000 unless set when it's created or changed. Text channels have none. A change reaches the call in progress with each member's next offer (see [Offers and answers](calls.md#offers-and-answers)).
 - A den has at most 500 channels and 100 groups.

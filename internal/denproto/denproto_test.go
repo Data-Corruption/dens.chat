@@ -380,6 +380,9 @@ func TestFileChecks(t *testing.T) {
 		{ID: "1", Name: "a", Type: "image/png", Width: 10},
 		{ID: "1", Name: "a", Type: "image/png", Width: 10, Height: 10, Thumb: &Thumb{Width: 0, Height: 5}},
 		{ID: "1", Name: "a", Type: "text/plain", Thumb: &Thumb{Width: 5, Height: 5}},
+		// A sealed file's spoiler goes inside the seal, where the den
+		// can't set it.
+		{ID: "1", Type: SealedType, Sealed: true, Spoiler: true},
 	} {
 		if CheckFile(bad) == nil {
 			t.Errorf("CheckFile accepted %+v", bad)

@@ -729,7 +729,7 @@ export function RemoveMember({ denID, member, onClose }) {
                 <p class="text-sm">
                     {left
                         ? 'They already left. A ban keeps their username from coming back.'
-                        : `${member.display_name} is signed out of this den at once, on every device. Their messages stay unless you delete them below.`}
+                        : "They're signed out of this den at once, on every device. Their messages stay unless you delete them below."}
                 </p>
                 {!left && (
                     <label class="label gap-2 whitespace-normal">

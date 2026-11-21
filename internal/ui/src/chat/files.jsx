@@ -170,10 +170,10 @@ export function attachmentKind(f) {
 
 // Attachments shows a message's files: images as previews that open the
 // viewer, video and audio as players, anything else as a card to download.
-// A photo or video sent as a spoiler shows covered until it's clicked or
-// tapped, each time its message shows, and nothing of it plays before;
-// onOpen opens the viewer at an image with the spoilers still
-// covered, which the viewer leaves out.
+// A file sent as a spoiler shows covered until it's clicked or tapped,
+// each time its message shows, and nothing of it plays before; onOpen
+// opens the viewer at an image with the spoilers still covered, which
+// the viewer leaves out.
 export function Attachments({ denID, files, onOpen }) {
     const [shown, setShown] = useState(() => new Set());
     const tiles = files.filter((f) => ['image', 'video'].includes(attachmentKind(f)));
@@ -193,9 +193,11 @@ export function Attachments({ denID, files, onOpen }) {
                             : <ImageTile key={f.id} denID={denID} file={f} box={box} onOpen={() => onOpen(f, covered)} />)}
                 </div>
             )}
-            {others.map((f) => attachmentKind(f) === 'audio'
-                ? <AudioCard key={f.id} denID={denID} file={f} />
-                : <FileCard key={f.id} denID={denID} file={f} />)}
+            {others.map((f) => covers(f, shown)
+                ? <CoveredCard key={f.id} onShow={() => setShown((s) => new Set(s).add(f.id))} />
+                : attachmentKind(f) === 'audio'
+                    ? <AudioCard key={f.id} denID={denID} file={f} />
+                    : <FileCard key={f.id} denID={denID} file={f} />)}
         </div>
     );
 }
@@ -491,6 +493,18 @@ function Covered({ denID, file, box, onShow }) {
             <span class="absolute inset-0 flex items-center justify-center">
                 <span class="badge badge-neutral select-none font-semibold uppercase tracking-wide">Spoiler</span>
             </span>
+        </button>
+    );
+}
+
+// CoveredCard is a spoiler drawn as a card, as a photo too large to
+// preview, before it's clicked or tapped: a card's size, under Spoiler,
+// and nothing that names it.
+function CoveredCard({ onShow }) {
+    return (
+        <button type="button" class="flex h-14 w-full max-w-sm items-center justify-center rounded border border-base-300 bg-base-300"
+            onClick={onShow} aria-label="Show spoiler" data-spoiler>
+            <span class="badge badge-neutral select-none font-semibold uppercase tracking-wide">Spoiler</span>
         </button>
     );
 }

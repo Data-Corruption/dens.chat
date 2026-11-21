@@ -207,14 +207,16 @@ func (r *identityRecord) meet(member string, hash []byte, now int64, keep bool) 
 }
 
 // encode writes the record for the den, within the most a record holds:
-// past the most, the oldest of what it kept before go, then the oldest
-// changes, then the members kept longest ago who aren't verified.
+// past the most, each member keeps the latest identity of those kept
+// before and the last two changes, then the members kept longest ago go,
+// the unverified first. The member's own identities from before stay,
+// since their groups' older changes are signed by them.
 func (r *identityRecord) encode() ([]byte, error) {
 	out, err := json.Marshal(r)
 	if err != nil || len(out) <= denproto.MaxRecord {
 		return out, err
 	}
-	trimmed := identityRecord{Members: map[string]*keptIdentity{}}
+	trimmed := identityRecord{Members: map[string]*keptIdentity{}, Own: r.Own}
 	for id, k := range r.Members {
 		t := k.clone()
 		if len(t.Past) > 1 {
