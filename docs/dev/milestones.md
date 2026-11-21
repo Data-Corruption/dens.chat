@@ -51,6 +51,7 @@ M23.1:
 - *A dialog's sentence.* Remove's and Ban's says "They're signed out of this den at once", as its other branch does, and [The page's words](design/page.md#the-pages-words) gains the rule: a dialog about keys and codes names nobody, and one about a member names them by @username alone. The step reads every dialog's sentences for a display name.
 - *Voice's keys.* `VoiceSettings` reads the keys and the helper again in its effect, as `NotificationSettings` does, with a page test that changes them between its render and its effect.
 - *The checklist.* [security.md](design/security.md) gains sections for identities, group DMs, notes to self, spoilers, events and badges, and call records, each item written from its design and checked against the code as it's written, with a probe where a claim needs one. An item that doesn't hold is fixed in the step where the fix is small, and raised where it isn't.
+- *What the checklist found* is fixed in the step, and goes out ahead of the rest as v1.14.1: a channel's ID held to its kind for good, a hold that stands under a key the other side made, a trimmed record keeping the member's own identities, and a spoiler's card covered.
 
 M23.2:
 

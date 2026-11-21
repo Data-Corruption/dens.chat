@@ -107,6 +107,16 @@ Before the first release an audit checked every item here against the code (2026
 - [x] The fonts are the binary's own, fetched from the page's origin under `font-src 'self'`, and each license is in the notices.
 - [x] A color that wouldn't read on the reader's theme is moved until it does, so a name can't hide in its background, and a reader turns styles off.
 
+### Events and badges
+
+- [x] An event's name and place and a badge's title are plain text, cleaned as names are, and its description the markdown subset; a client checks each again as it arrives, with the event's times, banner and badge, and the page shows them as text. The den keeps them sealed with the data key, bound to the event.
+- [x] Staff make events, and members only as many to come as the owner allows each, none until they do and 10 at most; a den holds 50 that haven't ended. A maker changes, cancels and ends their own, staff those of members they outrank, and each of those, and marking Interested, counts toward the member's writes.
+- [x] An event in a staff-only voice channel reaches staff alone, with its banner and its badge, and its count of interested holds only those who see it. Nobody sees who's interested, `event.started` goes to them alone, and the den forgets them as the event ends.
+- [x] An event the member can't see and one that's gone get the same answer, and a card for an event to come that the member's Dens keeps is drawn from what it keeps, without asking the den.
+- [x] Only staff attach a badge, change it or take it off, until its event ends; its picture is checked as an emoji's, and a move out of a voice channel is refused unless the badge goes with it.
+- [x] Earning a badge writes the award alone, who earned which badge and when, which says they were in its call; the stretches are timed in memory. A member's badges travel with their profile card alone, only those whose events the viewer sees, and one they hid in nobody's copy but their own, which a client checks again.
+- [x] Nothing about an event or a badge is logged but IDs and counts.
+
 ## Messages
 
 ### Emoji
@@ -147,7 +157,7 @@ Before the first release an audit checked every item here against the code (2026
 
 ### Disappearing messages
 
-- [x] A message's time is fixed as it's sent, from its channel's as the den reads it within the send's transaction, and an edit leaves it; a client takes a time only on a DM's or a group's message, and only after its sending.
+- [x] A message's time is fixed as it's sent, from its channel's as the den reads it within the send's transaction, and an edit leaves it; a client takes a time only on a sealed message, and only after its sending.
 - [x] The den deletes each at its time with `secure_delete` on, its files off the disk and its reactions with it, and as it starts what passed while it was stopped; each member's Dens lets its copies go at their time by its own clock, connected or not, and keeps out a copy past it, and the page drops one as well, neither waiting on the den.
 - [x] Setting a time counts toward the member's writes, and is logged by IDs and the time alone.
 
@@ -175,12 +185,57 @@ Before the first release an audit checked every item here against the code (2026
 - [x] Retention deletes for real, in channels and DMs: rows with `secure_delete` on, files off the disk, and clients drop what passed the period.
 - [x] An animated picture is made on the member's machine, in Go, and refused past its budget before any of its frames is decoded; the den checks it as any upload, and takes one only as a GIF of a picture's sides and size.
 
+### Spoilers
+
+- [x] In a DM or a group a file's mark goes inside the seal, beside its name, so the den never learns which are spoilers: the den refuses one outside the seal there, and a client one the den set on a sealed file.
+- [x] In a channel the den keeps the mark on the file, which an edit can't take off, and a file swapped into a spoiler's place is one too.
+- [x] A spoiler shows covered, whatever its kind, naming nothing of the file, its name among it: a photo or a video as its preview blurred, nothing of a video playing before it's shown, and any other file as a card. The viewer leaves it out while it's covered, and a link in a spoiler draws no event's card.
+
 ### Media
 
 - [x] ffmpeg runs only as the translated module, in a worker process with a memory cap, a deadline and a lower Go stack limit, reaching nothing but the functions Dens gives it.
 - [x] The module's memory is a slice with no spare capacity, so bulk memory operations trap past its end.
 - [x] Dens's C in the module is fuzzed with damaged files under AddressSanitizer in CI, beside the module.
 - [x] Stripped files of every kind Dens takes are checked by a reader independent of FFmpeg, exiftool, in CI.
+
+## End-to-end encryption
+
+### Sealed channels
+
+- [x] A channel's ID keeps its kind for good: a client remembers the kind of every channel it held or opened, deleted since or not and across its cache, and takes one that comes as another, relabeled or deleted and made again, in an event or a snapshot, as the den breaking the protocol. What's sent to an ID that was a DM, a group or notes is sealed, or fails. A device that never held a channel has nothing to hold it to.
+
+### Identities
+
+- [x] A member's identity comes from their seal by HKDF, salted with the den's ID, under a label for each key, so the den holds nothing that makes it, and a member's identity at one den says nothing of them at another.
+- [x] The den takes an identity's keys only as keys of their kinds and sizes, and a client takes a member's keys only where they hash to the identity it kept for them.
+- [x] A client keeps each member's identity on first use and checks every one it meets after against it. A change shows wherever that member does and takes their mark, and where they were verified the DM holds: the service seals nothing to them, a message, an edit or a reaction, until the member compares again or sends anyway.
+- [x] A code comes from the identity's hash, the member's ID and the den's ID by 5,200 rounds of SHA-512, and is checked against the identity kept, never the den's, in constant time; a member's own digits are refused, and comparing asks nothing of the den.
+- [x] The record is sealed with a key from the seal, bound to the den, the member and its revision, its length first and padded to a power of four from 16 KiB, and written each hour from a moment picked at random, whether it changed or not; the den checks its size and revision alone, and tells the member's own sessions of it. Each device keeps its copy sealed with the data key.
+- [x] A DM's key is 32 random bytes sealed to each member's identity with HPKE, bound to the den, the DM, its ID and the member. A client uses one only where its maker's identity signs its statement, its maker's keys hash to the identity named for them, it names the identity kept for each member, and the copy opens to the key it commits to.
+- [x] The den takes a key only where it names the identities published now and its maker's signature checks, keeps one live key a DM, and gives each member their own copy alone.
+- [x] Starting over takes the den password.
+- [x] Nothing about identities, codes, the record or keys is logged but IDs: never a key's bytes, an identity's hash, a code's digits or the seal.
+
+### Group DMs
+
+- [x] Each change to a group is a statement its maker's identity signs, bound to the den and the group, naming its number, the hash of the change before and the members after. Each member's client checks it against the members it had, by the group's rules, and its signer against the identity it kept, so the den can't add anyone, skip a change or fork them; a den's own change takes one member out and nobody in.
+- [x] A group holds 3 to 10 members: any member adds, the first in the order they joined removes, anyone leaves. The den takes a change only from its maker, signed with their published identity, against the latest.
+- [x] A client knows a group's members from its checked changes alone: someone the den lists without a signed add gets no key and shows nowhere. A change that doesn't check marks the group broken, and the client makes no key for it and sends nothing there.
+- [x] A group's key is sealed and signed as a DM's is, and a client sends under one only where it names the group's members as its changes make them, with the identities kept now. The den gives a key's copies only to the members it names, so a member added holds the keys from their joining on, and one removed none made after.
+- [x] A group's message, and each member's set of reactions, is signed inside the seal by its author's identity, and its first revision opens only as its author's.
+- [x] A group's name is sealed under one of its keys, bound to the den, the group and the key, and padded to one length, so the den reads neither it nor its length.
+- [x] A member is in at most 100 groups, each of at most 1,000 changes, and making a group, each change and each key counts toward their writes.
+- [x] A Dens speaking version 1 of the protocol gets nothing of groups.
+- [x] Nothing about a group is logged but IDs, a change's number and its kind.
+
+### Notes to self
+
+- [x] A member's notes are theirs alone: the den shows the channel to them only, one each, and a client takes only one, naming them.
+- [x] Their key comes from the seal by HKDF, salted with the den's ID under a label of its own, made by the member's own Dens; the den holds nothing of it, and takes in notes only sealed messages, each naming the channel as its key.
+- [x] A note is sealed as a DM's message is, bound to the den, the channel, its author, its nonce, the key and its revision, and one that doesn't open shows as lost.
+- [x] Leaving the den, a removal or a ban deletes a member's notes, with their files.
+- [x] A Dens speaking version 1 or 2 of the protocol gets nothing of notes.
+- [x] Nothing about notes is logged but that a member opened theirs.
 
 ## Calls
 
@@ -217,6 +272,13 @@ Before the first release an audit checked every item here against the code (2026
 - [x] One sound plays in a call at a time, a member's next only after their wait, and playing counts toward their writes; a staff mute ends their sound, and leaving ends it.
 - [x] A sound's file is the den's: no message, profile picture or replacement takes it, and deleting a member or a message, retention and the sweep of waiting uploads leave it; a database bug that would delete it fails on its foreign key rather than leave a sound with no file.
 - [x] Nothing about a sound is logged but IDs: who added or deleted which, and who played which in which channel.
+
+### Call records
+
+- [x] The den's database keeps of a call its length alone, as its voice channel's record, never who was in it or when.
+- [x] Only staff read a channel's record and reset it, for a voice channel they see, and a call going on as it's reset writes no record.
+- [x] A client takes a call's length and its record only as numbers from 0 to 100 years, and a call's start never steps back.
+- [x] A reset is logged by member and channel alone.
 
 ## The helper and Relay
 
