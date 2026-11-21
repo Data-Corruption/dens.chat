@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import {
     addDays, addMonths, dayString, firstWeekday, monthGrid, parseDay, timeSteps, weekday, weekdayNames,
-} from '../assets/js/src/datefield.jsx';
+} from '../src/ui/datefield.jsx';
 
 test('a day reads and writes as YYYY-MM-DD, and one that never was reads as none', () => {
     assert.deepEqual(parseDay('2026-11-16'), { y: 2026, m: 11, d: 16 });

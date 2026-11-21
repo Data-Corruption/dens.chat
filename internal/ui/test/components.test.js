@@ -2,8 +2,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { HoverRow } from '../assets/js/src/animations.js';
-import { LongName, nameScroll, useBackdrop } from '../assets/js/src/components.jsx';
+import { HoverRow } from '../src/appearance/animations.js';
+import { LongName, nameScroll, useBackdrop } from '../src/ui/components.jsx';
 
 function Backdrop({ onClose }) {
     return h('div', { ...useBackdrop(onClose), id: 'backdrop' }, h('div', { role: 'dialog' }, 'text'));

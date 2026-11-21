@@ -83,12 +83,14 @@ prepare_release_context() {
   vendor_cosign
 }
 
-# write_plan E2E MEDIA INSTALLER_TESTS RELEASE reports the plan in the log
-# and to the workflow. E2E asks for the test jobs, and MEDIA for the two of
-# them that check the media module alone, media-module and media-fuzz.
+# write_plan TESTS E2E MEDIA INSTALLER_TESTS RELEASE reports the plan in the
+# log and to the workflow. TESTS asks for linux-tests, E2E for the platform
+# and container suites (windows-e2e, linux-e2e, linux-den-e2e, flatpak-e2e
+# and android-build), and MEDIA for the two jobs that check the media module
+# alone (media-module and media-fuzz).
 write_plan() {
   local plan
-  plan=$(printf 'e2e_required=%s\nmedia_required=%s\ninstaller_tests_required=%s\nrelease_required=%s' "$1" "$2" "$3" "$4")
+  plan=$(printf 'tests_required=%s\ne2e_required=%s\nmedia_required=%s\ninstaller_tests_required=%s\nrelease_required=%s' "$1" "$2" "$3" "$4" "$5")
   printf '%s\n' "$plan"
   if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
     printf '%s\n' "$plan" >> "$GITHUB_OUTPUT"
@@ -112,7 +114,7 @@ plan_release() {
     fi
   fi
 
-  write_plan "$e2e_required" "$e2e_required" "$installer_tests_required" true
+  write_plan "$e2e_required" "$e2e_required" "$e2e_required" "$installer_tests_required" true
 }
 
 # pr_changed_files prints the files a pull request changes, each ended by a
@@ -128,15 +130,18 @@ pr_changed_files() {
 
 # plan_pr_jobs [PATH...] reports the test jobs a pull request that changes
 # the PATHs needs. Docs alone need none: no test reads them but the site's
-# icon, which the Docs workflow's build checks (scripts/test.sh -docs). The
-# media module's inputs, and CI's own files, which decide what runs, need
-# every job. Anything else needs every job but the two that check the media
-# module alone. CHANGELOG.md isn't docs: releases are cut from it. No paths
-# at all prove nothing, so they get every job too.
+# icon, which the Docs workflow's build checks (scripts/test.sh -docs). Changes
+# to the page's own sources, assets and templates, or to the developer-side
+# browser/Android check drivers, need only linux-tests (lint, Go tests, -js,
+# notices, emoji and the page's build). The media module's inputs, and CI's
+# own files, which decide what runs, need every job. Anything else needs every
+# job but the two that check the media module alone. CHANGELOG.md isn't docs:
+# releases are cut from it. No paths at all prove nothing, so they get every
+# job too.
 plan_pr_jobs() {
-  local e2e=false media=false path why=""
+  local tests=false e2e=false media=false path why=""
   if [[ $# -eq 0 ]]; then
-    e2e=true media=true why="no changed files listed"
+    tests=true e2e=true media=true why="no changed files listed"
   fi
   # In order: a case pattern's * matches a slash too, so the root's
   # markdown comes after everything in a directory.
@@ -146,17 +151,24 @@ plan_pr_jobs() {
         internal/media/* | scripts/ffmpeg.sh | scripts/rnnoise.sh | internal/ui/rnnoise/* | \
         internal/ui/assets/wasm/rnnoise.wasm | scripts/vendor.sh | scripts/build/common.sh | scripts/build/go.sh)
         $media || why="$path is one of the media module's inputs or CI's own files"
-        e2e=true media=true
+        tests=true e2e=true media=true
         ;;
       docs/*) ;;
+      internal/ui/src/* | internal/ui/css/* | internal/ui/templates/* | internal/ui/test/* | \
+        internal/ui/assets/js/*.worker.js | internal/ui/assets/js/*.worklet.js | \
+        internal/ui/assets/sounds/* | internal/ui/assets/emoji.json | \
+        scripts/test/browser/* | scripts/test/android/*)
+        $tests || why="$path is in the page or check drivers"
+        tests=true
+        ;;
       CHANGELOG.md | */*)
-        $e2e || why="$path isn't docs"
-        e2e=true
+        $e2e || why="$path isn't docs or page-only"
+        tests=true e2e=true
         ;;
       *.md) ;;
       *)
-        $e2e || why="$path isn't docs"
-        e2e=true
+        $e2e || why="$path isn't docs or page-only"
+        tests=true e2e=true
         ;;
     esac
   done
@@ -164,10 +176,12 @@ plan_pr_jobs() {
     printf 'Every job: %s.\n' "$why"
   elif $e2e; then
     printf "Every job but the media module's: %s.\n" "$why"
+  elif $tests; then
+    printf 'Linux tests only: %s.\n' "$why"
   else
     printf 'No test job: docs alone.\n'
   fi
-  write_plan "$e2e" "$media" false false
+  write_plan "$tests" "$e2e" "$media" false false
 }
 
 # plan_pull_request plans a pull request's jobs from the files it changes,
@@ -183,7 +197,7 @@ plan_pull_request() {
   else
     rm -f "$list"
     printf "Can't list the files this PR changes: every job.\n"
-    write_plan true true false false
+    write_plan true true true false false
   fi
 }
 
@@ -247,7 +261,7 @@ ci_main() {
   # missing heading is a mistake again and planning fails below.
   if [[ "$1" == --plan && -z "$(changelog_version)" ]] && ! released_before; then
     echo "No release heading in CHANGELOG.md and no release yet: validating without publishing."
-    write_plan true true false false
+    write_plan true true true false false
     return
   fi
 

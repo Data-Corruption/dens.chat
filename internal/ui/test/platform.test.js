@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { browserOf, canCall, canPopOut, canSaveFile, canSeal, canShare, hasKeys, inApp, markURL, systemOf } from '../assets/js/src/platform.js';
+import { browserOf, canCall, canPopOut, canSaveFile, canSeal, canShare, hasKeys, inApp, markURL, systemOf } from '../src/core/platform.js';
 
 const AGENTS = {
     chromeWindows: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',

@@ -2,11 +2,11 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { avatarColor, avatarLetter } from '../assets/js/src/avatar.jsx';
-import { MessageRow, typingLine } from '../assets/js/src/messages.jsx';
-import { EditProfile, MARK, MemberList, ProfileCard, cardAt, cardMenu, memberMenu, rank, roleMark, shownBadges } from '../assets/js/src/people.jsx';
-import { CallMembers } from '../assets/js/src/voice.jsx';
-import { setStaffMarks, staffMarks } from '../assets/js/src/staffmarks.js';
+import { avatarColor, avatarLetter } from '../src/ui/avatar.jsx';
+import { MessageRow, typingLine } from '../src/chat/messages.jsx';
+import { EditProfile, MARK, MemberList, ProfileCard, cardAt, cardMenu, memberMenu, rank, roleMark, shownBadges } from '../src/people.jsx';
+import { CallMembers } from '../src/voice/voice.jsx';
+import { setStaffMarks, staffMarks } from '../src/ui/staffmarks.js';
 
 test("an avatar's color depends only on the member's ID", () => {
     assert.equal(avatarColor('1000123'), avatarColor('1000123'));

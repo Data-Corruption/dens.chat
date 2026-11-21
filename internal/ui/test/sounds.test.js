@@ -37,7 +37,7 @@ globalThis.fetch = async (url) => {
 };
 
 const { DEFAULT_VOLUMES, SOUNDS, callSounds, checkSound, heardSounds, playSound, setSoundRoute, soundSettings, soundURL, warmSounds } =
-    await import('../assets/js/src/sounds.js');
+    await import('../src/voice/sounds.js');
 
 // heard is what the page heard of its call: whether the den has the member
 // (7) in it, its members with whether each shares, and the microphone.

@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { pageHeaders, setPageVersion, stale } from '../assets/js/src/api.js';
+import { pageHeaders, setPageVersion, stale } from '../src/core/api.js';
 
 test("requests name the page's version once it's set", () => {
     assert.deepEqual(pageHeaders({ 'Content-Type': 'application/json' }), { 'Content-Type': 'application/json' });

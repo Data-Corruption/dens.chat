@@ -200,7 +200,7 @@ globalThis.Audio = class {
     }
 };
 
-const voice = await import('../assets/js/src/voice.js');
+const voice = await import('../src/voice/voice.js');
 const { NO_SEAL, NO_SEALING, NO_SEALING_APP, fromBase64url, joinCall, leaveCall, onCall, sealedJoin, targetOf } = voice;
 let state = null;
 onCall((s) => (state = s));

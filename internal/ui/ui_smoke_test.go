@@ -3,6 +3,9 @@ package ui
 import (
 	"bytes"
 	"html/template"
+	"io/fs"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -112,10 +115,17 @@ func TestPlaceholderPage(t *testing.T) {
 			t.Errorf("the placeholder lacks %s", rel)
 		}
 	}
-	for rel := range u.Assets {
-		if rel == "css/input.css" || strings.HasPrefix(rel, "js/src/") {
-			t.Errorf("the placeholder serves the source %s", rel)
+	err = fs.WalkDir(assetsFS, "assets", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
 		}
+		if strings.HasSuffix(path, ".jsx") || strings.HasSuffix(path, "/input.css") || strings.Contains(path, "/src/") {
+			t.Errorf("the binary embeds the source %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -123,21 +133,32 @@ func TestPlaceholderPage(t *testing.T) {
 // the text path: the page is the most valuable target, and anything a den
 // sends is hostile. Preact renders text as text; these are the ways around it.
 func TestScriptsNeverBuildHTMLFromStrings(t *testing.T) {
-	entries, err := assetsFS.ReadDir("assets/js/src")
-	if err != nil {
-		t.Fatal(err)
-	}
 	banned := []string{"innerHTML", "outerHTML", "insertAdjacentHTML", "dangerouslySetInnerHTML",
 		"document.write", "eval(", "new Function", "createContextualFragment", "srcdoc"}
-	for _, entry := range entries {
-		source, err := assetsFS.ReadFile("assets/js/src/" + entry.Name())
+	count := 0
+	err := filepath.WalkDir("src", func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() {
+			return err
+		}
+		if !strings.HasSuffix(path, ".js") && !strings.HasSuffix(path, ".jsx") {
+			return nil
+		}
+		count++
+		source, err := os.ReadFile(path)
 		if err != nil {
-			t.Fatal(err)
+			return err
 		}
 		for _, b := range banned {
 			if strings.Contains(string(source), b) {
-				t.Errorf("%s uses %s", entry.Name(), b)
+				t.Errorf("%s uses %s", path, b)
 			}
 		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count == 0 {
+		t.Fatal("found no source scripts under src/")
 	}
 }

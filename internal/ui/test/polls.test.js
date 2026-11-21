@@ -5,10 +5,10 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { replayed } from '../assets/js/src/paging.js';
+import { replayed } from '../src/core/paging.js';
 import {
     DURATIONS, draftProblem, newDraft, pollRequest, pollView, polled, rulesOf, rulesTip, shareOf, timeLeft, votesLine, whoVoted, withPoll,
-} from '../assets/js/src/polls.js';
+} from '../src/chat/polls.js';
 
 const poll = (rest = {}) => ({ choices: ['Tacos', 'Pho'], ends_at: 10_000_000, show_voters: 'never', show_totals: 'live', voted: 0, ...rest });
 const message = (p) => ({ id: '5', channel_id: '2', author_id: '1', revision: 1, text: 'Lunch?', poll: p });

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { ZOOM, clampView, fitted, isFitted, maxScale, panned, pinched, toggled, wheeled, zoomAt } from '../assets/js/src/zoom.js';
+import { ZOOM, clampView, fitted, isFitted, maxScale, panned, pinched, toggled, wheeled, zoomAt } from '../src/ui/zoom.js';
 
 const stage = { width: 390, height: 700 };
 // A photo 4032 by 3024, fitted to the phone's width.

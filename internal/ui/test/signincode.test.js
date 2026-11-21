@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { codeModules, codePath, readSignInCode } from '../assets/js/src/signincode.js';
-import { decodeMatrix } from '../assets/js/src/qr.js';
+import { codeModules, codePath, readSignInCode } from '../src/core/signincode.js';
+import { decodeMatrix } from '../src/ui/qr.js';
 import cases from '../../denproto/testdata/signincodes.json';
 import made from '../../denclient/testdata/qrcodes.json';
 

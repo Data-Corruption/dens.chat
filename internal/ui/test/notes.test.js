@@ -6,14 +6,14 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { isNotes, isPrivate, notesGate, ownNotes } from '../assets/js/src/private.js';
-import { NotesRow } from '../assets/js/src/notes.jsx';
-import { DMGate } from '../assets/js/src/private.jsx';
-import { lastDM, listed, recentDMs } from '../assets/js/src/chat.jsx';
-import { fileWhere } from '../assets/js/src/files.jsx';
-import { messageLink } from '../assets/js/src/links.js';
-import { chipLabel, place } from '../assets/js/src/msglinks.jsx';
-import { ProfileCard } from '../assets/js/src/people.jsx';
+import { isNotes, isPrivate, notesGate, ownNotes } from '../src/private/private.js';
+import { NotesRow } from '../src/chat/notes.jsx';
+import { DMGate } from '../src/private/private.jsx';
+import { lastDM, listed, recentDMs } from '../src/chat/chat.jsx';
+import { fileWhere } from '../src/chat/files.jsx';
+import { messageLink } from '../src/chat/links.js';
+import { chipLabel, place } from '../src/chat/msglinks.jsx';
+import { ProfileCard } from '../src/people.jsx';
 
 const HOME = 'TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI';
 

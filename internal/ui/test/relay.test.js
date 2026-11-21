@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import './worklet-globals.js';
 import { FADE, HEADER, MOST_STEER, Player } from '../assets/js/relay.worklet.js';
 import { split } from '../assets/js/relay.worker.js';
-import { BUFFER_HIGH, BUFFER_LOW, bufferChoice, endedText, setBufferChoice } from '../assets/js/src/relay.js';
+import { BUFFER_HIGH, BUFFER_LOW, bufferChoice, endedText, setBufferChoice } from '../src/voice/relay.js';
 
 const RATE = 48000;
 const FRAMES = 240;

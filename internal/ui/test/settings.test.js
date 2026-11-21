@@ -7,9 +7,9 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { RelaySettings, SECTIONS, SettingsDialog, onOpenSettings, openSettings, relayState } from '../assets/js/src/settings.jsx';
-import { keepTheme, ownChoice, setTheme } from '../assets/js/src/theme.js';
-import { cleanTheme, variables } from '../assets/js/src/themes.js';
+import { RelaySettings, SECTIONS, SettingsDialog, onOpenSettings, openSettings, relayState } from '../src/settings.jsx';
+import { keepTheme, ownChoice, setTheme } from '../src/appearance/theme.js';
+import { cleanTheme, variables } from '../src/appearance/themes.js';
 
 // A wide window with a mouse: wider than the phone layout, and not coarse.
 globalThis.window = {

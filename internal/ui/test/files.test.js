@@ -2,12 +2,12 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { ALWAYS, HoverRow, ON_HOVER, setAnimations } from '../assets/js/src/animations.js';
-import { clampOffset, coverScale, sourceRect, zoomAt } from '../assets/js/src/crop.jsx';
+import { ALWAYS, HoverRow, ON_HOVER, setAnimations } from '../src/appearance/animations.js';
+import { clampOffset, coverScale, sourceRect, zoomAt } from '../src/ui/crop.jsx';
 import {
     Attachments, attachmentKind, downloadURL, fileWhere, fitBox, formatDuration, formatSize, needsPreview, playbackTime, previewSize, step,
-} from '../assets/js/src/files.jsx';
-import { setFileNames } from '../assets/js/src/filenames.js';
+} from '../src/chat/files.jsx';
+import { setFileNames } from '../src/appearance/filenames.js';
 
 test('sizes read as people write them', () => {
     assert.equal(formatSize(0), '0 B');

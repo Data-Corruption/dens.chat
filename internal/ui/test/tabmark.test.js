@@ -4,7 +4,7 @@
 import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { markTab, waiting } from '../assets/js/src/tabmark.js';
+import { markTab, waiting } from '../src/core/tabmark.js';
 
 test("the tab's icon takes its dot while any den holds a DM or a mention unread, and loses it once none does", () => {
     const read = 'data:image/svg+xml,mark';

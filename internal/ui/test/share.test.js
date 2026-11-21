@@ -4,7 +4,7 @@ import {
     CALL_PRESETS, MAX_WATCHING, SHARE_DEFAULTS, displayOptions, fitPixels, mbps, presetOf, readShare, readShareLevels, receivingSections, refusalText,
     screenOwner, SEALING, shareAudio, shareBlocked, shareCost, shareLevel, shareQuality, sharersIn, sharingAcross, slidShare, toggledShare, uploadNeeded,
     watchersOf, withShareLevel,
-} from '../assets/js/src/share.js';
+} from '../src/voice/share.js';
 
 const limits = { members: 15, callers: 30, shares: 1, share_viewers: 8, share_bitrate: 2_000_000, share_height: 1080, share_fps: 30 };
 

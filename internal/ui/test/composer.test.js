@@ -3,7 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { boxHeight } from '../assets/js/src/messages.jsx';
+import { boxHeight } from '../src/chat/messages.jsx';
 
 test("the message box takes its text's height, from a line's to half of its pane's room", () => {
     assert.equal(boxHeight(45, 800), 48, 'a line, or none, keeps the bar at 73 pixels');

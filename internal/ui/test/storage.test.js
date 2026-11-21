@@ -2,8 +2,8 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { CACHE_SIZES, cacheSizes, cacheUsage } from '../assets/js/src/storage.js';
-import { formatSize } from '../assets/js/src/files.jsx';
+import { CACHE_SIZES, cacheSizes, cacheUsage } from '../src/core/storage.js';
+import { formatSize } from '../src/chat/files.jsx';
 
 test('the sizes to choose from run from 512 MiB to 50 GiB, 2 GiB among them', () => {
     assert.deepEqual(CACHE_SIZES.map(formatSize), ['512 MB', '1 GB', '2 GB', '5 GB', '10 GB', '20 GB', '50 GB']);

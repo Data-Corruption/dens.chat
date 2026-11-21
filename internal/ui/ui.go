@@ -3,10 +3,11 @@
 // writes. Where the build wrote no manifest, as in a clone, it serves a
 // placeholder page, which a binary a script builds refuses.
 //
-// The page is a Preact app, its JSX under assets/js/src and its tests under
-// test; each source file opens with a comment saying what it holds. Beside
-// it are the workers and worklets for voice, sealed calls and Relay;
-// RNNoise's module (assets/wasm/rnnoise.wasm, which scripts/rnnoise.sh
+// The page is a Preact app, its JSX under src/ (grouped by area), its
+// stylesheet source at css/input.css, and its tests under test/; each source
+// file opens with a comment saying what it holds. Beside them under assets/
+// are the built bundle, the workers and worklets for voice, sealed calls and
+// Relay; RNNoise's module (assets/wasm/rnnoise.wasm, which scripts/rnnoise.sh
 // builds with the header in rnnoise); the list of Unicode's emoji
 // (assets/emoji.json, which scripts/emoji.sh writes); the page's sounds
 // (assets/sounds, Kenney's, CC0); and the names' fonts, which the build
@@ -108,8 +109,8 @@ func New() (*UI, error) {
 }
 
 // placeholder lists what the build's manifest would, every embedded asset
-// but the page's sources, with the stylesheet and script that the build
-// writes listed whether or not they're there.
+// but manifest.json, with the stylesheet and script that the build writes
+// listed whether or not they're there.
 func placeholder() (map[string]string, error) {
 	manifest := map[string]string{"css/output.css": unbuilt, "js/output.js": unbuilt}
 	err := fs.WalkDir(assetsFS, "assets", func(path string, d fs.DirEntry, err error) error {
@@ -117,7 +118,7 @@ func placeholder() (map[string]string, error) {
 			return err
 		}
 		rel := strings.TrimPrefix(path, "assets/")
-		if rel != "css/input.css" && !strings.HasPrefix(rel, "js/src/") {
+		if rel != "manifest.json" {
 			manifest[rel] = unbuilt
 		}
 		return nil

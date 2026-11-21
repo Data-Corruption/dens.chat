@@ -6,9 +6,9 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { QUICK, denKey, noteUses, quickRow, setEmojiList, unicodeKey } from '../assets/js/src/emoji.js';
-import { replayed, withUpdate } from '../assets/js/src/paging.js';
-import { MAX_EMOJI, chipsOf, keptReactions, reacted, room, whoReacted, withReaction } from '../assets/js/src/reactions.js';
+import { QUICK, denKey, noteUses, quickRow, setEmojiList, unicodeKey } from '../src/chat/emoji.js';
+import { replayed, withUpdate } from '../src/core/paging.js';
+import { MAX_EMOJI, chipsOf, keptReactions, reacted, room, whoReacted, withReaction } from '../src/chat/reactions.js';
 import list from '../assets/emoji.json';
 
 setEmojiList(list);

@@ -7,8 +7,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { DENSITY_COMPACT, DENSITY_DEFAULT, density, setDensity } from '../assets/js/src/density.js';
-import { MessageRow, continues } from '../assets/js/src/messages.jsx';
+import { DENSITY_COMPACT, DENSITY_DEFAULT, density, setDensity } from '../src/appearance/density.js';
+import { MessageRow, continues } from '../src/chat/messages.jsx';
 
 globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
 

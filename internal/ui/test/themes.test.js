@@ -9,7 +9,7 @@ import { test } from 'node:test';
 import {
     CODE, COLORS, DAISY, FIELDS, MOST_THEMES, SHOWN, VARIABLES, cleanName, cleanTheme, contrast, deeper, editTheme, fromOklch, hexColor, hexOf, lowContrast,
     oklch, readCode, readColor, readThemes, readValue, textOn, themeCode, variables,
-} from '../assets/js/src/themes.js';
+} from '../src/appearance/themes.js';
 import released from './testdata/themes-v1.13.0.json';
 
 const DUSK = {

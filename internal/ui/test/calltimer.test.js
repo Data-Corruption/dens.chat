@@ -6,8 +6,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { beating, callLength, callTimer, crossed, setCallTimer } from '../assets/js/src/calltimer.js';
-import { CallLength } from '../assets/js/src/calltimer.jsx';
+import { beating, callLength, callTimer, crossed, setCallTimer } from '../src/voice/calltimer.js';
+import { CallLength } from '../src/voice/calltimer.jsx';
 
 const kept = new Map();
 globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, String(v)), removeItem: (k) => kept.delete(k) };

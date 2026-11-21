@@ -5,7 +5,7 @@
 import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { placeMenu, ownsMenu, rightClick } from '../assets/js/src/menus.jsx';
+import { placeMenu, ownsMenu, rightClick } from '../src/ui/menus.jsx';
 
 // el makes an element of the DOM stand-in, with attributes and children.
 function el(name, attrs = {}, ...children) {

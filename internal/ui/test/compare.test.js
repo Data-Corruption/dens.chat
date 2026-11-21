@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import {
     actualSize, comparable, describe, isVideo, mayGoSmaller, other, othersLabel, othersToSwitch, progressLabel,
     sendSmaller, sentLabel, setSendSmaller, switchBlocked, switchLabel, usage,
-} from '../assets/js/src/compare.jsx';
+} from '../src/private/compare.jsx';
 
 // The browser's storage, as far as the setting uses it.
 function fakeStorage(items = {}) {

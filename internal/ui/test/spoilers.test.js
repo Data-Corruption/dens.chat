@@ -6,8 +6,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { Attachments, covers } from '../assets/js/src/files.jsx';
-import { spoilable, viewed } from '../assets/js/src/messages.jsx';
+import { Attachments, covers } from '../src/chat/files.jsx';
+import { spoilable, viewed } from '../src/chat/messages.jsx';
 
 globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
 

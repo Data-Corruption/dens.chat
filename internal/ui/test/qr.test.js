@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MAX_VERSION, correct, decodeMatrix, perspective, readQR } from '../assets/js/src/qr.js';
+import { MAX_VERSION, correct, decodeMatrix, perspective, readQR } from '../src/ui/qr.js';
 import made from '../../denclient/testdata/qrcodes.json';
 
 // modules is a code from the file as dark(x, y), the service's own form.

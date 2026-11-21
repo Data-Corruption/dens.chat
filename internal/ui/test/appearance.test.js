@@ -9,9 +9,9 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { AppearancePage } from '../assets/js/src/appearance.jsx';
-import { builtInTheme, forgetTheme, keepTheme, ownChoice, ownThemes, setTheme, themeChoice } from '../assets/js/src/theme.js';
-import { FIELDS, cleanTheme, variables } from '../assets/js/src/themes.js';
+import { AppearancePage } from '../src/appearance/appearance.jsx';
+import { builtInTheme, forgetTheme, keepTheme, ownChoice, ownThemes, setTheme, themeChoice } from '../src/appearance/theme.js';
+import { FIELDS, cleanTheme, variables } from '../src/appearance/themes.js';
 
 // What DaisyUI's stylesheet gives a box wearing each theme, as its
 // computed style reads: Light, Dark and Dracula.

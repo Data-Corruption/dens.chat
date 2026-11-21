@@ -6,8 +6,8 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { useState } from 'preact/hooks';
-import { Home } from '../assets/js/src/home.jsx';
-import { Approvals, HiddenRequests } from '../assets/js/src/private.jsx';
+import { Home } from '../src/home.jsx';
+import { Approvals, HiddenRequests } from '../src/private/private.jsx';
 import made from '../../denclient/testdata/qrcodes.json';
 
 globalThis.window = {

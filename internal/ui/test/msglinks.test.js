@@ -5,8 +5,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { linkTo, messageLink } from '../assets/js/src/links.js';
-import { CHANNEL_GONE, LinkContext, MESSAGE_GONE, MessageLink, chipLabel, follow, notJoined, place } from '../assets/js/src/msglinks.jsx';
+import { linkTo, messageLink } from '../src/chat/links.js';
+import { CHANNEL_GONE, LinkContext, MESSAGE_GONE, MessageLink, chipLabel, follow, notJoined, place } from '../src/chat/msglinks.jsx';
 
 // Dens' IDs, 32 bytes in base64url.
 const HOME = 'TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI';

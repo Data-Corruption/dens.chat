@@ -5,11 +5,11 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { eventLink, eventLinkTo, messageLink } from '../assets/js/src/links.js';
-import { EVENT_ENDED, EVENT_GONE, EventLink, eventChipLabel, followEvent, linkedEvent } from '../assets/js/src/eventlinks.jsx';
-import { notJoined } from '../assets/js/src/msglinks.jsx';
-import { eventsIn, MAX_EVENT_CARDS } from '../assets/js/src/markdown.jsx';
-import { Badges } from '../assets/js/src/people.jsx';
+import { eventLink, eventLinkTo, messageLink } from '../src/chat/links.js';
+import { EVENT_ENDED, EVENT_GONE, EventLink, eventChipLabel, followEvent, linkedEvent } from '../src/chat/eventlinks.jsx';
+import { notJoined } from '../src/chat/msglinks.jsx';
+import { eventsIn, MAX_EVENT_CARDS } from '../src/chat/markdown.jsx';
+import { Badges } from '../src/people.jsx';
 
 const HOME = 'TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI';
 const OTHER = '2SmKENGwc1g33EvYXaxkGw887yekfl1TpU8vP1svz_o';

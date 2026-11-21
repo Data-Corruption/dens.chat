@@ -6,10 +6,10 @@ import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { h, options, render as mount } from 'preact';
-import { Markdown, eventsIn, firstLine, inCodeBlock, parse, preview, sends } from '../assets/js/src/markdown.jsx';
-import { setOldReddit, shownLink, trimLink } from '../assets/js/src/links.js';
-import { MessageLink } from '../assets/js/src/msglinks.jsx';
-import { EventLink } from '../assets/js/src/eventlinks.jsx';
+import { Markdown, eventsIn, firstLine, inCodeBlock, parse, preview, sends } from '../src/chat/markdown.jsx';
+import { setOldReddit, shownLink, trimLink } from '../src/chat/links.js';
+import { MessageLink } from '../src/chat/msglinks.jsx';
+import { EventLink } from '../src/chat/eventlinks.jsx';
 import mentions from '../../denproto/testdata/mentions.json';
 import taskCases from '../../denproto/testdata/tasks.json';
 import linkCases from '../../denproto/testdata/links.json';
@@ -160,13 +160,13 @@ test('links are bare http(s) addresses that show where they go and open safely',
 // each has a color of its own too, without which it would read as text:
 // a message's links, a cover's and the page's own.
 test('every link has a color, and is underlined only on hover and keyboard focus', () => {
-    const css = readFileSync('internal/ui/assets/css/input.css', 'utf8').replace(/\s+/g, ' ');
+    const css = readFileSync('internal/ui/css/input.css', 'utf8').replace(/\s+/g, ' ');
     assert.ok(css.includes('@layer utilities { .link { text-decoration-line: none; &:focus-visible { text-decoration-line: underline; } ' +
         '@media (hover: hover) { &:hover { text-decoration-line: underline; } } } }'), "input.css's rule for links");
     const COLOR = /^(link-(primary|secondary|accent|neutral|info|success|warning|error)|text-(primary|secondary|accent|neutral|info|success|warning|error|white|base-content)(\/\d+)?)$/;
-    const SRC = 'internal/ui/assets/js/src';
+    const SRC = 'internal/ui/src';
     let links = 0;
-    for (const file of readdirSync(SRC).filter((f) => f.endsWith('.jsx'))) {
+    for (const file of readdirSync(SRC, { recursive: true }).filter((f) => f.endsWith('.jsx'))) {
         for (const [, plain, template] of readFileSync(`${SRC}/${file}`, 'utf8').matchAll(/class=(?:"([^"]*)"|\{`([^`]*)`\})/g)) {
             const classes = (plain ?? template).split(/\s+/);
             if (!classes.includes('link')) continue;

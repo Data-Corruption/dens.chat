@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { PLAYER_MIN, clampBox, defaultBox, dockedShown, nextShown, readPlayer, resizeBox, tileLayout } from '../assets/js/src/player.js';
+import { PLAYER_MIN, clampBox, defaultBox, dockedShown, nextShown, readPlayer, resizeBox, tileLayout } from '../src/voice/player.js';
 
 const view = { w: 1600, h: 900 };
 

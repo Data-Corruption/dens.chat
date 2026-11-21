@@ -139,7 +139,7 @@ globalThis.Audio = class {
     pause() {}
 };
 
-const { joinCall, leaveCall, onCall, setVoice } = await import('../assets/js/src/voice.js');
+const { joinCall, leaveCall, onCall, setVoice } = await import('../src/voice/voice.js');
 
 // The page's call, as the page's components get it.
 let seen = null;

@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { deletesNow, keptFor } from '../assets/js/src/retention.js';
+import { deletesNow, keptFor } from '../src/core/retention.js';
 
 test('a period reads in days', () => {
     assert.equal(keptFor(1), '1 day');

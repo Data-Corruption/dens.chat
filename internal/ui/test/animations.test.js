@@ -2,11 +2,11 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { ALWAYS, HoverRow, ON_HOVER, Shown, animations, setAnimations, usePicture } from '../assets/js/src/animations.js';
-import { animatedImage, wholeRect } from '../assets/js/src/crop.jsx';
-import { Avatar, DenContext } from '../assets/js/src/avatar.jsx';
-import { DenEmoji, EmojiContext } from '../assets/js/src/denemoji.jsx';
-import { BadgePicture, Banner } from '../assets/js/src/people.jsx';
+import { ALWAYS, HoverRow, ON_HOVER, Shown, animations, setAnimations, usePicture } from '../src/appearance/animations.js';
+import { animatedImage, wholeRect } from '../src/ui/crop.jsx';
+import { Avatar, DenContext } from '../src/ui/avatar.jsx';
+import { DenEmoji, EmojiContext } from '../src/chat/denemoji.jsx';
+import { BadgePicture, Banner } from '../src/people.jsx';
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
 

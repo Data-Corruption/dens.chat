@@ -4,10 +4,10 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_VIDEOS, parse, videosIn } from '../assets/js/src/markdown.jsx';
-import { onYouTubePlayers, setYouTubePlayers, startSeconds, videoOf, youTubePlayers } from '../assets/js/src/links.js';
-import { playerClass } from '../assets/js/src/sizes.js';
-import { Cover, embedURL, pictureURL, watchURL } from '../assets/js/src/youtube.jsx';
+import { MAX_VIDEOS, parse, videosIn } from '../src/chat/markdown.jsx';
+import { onYouTubePlayers, setYouTubePlayers, startSeconds, videoOf, youTubePlayers } from '../src/chat/links.js';
+import { playerClass } from '../src/appearance/sizes.js';
+import { Cover, embedURL, pictureURL, watchURL } from '../src/chat/youtube.jsx';
 import linkCases from '../../denproto/testdata/links.json';
 
 const ID = 'dQw4w9WgXcQ';

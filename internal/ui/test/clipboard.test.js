@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { copyText } from '../assets/js/src/clipboard.js';
+import { copyText } from '../src/core/clipboard.js';
 
 // page is a document and navigator with only what copying touches: a
 // Clipboard API that copies or refuses, and execCommand('copy'), which

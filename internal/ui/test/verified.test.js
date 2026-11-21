@@ -2,9 +2,9 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { HoverRow, Shown } from '../assets/js/src/animations.js';
-import { VerifiedMark } from '../assets/js/src/private.jsx';
-import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, verifiedMarks } from '../assets/js/src/verified.js';
+import { HoverRow, Shown } from '../src/appearance/animations.js';
+import { VerifiedMark } from '../src/private/private.jsx';
+import { MARKS_ALWAYS, MARKS_HOVER, MARKS_NEVER, setVerifiedMarks, verifiedMarks } from '../src/core/verified.js';
 
 // touch is whether the screen has a finger and no hover, as matchMedia
 // says.

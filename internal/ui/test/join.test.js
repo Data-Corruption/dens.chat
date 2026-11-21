@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { readPasted } from '../assets/js/src/join.js';
+import { readPasted } from '../src/core/join.js';
 
 test('an invite is an invite, whatever space is around it', () => {
     assert.deepEqual(readPasted('  dens1:AbC-_123\n'), { kind: 'invite', value: 'dens1:AbC-_123' });

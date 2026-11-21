@@ -23,10 +23,11 @@ frontend_build() {
     cp "$VENDOR_NAME_FONTS/$font.woff2" "$ASSETS_DIR/fonts/$font.woff2"
   done
 
-  run_step "Tailwind CSS built" "Tailwind CSS failed" "$VENDOR_TAILWIND" -i "$CSS_DIR/input.css" -o "$CSS_DIR/output.css" --minify
+  mkdir -p "$CSS_DIR" "$JS_DIR"
+  run_step "Tailwind CSS built" "Tailwind CSS failed" "$VENDOR_TAILWIND" -i "$CSS_INPUT" -o "$CSS_DIR/output.css" --minify
   # esbuild resolves preact through NODE_PATH, from the vendored package.
   run_step "JavaScript bundled" "JavaScript bundling failed" \
-    env NODE_PATH="$(vendor_abs "$VENDOR_PREACT")" "$VENDOR_ESBUILD" "$JS_DIR/src/main.jsx" \
+    env NODE_PATH="$(vendor_abs "$VENDOR_PREACT")" "$VENDOR_ESBUILD" "$UI_SRC_DIR/main.jsx" \
       --bundle --minify --jsx=automatic --jsx-import-source=preact --target=es2022 --outfile="$JS_DIR/output.js"
 }
 
@@ -34,11 +35,8 @@ frontend_hash_assets() {
   local assets_dir="./internal/ui/assets"
   local manifest="$assets_dir/manifest.json"
 
-  # Patterns to ignore (matched against relative path from assets/), as
-  # internal/ui's placeholder page leaves them out too
+  # Patterns to ignore (matched against relative path from assets/).
   local ignore_patterns=(
-    "css/input.css"
-    "js/src/*"
     "manifest.json"
   )
 

@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_FILE, backgroundStyle, backgroundURL, checkBackground, onBackground, readBackground, slideDim, slideHover } from '../assets/js/src/background.js';
+import { MAX_FILE, backgroundStyle, backgroundURL, checkBackground, onBackground, readBackground, slideDim, slideHover } from '../src/appearance/background.js';
 
 test('a dens view names the background by its version, with its dim and hover', () => {
     assert.deepEqual(readBackground({ version: 1700000000000, dim: 80, hover: 35 }), { version: 1700000000000, dim: 80, hover: 35 });

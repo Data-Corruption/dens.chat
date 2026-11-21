@@ -4,9 +4,9 @@
 import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { MAX_GAMES, gamesIn } from '../assets/js/src/markdown.jsx';
-import { onSteamCards, setSteamCards, steamApp, steamCards } from '../assets/js/src/links.js';
-import { count, deckLook, reviewLook, systems, when } from '../assets/js/src/steam.jsx';
+import { MAX_GAMES, gamesIn } from '../src/chat/markdown.jsx';
+import { onSteamCards, setSteamCards, steamApp, steamCards } from '../src/chat/links.js';
+import { count, deckLook, reviewLook, systems, when } from '../src/chat/steam.jsx';
 
 test("a link to a game's store page, its age check or its community hub names its app, and nothing else does", () => {
     const yes = {
