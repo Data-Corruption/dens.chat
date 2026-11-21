@@ -1,8 +1,8 @@
-// A den's Manage dialog (M8.3), for what staff manage: its address and Den
+// A den's Manage dialog, for what staff manage: its address and Den
 // ID, which everyone sees, and the name and address its owner changes;
-// invites, bans, the soundboard (M14.3) and emoji (M15.2), for staff, each
+// invites, bans, the soundboard and emoji, for staff, each
 // with its limits for the owner; and the owner's events and limits. A
-// member's own sections of a den are the settings' (M22.3). The owner's
+// member's own sections of a den are the settings'. The owner's
 // edits gather in one draft, saved from one bar.
 
 import { useEffect, useState } from 'preact/hooks';
@@ -33,9 +33,9 @@ export function sectionsFor(den) {
 }
 
 // ManageDialog manages one den, at a section. It closes with its ✕,
-// Escape, a click outside it, or Back (M13.1), asking first when edits
+// Escape, a click outside it, or Back, asking first when edits
 // aren't saved. On the phone layout it takes the screen, its sections a
-// list of pages, and Back and Escape go from a page to the list (M13.3).
+// list of pages, and Back and Escape go from a page to the list.
 export function ManageDialog({ denID, section, onSection, onClose }) {
     const [den, setDen] = useState(null);
     const [view, setView] = useState(null);
@@ -344,7 +344,7 @@ function Invites({ denID }) {
 }
 
 // Bans lists who can't come back, and lifts the bans placed by staff of
-// the member's rank or below (M8).
+// the member's rank or below.
 function Bans({ denID, role }) {
     const [list, setList] = useState(null);
     const act = useAction();
@@ -447,7 +447,7 @@ function EmojiLimits({ draft, base, onEdit }) {
     );
 }
 
-// EventLimits is the owner's limit for members' events (M17.4): staff
+// EventLimits is the owner's limit for members' events: staff
 // always make them, and members may too, each this many at a time.
 function EventLimits({ draft, base, onEdit }) {
     const on = Number(draft.memberEvents) > 0;

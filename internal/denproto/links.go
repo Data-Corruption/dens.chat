@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// Links (M3). When a message is sent or edited, or a channel's description
+// Links. When a message is sent or edited, or a channel's description
 // or a member's bio set, the den rewrites the links in it, and a DM's
 // sender does the same before sealing: YouTube, Reddit and X links become
 // one canonical URL, and every link loses its tracking parameters. A link
@@ -105,7 +105,7 @@ func isFence(line string) bool {
 var delimiters = [...]string{"**", "~~", "||", "*", "_"}
 
 // marks are what marksOf in markdown.jsx finds in a line, so the line
-// takes time in proportion to its length, whatever its delimiters (M8):
+// takes time in proportion to its length, whatever its delimiters:
 // code[i] is the backtick that closes a code span opening at i, found in
 // one pass, and next[d][i] the first place at or after i where delimiter d
 // closes, or -1, found in one pass the first time a d opens. A code span
@@ -235,7 +235,7 @@ func delimiterAt(s string, i int) int {
 // "(" in the link, so a link in parentheses loses the closing one but
 // https://en.wikipedia.org/wiki/Go_(programming_language) keeps its own.
 // It counts the parentheses once, so a link ending in many takes no
-// longer (M8).
+// longer.
 func trimLink(s string) string {
 	opens, closes := strings.Count(s, "("), strings.Count(s, ")")
 	for len(s) > 0 {

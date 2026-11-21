@@ -1,5 +1,5 @@
 // The page names its version in every request to the service, and loads
-// again when a service of another version refuses it (M9.3).
+// again when a service of another version refuses it.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

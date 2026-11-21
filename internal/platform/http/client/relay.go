@@ -14,8 +14,8 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Relay (M20): the member's other installs, as they said they're here,
-// and from M20.2 another device's sound, played by the page that listens,
+// Relay: the member's other installs, as they said they're here,
+// and another device's sound, played by the page that listens,
 // and this computer's, which the member stops sending.
 func (rt *router) mountRelay(r chi.Router) {
 	r.Get("/api/relay/devices", rt.handleRelayDevices)
@@ -24,7 +24,7 @@ func (rt *router) mountRelay(r chi.Router) {
 }
 
 // handleRelayDevices lists the member's other installs that said they're
-// here (M20), and asks them again; and says whether the member refused
+// here, and asks them again; and says whether the member refused
 // this install its network, where the system asks them, as Android does.
 func (rt *router) handleRelayDevices(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, map[string]any{"devices": rt.a.Relay.Devices(), "refused": rt.a.Relay.Refused()})
@@ -43,7 +43,7 @@ const (
 )
 
 // handleRelayListen is a page's listening to another of the member's
-// devices' sound, by its Relay ID (M20.2), which lasts while the socket
+// devices' sound, by its Relay ID, which lasts while the socket
 // does: the packets, batch to a message, then as it ends a text message
 // saying why, before the socket closes. The page closing the socket stops
 // it, and a newer listening takes over from it.
@@ -138,7 +138,7 @@ func soundEnded(ctx context.Context, c *websocket.Conn, why string) {
 }
 
 // handleRelayStop stops this computer's sound going to the device that
-// listens, which is told (M20.2).
+// listens, which is told.
 func (rt *router) handleRelayStop(w http.ResponseWriter, _ *http.Request) {
 	rt.a.Relay.StopSharing()
 	writeJSON(w, map[string]bool{"ok": true})

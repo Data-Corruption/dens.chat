@@ -1,4 +1,4 @@
-// The M15.2 check of the den's emoji: alice, who owns the den, in Chromium,
+// The emoji check: alice, who owns the den, in Chromium,
 // and bob in the browser named. Alice adds a still emoji and an animated
 // one in Manage's Emoji section, opened from the den's name: a face larger
 // than an emoji, which her page draws at 128 pixels, and a GIF, which her
@@ -303,7 +303,7 @@ try {
     report(renamed.emoji.length === 0 && renamed.text.includes(':party:'), `bob's page shows :party: as text once it's renamed: ${q(renamed)}`);
 
     step("alice lowers the den's count to what it holds");
-    // Emoji's limit is in its own section (M22.3).
+    // Emoji's limit is in its own section.
     const field = `document.querySelector('[data-limits-emoji] input[type=number]')`;
     await waitFor(() => A.b.eval(`!!${field}`), "Emoji's limit");
     await A.b.eval(setValue(field, '2'));

@@ -99,26 +99,26 @@ type Den struct {
 	// keys orders changes to DM keys, and their events.
 	keys sync.Mutex
 	// calendar orders changes to events, the timer's among them, and their
-	// events (M17.4).
+	// events.
 	calendar sync.Mutex
-	// requests are sign-ins waiting for approval (M1.7).
+	// requests are sign-ins waiting for approval.
 	requests requests
 
 	limits struct {
 		challenge, join, login, socket, write, send, typing, upload, password, passwordName, call, talk, voiceKey, relay *limiter
 		// messages and messageBytes are each member's budget across every
-		// channel and DM (M8).
+		// channel and DM.
 		messages, messageBytes *limiter
 	}
 	sockets  *socketSet
 	presence *presence
 	calls    callRegistry
-	// expiry deletes messages that pass the retention period (M5), and
-	// pruner forgets changes older than clients may ask for (M6).
+	// expiry deletes messages that pass the retention period, and
+	// pruner forgets changes older than clients may ask for.
 	expiry expiry
 	pruner pruner
-	// timer ends polls at their time (M15.4), deletes disappearing
-	// messages at theirs (M16.4), and starts and ends events (M17.4), and
+	// timer ends polls at their time, deletes disappearing
+	// messages at theirs, and starts and ends events, and
 	// pollBatch gathers the polls whose votes changed for the next batch of
 	// totals.
 	timer     dueTimer
@@ -126,19 +126,19 @@ type Den struct {
 
 	// PresenceDelay is how long presence changes gather before they're
 	// announced, and PollDelay how long a poll's votes gather before its
-	// totals go out (M15.4); tests shorten them.
+	// totals go out; tests shorten them.
 	PresenceDelay time.Duration
 	PollDelay     time.Duration
 	// CallHold is how long a call whose socket closed waits for its device
-	// to take it back (M3); tests shorten it.
+	// to take it back; tests shorten it.
 	CallHold time.Duration
 	// PingInterval is how often the den pings each socket. Each ping wakes
-	// a sleeping phone, whose client checks its session's renewal then
-	// (M14.1); tests shorten it.
+	// a sleeping phone, whose client checks its session's renewal then;
+	// tests shorten it.
 	PingInterval time.Duration
 	// ShortTimes lets members set a DM's or a group's messages to
-	// disappear after a few seconds (M16.4), and make events of a few
-	// seconds (M17.4), which a development instance's den takes for the
+	// disappear after a few seconds, and make events of a few
+	// seconds, which a development instance's den takes for the
 	// browser checks, as tests do.
 	ShortTimes bool
 }
@@ -152,7 +152,7 @@ type Session struct {
 	ExpiresAt time.Time
 	// Version is the protocol version the request speaks, which the den's
 	// router sets; a session that speaks one before group DMs sees nothing
-	// of them (M16.3), and one before notes nothing of those (M17.3).
+	// of them, and one before notes nothing of those.
 	Version int
 }
 
@@ -161,8 +161,8 @@ type Session struct {
 func (s *Session) groups() bool { return s.Version >= denproto.GroupsVersion }
 
 // kindVersion is the protocol's version a session or socket speaks, at
-// least, to see a channel of a kind: 2 for a group DM (M16.3), 3 for notes
-// (M17.3), and 0, any, for the kinds every version has.
+// least, to see a channel of a kind: 2 for a group DM, 3 for notes,
+// and 0, any, for the kinds every version has.
 func kindVersion(kind string) int {
 	switch kind {
 	case denproto.KindGroupDM:
@@ -231,7 +231,7 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 			&retention, &sounds.Sounds, &sounds.Longest, &sounds.Wait, &emoji.Emojis, &events.MemberEvents)
 	if errors.Is(err, sql.ErrNoRows) {
 		// A den erased here may have left files, had the service stopped
-		// before they went (M10).
+		// before they went.
 		if err := d.tidyFiles(ctx); err != nil {
 			return nil, fmt.Errorf("tidy uploads: %w", err)
 		}
@@ -273,7 +273,7 @@ func (d *Den) holdKey(seed, pub []byte) error {
 	return nil
 }
 
-// Start runs the den as hosting starts (M9.1): calls on its media ports,
+// Start runs the den as hosting starts: calls on its media ports,
 // the sockets the den listener takes, deleting messages past the
 // retention period, forgetting old changes, and its timer, which ends
 // polls, deletes disappearing messages, and starts and ends events. The caller serves the den
@@ -398,7 +398,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 
 // OwnerInvite issues a one-time owner invite, which lasts an hour.
 // Whoever redeems it becomes the owner, and the owner before them a
-// moderator (M8). The den's machine has the last word on who owns it, so
+// moderator. The den's machine has the last word on who owns it, so
 // only its desktop user asks for one, with the local password, through
 // the service's control endpoint (dens den owner-invite).
 func (d *Den) OwnerInvite(ctx context.Context) ([]byte, error) { return d.ownerInvite(ctx, false) }
@@ -437,7 +437,7 @@ func (d *Den) ownerInvite(ctx context.Context, unowned bool) ([]byte, error) {
 
 // Owned reports whether the den has an owner, which setting it up gives it:
 // until then the page offers to finish, with SetupInvite, and a den moved
-// here from another computer has one already (M10).
+// here from another computer has one already.
 func (d *Den) Owned(ctx context.Context) (bool, error) {
 	if _, ok := d.Info(); !ok {
 		return false, nil
@@ -454,7 +454,7 @@ func owned(ctx context.Context, q querier) (bool, error) {
 }
 
 // Erase deletes the den from this install, once another computer serves
-// it (M10): every den table's rows in one transaction, with secure_delete
+// it: every den table's rows in one transaction, with secure_delete
 // on as ever, then its stored files, as the backups being written let them
 // go, and its identity and key, and what it held in memory, so Info
 // reports none. The caller keeps hosting off throughout, so no socket or
@@ -577,15 +577,14 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 		info.Retention = *req.Retention
 	}
 	// Limits hold as a sound is added: lowering one leaves the sounds
-	// already added (M14.3).
+	// already added.
 	if req.SoundLimits != nil {
 		if err := denproto.CheckSoundLimits(*req.SoundLimits); err != nil {
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "sound_limits: %v", err)
 		}
 		info.SoundLimits = *req.SoundLimits
 	}
-	// As for sounds, lowering the count leaves the emoji already added
-	// (M15.2).
+	// As for sounds, lowering the count leaves the emoji already added.
 	if req.EmojiLimits != nil {
 		if err := denproto.CheckEmojiLimits(*req.EmojiLimits); err != nil {
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "emoji_limits: %v", err)
@@ -594,7 +593,7 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 		info.EmojiLimits = &l
 	}
 	// Lowering a member's limit leaves the events they made already, which
-	// they still change and cancel (M17.4).
+	// they still change and cancel.
 	if req.EventLimits != nil {
 		if err := denproto.CheckEventLimits(*req.EventLimits); err != nil {
 			return denproto.Den{}, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "event_limits: %v", err)
@@ -658,7 +657,7 @@ func (d *Den) Challenge(clientNonce []byte) (denproto.ChallengeResponse, error) 
 }
 
 // issueNonce records a nonce as outstanding. With maxNonces outstanding, the
-// oldest goes (M8), rather than the den refusing every sign-in until some
+// oldest goes, rather than the den refusing every sign-in until some
 // expire. A client uses its nonce within moments of getting it, so to take
 // one a flood would have to win maxNonces challenges in those moments.
 func (d *Den) issueNonce(nonce string) {
@@ -807,7 +806,7 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		}
 		if role == denproto.RoleOwner {
 			// A den has one owner: whoever redeems an owner invite takes
-			// over, and the owner before them stays on as a moderator (M8).
+			// over, and the owner before them stays on as a moderator.
 			if demoted, err = demoteOwner(ctx, tx, now); err != nil {
 				return err
 			}
@@ -842,7 +841,7 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 			}
 		}
 		// Clients that kept the list of members get the joiner's record
-		// with their next snapshot (M6.2).
+		// with their next snapshot.
 		if err := logMember(ctx, tx, id, now); err != nil {
 			return err
 		}
@@ -932,7 +931,7 @@ var errUsernameTaken = denproto.Errorf(http.StatusConflict, denproto.CodeUsernam
 // former member it belongs to, when the verifier proves the joiner is them.
 // A wrong verifier gets the same answer as a taken name, so an invite
 // can't be used to learn who used to be here. Nobody new takes the name
-// staff's @everyone mentions everyone by (M15.4): a member who had it from
+// staff's @everyone mentions everyone by: a member who had it from
 // before keeps it, and comes back to it.
 func claimUsername(ctx context.Context, tx *sql.Tx, username string, verifier []byte) (id, joinedAt int64, err error) {
 	var hash []byte

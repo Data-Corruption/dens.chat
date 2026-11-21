@@ -15,7 +15,7 @@ import (
 
 // A page's listening gets the sound batch packets to a message, each under
 // its length, a message cut short going once the rest are late; and as
-// the listening ends, why, before the socket closes (M20.2).
+// the listening ends, why, before the socket closes.
 func TestListeningStreamsBatches(t *testing.T) {
 	packets := make(chan []byte)
 	done := make(chan struct{})

@@ -8,9 +8,9 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Events (M17.4): the page makes, changes, cancels and ends a den's events,
+// Events: the page makes, changes, cancels and ends a den's events,
 // and marks the member Interested, through the den; what changes comes
-// back as the den's events too. A link's card reads one by its ID (M17.5).
+// back as the den's events too. A link's card reads one by its ID.
 func (rt *router) mountEvents(r chi.Router) {
 	r.Post("/api/dens/{den}/events", rt.handleCreateEvent)
 	r.Get("/api/dens/{den}/events/{event}", rt.handleEvent)

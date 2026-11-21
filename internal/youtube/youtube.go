@@ -63,7 +63,7 @@ type Video struct {
 	Title   string `json:"title,omitempty"`
 	Channel string `json:"channel,omitempty"`
 	// ChannelURL is the channel's address, which the cover links its name
-	// to (M14.1): only an https address on www.youtube.com.
+	// to: only an https address on www.youtube.com.
 	ChannelURL string `json:"channel_url,omitempty"`
 	// Playable is false for a video whose owner turned off embedding, or
 	// that's private, which oEmbed refuses to describe.

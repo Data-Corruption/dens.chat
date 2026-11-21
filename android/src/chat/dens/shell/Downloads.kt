@@ -19,7 +19,7 @@ import java.net.URLDecoder
 import java.util.Locale
 
 // Downloads saves what the page offers as a download to the phone's
-// Downloads (M12). The WebView hands the shell a link, not the file, so the
+// Downloads. The WebView hands the shell a link, not the file, so the
 // shell fetches it from the service with the page's session cookie, under
 // the name the service gives it in its Content-Disposition: it sends every
 // download as application/octet-stream, which leaves Android's own guess at

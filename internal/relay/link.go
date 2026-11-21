@@ -40,7 +40,7 @@ const (
 	rtoMax = 100 * time.Millisecond
 )
 
-// The sound crosses as RTP beside the channels (M20.2), under the link's
+// The sound crosses as RTP beside the channels, under the link's
 // own DTLS, with no interceptors, so nothing is reported, acknowledged or
 // sent again: a packet the path loses is 5 ms the player fades across.
 // Its payload is the helper's piece as it came, the rate and then the
@@ -146,7 +146,7 @@ func (m muxAt) GetListenAddresses() []net.Addr { return m.addrs }
 // link is one peer connection between two of the member's installs, with
 // its two channels: ctl, reliable and in order, and now, neither, so a lost
 // message never holds the next one back; and the track this side's sound
-// goes on (M20.2).
+// goes on.
 type link struct {
 	pc       *webrtc.PeerConnection
 	ctl, now *webrtc.DataChannel

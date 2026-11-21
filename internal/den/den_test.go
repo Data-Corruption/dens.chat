@@ -472,7 +472,7 @@ func TestLimiterEvictsOldest(t *testing.T) {
 }
 
 // TestHubDropsBySize checks that the ring holds its events to maxBytes as
-// well as to maxLen (M8), and that a resume point the drop took gets a
+// well as to maxLen, and that a resume point the drop took gets a
 // snapshot rather than a replay with a hole in it.
 func TestHubDropsBySize(t *testing.T) {
 	h := NewHub()
@@ -520,7 +520,7 @@ func TestHubTrimsInPlace(t *testing.T) {
 }
 
 // TestOldestNonceGoes checks that with maxNonces outstanding, a challenge
-// takes the place of the oldest nonce rather than being refused (M8).
+// takes the place of the oldest nonce rather than being refused.
 func TestOldestNonceGoes(t *testing.T) {
 	f := newFixture(t)
 	f.create()
@@ -550,7 +550,7 @@ func TestOldestNonceGoes(t *testing.T) {
 }
 
 // TestMessageBudget checks each member's budget across every channel and
-// DM (M8): ten messages at once, then one every half second; and 256 KiB
+// DM: ten messages at once, then one every half second; and 256 KiB
 // of text at once, then 16 KiB a second.
 func TestMessageBudget(t *testing.T) {
 	f := newFixture(t)
@@ -577,7 +577,7 @@ func TestMessageBudget(t *testing.T) {
 }
 
 // TestOwnerInvite checks that an owner invite from the den's machine hands
-// the den on (M8): whoever redeems it is the owner, the owner before them a
+// the den on: whoever redeems it is the owner, the owner before them a
 // moderator, and every member hears of both.
 func TestOwnerInvite(t *testing.T) {
 	f := newFixture(t)

@@ -156,7 +156,7 @@ func routes(r chi.Router, a *app.App) {
 	})
 }
 
-// rootLine is what the den's address answers a browser with (M11), as
+// rootLine is what the den's address answers a browser with, as
 // when someone opens a link to one of its messages outside Dens: the
 // fragment naming the message never reaches the den, so all it can say is
 // what it is.
@@ -249,7 +249,7 @@ func (h *handler) limitIP(w http.ResponseWriter, r *http.Request, kind int) bool
 
 // bodyDeadline is how long a request's body has to arrive in full, as an
 // upload has for each read (uploadIdle), so a client sending slowly can't
-// hold a handler and what it reads forever (M8). Tests shorten it.
+// hold a handler and what it reads forever. Tests shorten it.
 var bodyDeadline = time.Minute
 
 // decode reads a JSON body of at most MaxBody bytes. Unknown fields are

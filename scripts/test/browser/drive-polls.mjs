@@ -1,4 +1,4 @@
-// The M15.4 check of polls: alice, who owns the den, in Chromium, and bob
+// The polls check: alice, who owns the den, in Chromium, and bob
 // in the browser named. Alice writes a poll in the composer, its +'s Poll,
 // with three choices, its totals after voting and who voted for what once
 // it ends; both pages show it with its rules. Bob votes from his page and

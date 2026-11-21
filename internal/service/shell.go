@@ -12,24 +12,24 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/types"
 )
 
-// The stream between the Android app's shell and the service (M12). The
+// The stream between the Android app's shell and the service. The
 // shell opens it once the service answers, and again whenever it closes,
 // as when the shell starts the service again. Lines on it, besides pings:
 // the service sends hello first, saying what the shell needs to show the
-// page, and from M12.3 notify for a notification to post, which replaces
+// page, then notify for a notification to post, which replaces
 // its channel's, unnotify for those to take back, and notifying, whether
 // the member has any turned on, which the shell asks Android to let it
-// post. From M12.4 it sends update, a newer release's APK the updater
+// post. It sends update, a newer release's APK the updater
 // checked, which the shell posts is ready, and install, the member asking
 // the page to install it, which the shell hands to Android's installer.
-// From M13.3 it sends bars, the page's background, which the shell paints
+// It sends bars, the page's background, which the shell paints
 // its status and navigation bars with, as the stream opens, where the page
-// has said one, and as it changes. From M20.3 it sends relay, what Relay
+// has said one, and as it changes. It sends relay, what Relay
 // wants of Android: on, for which the shell asks the member to let the app
 // reach its network, and listening, for which it plays as media with Wi-Fi
 // kept awake and the page held as shown. The shell sends front as the app
 // comes in front and leaves it, notifies, whether Android lets it post
-// notifications, and from M20.3 local, whether Android lets it reach its
+// notifications, and local, whether Android lets it reach its
 // network and whether the member refused that, as the stream opens and as
 // each changes.
 const (
@@ -75,7 +75,7 @@ type shellLocal struct {
 	Refused bool `json:"refused"`
 }
 
-// shellPlace is the shell, as a place notifications show (M12.3).
+// shellPlace is the shell, as a place notifications show.
 type shellPlace struct{ s *control.Stream }
 
 func (p shellPlace) Show(n notify.Notification) bool { return p.s.Send(msgShellNotify, n) == nil }
@@ -88,11 +88,11 @@ func (p shellPlace) Settings(s types.Notifications) {
 	_ = p.s.Send(msgShellNotifying, shellSwitch{On: s.DMs || s.Mentions})
 }
 
-// The shell, as the updater tells it of an update (M12.4).
+// The shell, as the updater tells it of an update.
 func (p shellPlace) UpdateReady(u app.UpdateReady)   { _ = p.s.Send(msgShellUpdate, u) }
 func (p shellPlace) InstallUpdate(u app.UpdateReady) { _ = p.s.Send(msgShellInstall, u) }
 
-// The shell, as it paints its bars with the page's background (M13.3).
+// The shell, as it paints its bars with the page's background.
 func (p shellPlace) Bars(color string) { _ = p.s.Send(msgShellBars, shellBars{Color: color}) }
 
 // The shell, as it hears what Relay wants of Android.

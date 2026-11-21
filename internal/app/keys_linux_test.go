@@ -105,7 +105,7 @@ func exists(path string) bool {
 // A new Flatpak's key waits in a file until the local password exists,
 // which removes it unless the member asks Dens to remember; from then on
 // the service starts locked, and only the password opens it, which is
-// never written anywhere (M9.3).
+// never written anywhere.
 func TestFlatpakStartsLockedOnceItHasAPassword(t *testing.T) {
 	flatpakHome(t)
 	k := &keyring{none: true}
@@ -170,7 +170,7 @@ func TestFlatpakStartsLockedOnceItHasAPassword(t *testing.T) {
 // Remember keeps the key in the keyring once it answers the same twice, and
 // Dens then starts unlocked through it; a keyring answering differently
 // each time, or none, has the key kept in a file, which the settings say;
-// and turning Remember off deletes the copy (M9.3).
+// and turning Remember off deletes the copy.
 func TestFlatpakRemembers(t *testing.T) {
 	flatpakHome(t)
 	secret := bytes.Repeat([]byte{7}, 64)
@@ -237,7 +237,7 @@ func TestFlatpakRemembers(t *testing.T) {
 // A copy remembered in the keyring that its answer no longer opens leaves
 // Dens locked and stays while it doesn't; once the password has opened
 // Dens, an answer the same as the last is the keyring's secret now, and
-// Dens remembers anew, but not on answers that differ (M9.3).
+// Dens remembers anew, but not on answers that differ.
 func TestFlatpakKeyringThatStopsOpening(t *testing.T) {
 	flatpakHome(t)
 	first := bytes.Repeat([]byte{1}, 64)
@@ -327,7 +327,7 @@ func TestFlatpakKeyringThatStopsOpening(t *testing.T) {
 
 // A request a prompt holds doesn't hold the start: the local password
 // opens Dens meanwhile, and a request to remember that's turned off while
-// held writes nothing (M9.3).
+// held writes nothing.
 func TestFlatpakKeyringPromptHeld(t *testing.T) {
 	flatpakHome(t)
 	secret := bytes.Repeat([]byte{3}, 64)

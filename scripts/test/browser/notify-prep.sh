@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# The M12.3 check's den: a DM between alice and bob, which opens at once
-# (M16.1), bob a moderator, whose @everyone in #general mentions alice
-# (M15.4), and the desktop's notification service, dunst on Xvfb's
+# The notify check's den: a DM between alice and bob, which opens at once,
+# bob a moderator, whose @everyone in #general mentions alice,
+# and the desktop's notification service, dunst on Xvfb's
 # display, which keeps each notification it shows until it's taken back,
 # and writes down what it showed in ~/notify-shown.txt. ~/notify-bin holds
 # an xdg-open that writes down the address it's given, in

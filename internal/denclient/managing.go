@@ -10,7 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Managing files (M5): this member's files on a den, largest first, and
+// Managing files: this member's files on a den, largest first, and
 // taking one off its message or swapping it for another. A file's bytes
 // never change under its ID, so both are edits of the message: the den
 // changes a channel's, and this service seals a DM's again.
@@ -218,7 +218,7 @@ func (c *conn) changeDMFile(ctx context.Context, channelID, messageID, fileID st
 			return false, inputError(errors.New("that file isn't on that message any more"))
 		}
 		if with != nil {
-			// The file in its place is a spoiler if it was (M17.2), as the
+			// The file in its place is a spoiler if it was, as the
 			// den keeps a channel's.
 			replacing := *with
 			replacing.Spoiler = p.Files[i].Spoiler

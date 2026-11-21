@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Stages Dens's first release, as scripts/vendor.sh pins it, for the
-# lifecycle harnesses to install with a den and update from (M9.1):
+# lifecycle harnesses to install with a den and update from:
 # DEST/first/ gets its binary for TARGET (linux-amd64, linux-arm64 or
 # windows-amd64), named as the release names it, and its version file.
 #

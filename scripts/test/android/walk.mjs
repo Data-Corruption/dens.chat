@@ -1,4 +1,4 @@
-// The Android e2e's phone walk (M13): the page in the app's WebView at 390
+// The Android e2e's phone walk: the page in the app's WebView at 390
 // CSS pixels, through drive.mjs, as the phone check walks the browsers
 // (scripts/test/browser/screens.mjs), with what only a phone has: Android's
 // own taps, swipes and long presses (adb shell input), Back by
@@ -11,34 +11,34 @@
 // CTX is a JSON file of the den's IDs: den, general and random, a text
 // channel besides; for first, the invite, the member's username and
 // display name, the passwords, and the phone's name and model. PART is
-// first, the page's first screens (M13.3): the local password set, with
-// Link previews on (M22.7), and the den joined through the page's forms,
+// first, the page's first screens: the local password set, with
+// Link previews on, and the den joined through the page's forms,
 // by Android's taps and keyboard, to the recovery codes and Home, where
 // Manage lists the phone among the member's devices by its name, with its
 // model under it; around, getting around from Home to a channel, the list
-// and the members, and Back up to Home and out of the app; touch, M13.2's:
+// and the members, and Back up to Home and out of the app; touch:
 // a long press, a sheet's swipe down and Back, three lines sent by the send
 // button with the keyboard up, and a tip's tap;
-// pages, M13.3's: the settings and Manage as lists of pages that Back
+// pages: the settings and Manage as lists of pages that Back
 // walks out of, the phone's settings without keyboard shortcuts or screen
 // share, the viewer swiped through a message's photos, zoomed by a double
 // tap and closed by Back, a dialog swiped down, and the system bars
-// taking the page's background as its theme changes; call, M13.4's: in
+// taking the page's background as its theme changes; call: in
 // a call with desk, whose desk.mjs answers at CTX's desk, its length on
-// Lounge's row as desk's page shows it (M21.2), from a text channel and
+// Lounge's row as desk's page shows it, from a text channel and
 // without going to the list, the call's bar and button, desk's
 // share docked above the channel, full screen and back, a tap on the
 // button muting and unmuting, then, with its role push to talk, held
 // through Android's own touch while desk sees the member ring, with no
 // long press's buzz, and let go as the notification shade comes down
 // mid-press, desk leaving and joining again, whose sounds the page plays
-// through the call's context (M14.2), and the call left from its bar;
-// reactions, M15.3's: desk's reaction on the member's message, whose
+// through the call's context, and the call left from its bar;
+// reactions: desk's reaction on the member's message, whose
 // phone_msg CTX names, shown as a chip, and the member's on desk's,
 // desk_msg, from the long press's quick row, which stays for desk to see,
-// with the chip's tip by a long press; polls, M15.4's: desk's poll, whose
+// with the chip's tip by a long press; polls: desk's poll, whose
 // desk_poll CTX names, voted on by Android's own touch, its totals and
-// voters showing; relay, M20.3's: Keybind relay turned on in the settings,
+// voters showing; relay: Keybind relay turned on in the settings,
 // which has Android ask to let Dens reach its network, allowed on its
 // dialog, and the member's install beside desk's listed as sharing its
 // sound, whose Listen plays it across the link, as media, the page held as
@@ -111,8 +111,8 @@ async function first(h, d, c) {
         if (!(await reached(button('Set password'), "the local password's form", 30000))) throw new Error('no form to set the local password');
         await h.ev('document.activeElement?.blur(), true');
         await h.snap('set-password');
-        // A new phone is asked about link previews with the password
-        // (M22.7): one switch, on, which the member leaves.
+        // A new phone is asked about link previews with the password:
+        // one switch, on, which the member leaves.
         report(await h.ev(`document.getElementById('link-previews')?.checked === true && !document.getElementById('link-previews-steam')`),
             'the first run asks about link previews, one switch, on');
         await fill(field('input[type=password]', 0), c.local);
@@ -126,7 +126,7 @@ async function first(h, d, c) {
         await d.tap(button('Add a den'));
         await h.wait(`document.querySelector('[role=dialog] [data-way=invite] input')`, 'Add a den');
         await h.snap('add-den');
-        // The emulator has no camera, so Add a den offers no Scan (M22.6).
+        // The emulator has no camera, so Add a den offers no Scan.
         report(!(await h.ev(`!!document.querySelector('[role=dialog] [data-scan]')`)), 'with no camera, Add a den offers no Scan');
         await fill(`document.querySelector('[role=dialog] [data-way=invite] input')`, c.invite);
         await d.tap(`[...document.querySelectorAll('[role=dialog] [data-way=invite] button')].find((e) => e.textContent.trim() === 'Continue')`);
@@ -151,7 +151,7 @@ async function first(h, d, c) {
                 whole: [...ol.children].every((li) => li.getClientRects().length === 1 && li.scrollWidth <= li.clientWidth), width: Math.round(r.width) }; })()`);
         report(codes?.n > 0 && codes.columns === 1 && codes.whole, `the recovery codes stand in one column, each whole: ${JSON.stringify(codes)}`);
         // The app saves no file the page makes, so the codes copy, which
-        // lets Done through (M22.4).
+        // lets Done through.
         const saves = await h.ev(`[...document.querySelectorAll('main button')].map((e) => e.textContent.trim())`);
         report(saves.includes('Copy') && !saves.includes('Save as a file'), `the recovery codes copy, with no file to save in the app: ${JSON.stringify(saves)}`);
         await d.tap(`[...document.querySelectorAll('main button')].find((e) => e.textContent.trim() === 'Copy')`);
@@ -170,7 +170,7 @@ async function first(h, d, c) {
     });
     await step('devices', async () => {
         // A member's own sections of a den are under the cog on its page,
-        // its list's on the phone layout (M22.3).
+        // its list's on the phone layout.
         await d.tap(button('Open'));
         const cog = `document.querySelector('[data-pane=list] button[aria-label="Settings"]')`;
         await h.wait(cog, "the den's cog");
@@ -203,8 +203,8 @@ const hex = (rgb) => `#${[...rgb].map((v) => v.toString(16).padStart(2, '0')).jo
 // bars checks the status and navigation bars take the page's background,
 // with the theme the system's, then Dark, then Light, each chosen on the
 // settings' Appearance page and worn by Use, its editor a tab along the
-// page's foot (M22.8), then a theme of the member's own, pasted as its
-// code (M19.4), then the system's again (M13.3).
+// page's foot, then a theme of the member's own, pasted as its
+// code, then the system's again.
 async function bars(h, d) {
     const background = () => h.ev(`(() => { const c = document.createElement('canvas').getContext('2d');
         c.fillStyle = getComputedStyle(document.body).backgroundColor; c.fillRect(0, 0, 1, 1);
@@ -241,7 +241,7 @@ async function bars(h, d) {
         await pick(theme);
         await painted(theme);
     }
-    // A theme of the member's own (M19.4), pasted as its code: the WebView
+    // A theme of the member's own, pasted as its code: the WebView
     // wears it, and the bars its background.
     await d.tap(`document.querySelector('[data-foot-tab=themes]')`);
     await h.click(h.byText('[data-themes] button', 'Paste a code'));
@@ -261,7 +261,7 @@ async function bars(h, d) {
 }
 
 // styledName checks the WebView draws a name in the font its member
-// picked (M19.5): desk's, in general, in Pacifico, once the WebView has
+// picked: desk's, in general, in Pacifico, once the WebView has
 // fetched the face.
 async function styledName(h, c) {
     await h.go(`/den/${c.den}/${c.general}`);
@@ -275,7 +275,7 @@ async function styledName(h, c) {
     await h.snap('styled-name');
 }
 
-// callWalk walks M13.4's done-when, in a call with desk, the den's owner,
+// callWalk walks a call with desk, the den's owner,
 // whose desk.mjs answers at c.desk with what its page shows of the call,
 // and c.name the member's name there: the member joins Lounge from the
 // list, as desk shares, taps desk's LIVE there and goes to general, and
@@ -288,11 +288,11 @@ async function styledName(h, c) {
 // sees the member ring, and not before or after; holds it again as the
 // notification shade comes down, which lets it go; hears desk leave and
 // join again through the call's context, as Android plays the call's
-// voices, which a hook in the page counts (M14.2); hears desk, muted, play
+// voices, which a hook in the page counts; hears desk, muted, play
 // a sound of the den's soundboard, which the page plays from the call's
 // track through the call's context, desk's ring lit while it plays, and
-// plays one from the bar's soundboard, its sheet, which desk receives
-// (M14.3); and leaves from the bar.
+// plays one from the bar's soundboard, its sheet, which desk receives;
+// and leaves from the bar.
 async function callWalk(h, d, c) {
     const desk = async (path, method = 'GET') => (await fetch(c.desk + path, { method })).json();
     const onDesk = async () => (await desk('/call')).members.find((m) => m.name === c.name);
@@ -319,7 +319,7 @@ async function callWalk(h, d, c) {
         await h.wait(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`, 'the call', 30000);
         await waitFor(onDesk, 'desk to see the member in the call', 15000);
         report(!(await h.has(`document.querySelector('button[aria-label="Share your screen"]')`)), "the WebView's call has no share button");
-        // The call's length on Lounge's row (M21.2), as desk's page shows it,
+        // The call's length on Lounge's row, as desk's page shows it,
         // read a moment apart.
         const seconds = (text) => (text || '').split(':').reduce((n, x) => n * 60 + Number(x), 0);
         const length = await h.ev(`document.querySelector('[data-call-length]')?.textContent.trim() || ''`);
@@ -488,7 +488,7 @@ async function callWalk(h, d, c) {
     });
 }
 
-// board is what the page's call receives on the soundboard (M14.3), found
+// board is what the page's call receives on the soundboard, found
 // in its heap, as call.mjs finds its peer: the packets, and whether the
 // call's context plays it, its element muted and playing.
 async function board(b) {
@@ -522,7 +522,7 @@ const b = await webview(serial);
 // reactionsWalk checks desk's reaction on the member's message shows on the
 // phone's page as a chip, not the member's, and has the member react to
 // desk's from the long press's quick row, by Android's own touch, leaving
-// it for desk's page (M15.3).
+// it for desk's page.
 async function reactionsWalk(h, d, c) {
     await h.go(`/den/${c.den}/${c.general}`);
     const chip = `document.querySelector('[data-scroller] [data-id="${c.phone_msg}"] [data-reaction="u:🎉"]')`;
@@ -536,8 +536,7 @@ async function reactionsWalk(h, d, c) {
 
 // pollsWalk has the member vote on desk's poll by Android's own touch: a
 // tap on a choice's row and one on Vote, after which the totals show, with
-// their vote marked and desk's beside it, and a tap on its count says who
-// (M15.4).
+// their vote marked and desk's beside it, and a tap on its count says who.
 async function pollsWalk(h, d, c) {
     await h.go(`/den/${c.den}/${c.general}`);
     const poll = `document.querySelector('[data-scroller] [data-poll="${c.desk_poll}"]')`;
@@ -562,7 +561,7 @@ async function pollsWalk(h, d, c) {
     }
 }
 
-// relayWalk is Relay on the phone (M20.3), from Home by Android's own taps.
+// relayWalk is Relay on the phone, from Home by Android's own taps.
 async function relayWalk(h, d, c) {
     const SECTION = `[...document.querySelectorAll('[role=dialog][aria-label="Settings"] [data-section]')].find((b) => b.textContent.trim() === 'Relay')`;
     const KEYS = `document.getElementById('relay-keys')`;
@@ -755,7 +754,7 @@ try {
             await sleep(900);
         },
         // A finger put down and held through Android's own touch, at the
-        // middle of what x names, then lifted where it went down (M13.4).
+        // middle of what x names, then lifted where it went down.
         async down(x) {
             finger = toScreen(...(await spot(x)));
             adb('shell', 'input', 'motionevent', 'DOWN', String(finger[0]), String(finger[1]));

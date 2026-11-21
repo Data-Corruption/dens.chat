@@ -1,49 +1,49 @@
-// The call this page holds (M2): its microphone, its peer connection to
+// The call this page holds: its microphone, its peer connection to
 // the den, and the audio of everyone else in the call. The page signals
 // over its event stream, and the service on this computer relays to the
 // den, writing into each offer where the den's media goes. So the page
 // names no STUN or TURN server, and a call reaches nothing but the den.
 // The den makes every offer; the page only answers.
 //
-// From M3 a call rides out a dropped connection: when the den's connection
+// A call rides out a dropped connection: when the den's connection
 // drops, the den holds the call, and this page keeps its peer connection
 // and takes the call back once the den is back. When the browser's own
 // connection to the den's media ports breaks, the page asks for an ICE
 // restart. The page also measures who is speaking, from the audio it plays,
 // plays each member as loud as the member here chose, and runs the
 // microphone through the voice processor: RNNoise, unless the member
-// turned it off, and the gate that sends only what they mean to (M3.3), by
+// turned it off, and the gate that sends only what they mean to, by
 // voice activity or while they push to talk.
 //
-// From M4.2 the page shares its member's screen in the call, and plays the
+// The page shares its member's screen in the call, and plays the
 // shares they watch, which the player shows. It follows what the den says
 // of the call's den, to know its limits and who shares and watches.
 //
-// From M11 a member holding push to talk rings for everyone in the call,
+// A member holding push to talk rings for everyone in the call,
 // through the den, and the page notes what its connection does for the
 // service's log.
 //
-// From M12 the page plays its call again as it thaws from a freeze. Where
+// The page plays its call again as it thaws from a freeze. Where
 // audio may start without a click, as in Android's app, it makes its call's
 // audio contexts once the microphone is open, and plays the members' voices
 // through one of them, which Android then plays as a call's: under the
 // call's volume, and on the route the app's shell sets.
 //
-// From M13.4 a touch screen's call's button presses the actions the keys
+// A touch screen's call's button presses the actions the keys
 // do, as its role says, which sets how the member sends there.
 //
-// From M14.2 the call sounds as it changes: as members join and leave it,
+// The call sounds as it changes: as members join and leave it,
 // the member too, as shares start and end, and as the member's microphone
 // opens and closes, whatever moves it. Its sounds play as its voices do,
 // through the call's context where that plays them.
 //
-// From M14.3 the den streams its soundboard's sounds into the call on a
+// The den streams its soundboard's sounds into the call on a
 // track of the call's own, which the page plays as it plays a member, at
 // the member's soundboard volume, and silent while they're deafened. The
 // member plays a sound for the call through the den, which says whose
 // sound plays, and that player's ring lights as it does.
 //
-// From M16.2 a den that seals its calls takes a page only where it seals
+// A den that seals its calls takes a page only where it seals
 // what it sends: each frame of the member's voice, screen and share's
 // sound, in a worker of its own (sframe.worker.js), with WebRTC's Encoded
 // Transform, under keys the member's Dens makes for the call and hands the
@@ -53,7 +53,7 @@
 // the device no seal to open the call's keys with, the page says why
 // rather than join.
 //
-// From M18 the page seals every section it sends on in the task its offer
+// The page seals every section it sends on in the task its offer
 // was applied in, before anything else awaits, which is when Chromium
 // takes a sender's transform, and puts tracks only on senders it sealed
 // then. It holds what each sender sent against the frames its worker saw
@@ -109,7 +109,7 @@ const RESTART_WAIT = 15 * 1000;
 // opened before the call ended won't start again, which left every other
 // quick rejoin silent. So a call that begins within STREAM_KEPT of the
 // last one's end plays its members afresh REPLAY_AFTER after they start,
-// once Chromium has let that stream go (M12).
+// once Chromium has let that stream go.
 const STREAM_KEPT = 6000;
 const REPLAY_AFTER = 2000;
 // Speaking: a level above this, in dBFS, measured this often, and held
@@ -118,7 +118,7 @@ const SPEAKING_DB = -50;
 const METER_MS = 100;
 const SPEAKING_HOLD = 400;
 // The page sums its call's statistics up for the service's log this often,
-// and keeps this many notes while its stream to the service is down (M11).
+// and keeps this many notes while its stream to the service is down.
 const STATS_EVERY = 10 * 1000;
 const NOTES_KEPT = 64;
 
@@ -162,7 +162,7 @@ const audios = new Map();
 // callContext is the call's audio context, where meters measure each
 // member's audio, and this page's own as sent ("self"). Where audio may
 // start without a click, it plays the members too, each through their gain
-// in voices, by member ID (M12).
+// in voices, by member ID.
 let callContext = null;
 const meters = new Map();
 const voices = new Map();
@@ -171,7 +171,7 @@ const voices = new Map();
 const louder = new Map();
 let meterTimer = null;
 // speaking is who rings in the call: those the meters hear, audible, those
-// the den says hold push to talk, talkers (M11), and "self" while this
+// the den says hold push to talk, talkers, and "self" while this
 // page's member speaks or holds it.
 let speaking = new Set();
 let audible = new Set();
@@ -190,12 +190,12 @@ let volumes = readVolumes(stored(VOLUMES));
 // unmuted is how loud each member the member here muted played before,
 // which Unmute gives back.
 let unmuted = readVolumes(stored(UNMUTED));
-// wholeVolume is how loud the whole call plays here (M12).
+// wholeVolume is how loud the whole call plays here.
 let wholeVolume = readCallVolume(stored(CALL_VOLUME));
 // shareLevels is how loud each sharer's share plays here, by den and
 // sharer.
 let shareLevels = readShareLevels(stored(SHARE_VOLUMES));
-// share is the page's screen share (M4.2), or null: its status ("picking"
+// share is the page's screen share, or null: its status ("picking"
 // while the browser asks, "starting" until the den says it's live, then
 // "live"), its stream, tracks and quality, and the timer that checks its
 // size. shareNotice says why the last share or watch didn't go.
@@ -205,11 +205,11 @@ let shareNotice = null;
 // stream once it comes, and how loud its sound plays.
 const watched = new Map();
 // denView is what the page knows of the call's den: this member's ID, the
-// den's limits, its calls the member can see, and members' names; and from
-// M14.3 the member's role, the den's sounds and its limits for them.
+// den's limits, its calls the member can see, and members' names; and
+// the member's role, the den's sounds and its limits for them.
 let denView = null;
 // sounding is the member whose sound plays in the call, by the den's word,
-// or '' (M14.3); board is the member's soundboard: when their wait after
+// or ''; board is the member's soundboard: when their wait after
 // their last sound passes, by this page's clock, and why the den refused
 // the last sound they asked for.
 let sounding = '';
@@ -220,8 +220,8 @@ let board = { waitUntil: 0, notice: '' };
 // the volume the browser keeps for it, by den.
 export const SOUNDBOARD = 'soundboard';
 
-// frames is the worker that seals and opens a sealed call's frames
-// (M16.2), made at the first sealed call and kept, since a sender's or a
+// frames is the worker that seals and opens a sealed call's frames,
+// made at the first sealed call and kept, since a sender's or a
 // receiver's transform stays with the worker it was made with. receivers
 // names each receiver to it by an ID of the page's.
 let frames = null;
@@ -232,7 +232,7 @@ const countWaiters = [];
 let keysAsked = -Infinity;
 const KEYS_EVERY = 500;
 
-// The page's sounds play as the call's voices do (M14.2): through the
+// The page's sounds play as the call's voices do: through the
 // call's context where that plays them, and otherwise on the speaker the
 // member chose.
 setSoundRoute(() => ({ context: autoplays() && callContext?.state !== 'closed' ? callContext : null, speaker: stored(SPEAKER) }));
@@ -246,7 +246,7 @@ function start() {
         document.addEventListener('visibilitychange', () => note({ what: 'hidden', hidden: document.hidden }));
         // Chromium freezes a hidden page a minute after its sound stops,
         // which pauses its media elements and never plays them again: the
-        // page plays its call's again as it thaws (M12).
+        // page plays its call's again as it thaws.
         document.addEventListener('freeze', () => note({ what: 'frozen' }));
         document.addEventListener('resume', () => {
             note({ what: 'resumed' });
@@ -302,7 +302,7 @@ export function inCall() {
 
 // callLimits are the limits of the den the page's call is in, once known,
 // or null outside a call, for the share settings to name a den's lower
-// limits while they apply (M8.3).
+// limits while they apply.
 export function callLimits() {
     return call ? denView?.limits || null : null;
 }
@@ -352,13 +352,13 @@ export async function joinCall(den, channel, label) {
     // for the microphone may need another click to start. Where audio may
     // start without one, both wait for the microphone: Android's app plays
     // a context made while the microphone is open as a call's, and one made
-    // before it as media, never on a headset during a call (M12).
+    // before it as media, never on a headset during a call.
     if (!autoplays()) {
         startMeters();
         if (!mic && !processorFailed) warmContext ??= new AudioContext({ sampleRate: 48000 });
     }
     notify();
-    // Whether the den seals its calls decides how the page joins (M16.2).
+    // Whether the den seals its calls decides how the page joins.
     await loadDen(c);
     if (call !== c) return;
     const why = sealedJoin(denView);
@@ -372,7 +372,7 @@ export async function joinCall(den, channel, label) {
 }
 
 // sealedJoin says why the page can't join a call in a den, as it knows
-// it, or null where it can (M16.2): a den that seals its calls takes a page
+// it, or null where it can: a den that seals its calls takes a page
 // only where it seals what it sends, which takes the browser's Encoded
 // Transform, and opens the others' keys, which takes the member's DM
 // recovery key on this device. A den the page couldn't load is taken for
@@ -464,7 +464,7 @@ async function connect() {
     }
     // A den that came to seal its calls since the page joined, as by an
     // update, which ended the call as it restarted, takes it back only
-    // sealed (M16.2).
+    // sealed.
     if (denView?.den === c.den && denView.sealed && !c.sealed) {
         const why = sealedJoin(denView);
         if (why) {
@@ -496,7 +496,7 @@ async function connect() {
         dropped('disconnected', 'stream');
         return;
     }
-    // The den hears push to talk afresh in each call it joins (M11).
+    // The den hears push to talk afresh in each call it joins.
     c.talkSent = false;
     tellTalking();
     // A call joined again, as after the den restarted, takes the page's
@@ -575,7 +575,7 @@ async function openMic(c) {
     sent = v.track;
     applySending();
     // Where audio may start without a click, the call's context starts now
-    // that the microphone is open (M12); otherwise it started as the call
+    // that the microphone is open; otherwise it started as the call
     // did.
     startMeters();
     meter('self', new MediaStream([sent]));
@@ -738,10 +738,10 @@ async function reopenMic() {
 // level in dBFS, or while they push to talk ("ptt"), which the browser
 // keeps, with how long push to talk stays open after its key's release,
 // in milliseconds. Their keys for push to talk, toggle mute, push to mute
-// and toggle deafen live in the service from M7, so its helper can read
+// and toggle deafen live in the service, so its helper can read
 // them in other programs.
 //
-// From M13.4 the call's button, on a touch screen, has a role, one of
+// The call's button, on a touch screen, has a role, one of
 // those three actions, which sets how the member sends there: push to talk
 // sends while it's held, and toggle mute, the default, and push to mute by
 // voice activity. The role and the mode never disagree: settings kept from
@@ -796,7 +796,7 @@ export function readKeys(keys) {
 // readKeyStatus reads what the service says of the keys and its helper:
 // the keys, whether a helper is connected, the actions it reads in other
 // programs during a call, what the system keeps from it, and why it reads
-// none, where it can't. Where the desktop owns the keys (M7.2) it also says
+// none, where it can't. Where the desktop owns the keys it also says
 // so (confirms), whether the member can set them up with it (bindable),
 // whether its dialog is up (binding), its names for the keys, whether it
 // can show its settings for them (configurable), and whether the member
@@ -819,7 +819,7 @@ export function readKeyStatus(d) {
         names,
         configurable: helper && !!d.configurable,
         desktop: !!d?.desktop,
-        // The helper shows notifications as the desktop's own (M12.3).
+        // The helper shows notifications as the desktop's own.
         notifies: helper && !!d.notifies,
     };
 }
@@ -856,7 +856,7 @@ export function onKeys(fn) {
 
 // setVoice changes how the member sends, which takes hold at once, in a
 // call and in the settings' microphone test. A role for the call's button
-// sets the mode with it (M13.4).
+// sets the mode with it.
 export function setVoice(changes) {
     const mode = 'button' in changes ? { mode: changes.button === 'ptt' ? 'ptt' : 'voice' } : {};
     voice = readVoice(JSON.stringify({ ...voice, ...changes, ...mode }));
@@ -890,7 +890,7 @@ export function gateFor(v, rnnoise, held) {
 // applySending sends what the member chose: nothing while muted, and what
 // the gate lets through otherwise. Without the processor, push to talk
 // holds the track back itself, and voice activity sends everything. The
-// call hears whether they hold push to talk, which rings for it (M11).
+// call hears whether they hold push to talk, which rings for it.
 function applySending() {
     for (const c of [chain, testing?.chain]) c?.node.port.postMessage({ gate: gateFor(voice, c.rnnoise, pttHeld) });
     if (sent) sent.enabled = !isMuted() && (chain || voice.mode !== 'ptt' || pttHeld);
@@ -899,7 +899,7 @@ function applySending() {
     sound();
 }
 
-// Push to talk's ring (M11) ---------------------------------------------------
+// Push to talk's ring ---------------------------------------------------
 
 // talking says whether a member rings for holding push to talk: while they
 // send by it, hold its key and aren't muted.
@@ -939,7 +939,7 @@ export function ringing(heardNow, talkersNow, me, self) {
 // rings says whether a member of a call rings, from who rings in it, by
 // their ID or "self" for this page's member, me: never while they're
 // muted, by themselves or by staff, whatever the den or the meters say,
-// but while their sound plays, by the den's word, soundingNow (M14.3),
+// but while their sound plays, by the den's word, soundingNow,
 // since a member playing a sound is often muted. Nobody rings for a page
 // whose member is deafened, deafened, who hears none of it.
 export function rings(m, me, ringingNow, soundingNow = '', deafened = false) {
@@ -1142,7 +1142,7 @@ function sendAs(s) {
 }
 
 // pressButton and releaseButton are the call's button's press and its
-// letting go (M13.4): one more source of presses for the actions the keys
+// letting go: one more source of presses for the actions the keys
 // and the helper drive, its role's.
 export function pressButton() {
     if (call) pressAction(voice.button);
@@ -1152,7 +1152,7 @@ export function releaseButton() {
     releaseAction(voice.button);
 }
 
-// listenIn has another window of the page's, as a share's own (M11), take
+// listenIn has another window of the page's, as a share's own, take
 // the voice keys while it has focus, as the page does, and returns a
 // function that stops.
 export function listenIn(win) {
@@ -1246,7 +1246,7 @@ function boundButton(code) {
 }
 
 // pointerdown ends the wait for a key on a press of any other button, as
-// a click elsewhere in the page, as Escape does (M11).
+// a click elsewhere in the page, as Escape does.
 function pointerdown(e) {
     if (capture && !MOUSE[e.button]) cancelCapture();
 }
@@ -1291,7 +1291,7 @@ function release() {
 }
 
 // helperPress acts on a press the helper read, in this page's call, or
-// one another of the member's devices read (M20), which this install's own
+// one another of the member's devices read, which this install's own
 // helper needn't cover and no field here types.
 function helperPress(p) {
     if (!call || !p || !KEYS.includes(p.action) || (!p.relayed && !covered(p.action))) return;
@@ -1381,7 +1381,7 @@ function handle(msg) {
     else if (e.ended) ended(e.ended);
 }
 
-// moved joins the voice channel staff moved the member to (M17.2), as if
+// moved joins the voice channel staff moved the member to, as if
 // they'd picked it: sealed, as every join is, muted and deafened as they
 // were, which ends this call. The channel's name is the den's, for the
 // call's label.
@@ -1425,10 +1425,10 @@ async function answer(offer) {
         // The den's first section takes the microphone, and the den receives
         // the member's screen and its sound on sections it adds at their
         // first share in the call; each of the rest brings another member's
-        // audio, or a share's (M4.2). Those the page sends on are sealed
-        // here, before anything else awaits, so nothing leaves in the clear
-        // (M16.2): Chromium sends a sender around a transform it gets any
-        // later, for good (M18). The task the offer was applied in ends
+        // audio, or a share's. Those the page sends on are sealed
+        // here, before anything else awaits, so nothing leaves in the clear:
+        // Chromium sends a sender around a transform it gets any
+        // later, for good. The task the offer was applied in ends
         // before any task the page sets now.
         const applying = { now: true };
         setTimeout(() => (applying.now = false), 0);
@@ -1464,7 +1464,7 @@ function play(e) {
     const stream = e.streams[0];
     if (!stream) return;
     // Before anything plays, the receiver's frames go through the worker,
-    // which opens its member's and passes the soundboard's (M16.2).
+    // which opens its member's and passes the soundboard's.
     openReceiver(e.receiver, stream.id, e.track?.kind);
     // A share the page watches plays in the player; one it didn't ask for,
     // which only a misbehaving den would send, plays nowhere.
@@ -1478,7 +1478,7 @@ function play(e) {
         return;
     }
     // The soundboard plays as a member does, under its own key, but rings
-    // for nobody: the den says whose sound it is (M14.3).
+    // for nobody: the den says whose sound it is.
     const member = stream.id;
     let audio = audios.get(member);
     if (!audio) {
@@ -1489,7 +1489,7 @@ function play(e) {
         audios.set(member, audio);
     }
     // Where audio may start without a click, the call's context plays the
-    // member, as the call's sound (M12). Chromium decodes a member's stream
+    // member, as the call's sound. Chromium decodes a member's stream
     // only while a media element plays it, so theirs plays it too, muted.
     if (autoplays()) playVoice(member, stream);
     // level boosts from the element's stream, so the stream goes in
@@ -1541,7 +1541,7 @@ function replaySoon() {
 }
 
 // playVoice plays a member's stream through the call's context, at the
-// level the member here chose for them (M12).
+// level the member here chose for them.
 function playVoice(member, stream) {
     if (!callContext) return;
     dropVoice(member);
@@ -1662,7 +1662,7 @@ function hold() {
     clearTimeout(c.restartBy);
     c.restartBy = null;
     // The den's word on push to talk, and on whose sound plays, waits for
-    // the resume (M11, M14.3).
+    // the resume.
     talkers = new Set();
     sounding = '';
     ring();
@@ -1714,7 +1714,7 @@ function resumed() {
         restart(c, 'resumed');
     }
     // A mark changed while the den was away goes now, and push to talk the
-    // den let go of as the socket closed (M11).
+    // den let go of as the socket closed.
     sendCall('voice.mute', { den: c.den, muted: c.muted, deafened: c.deafened });
     c.talkSent = false;
     tellTalking();
@@ -1792,7 +1792,7 @@ function closePeer() {
 // finish ends the call for good, and says why when there's a reason to.
 // The member leaving plays its sound, however the call ended, as when staff
 // disconnect them, once the call's audio has gone, since its context goes
-// with it (M14.2).
+// with it.
 function finish(why) {
     const left = !!call?.heard?.in && !call.deafened;
     clearTimeout(rejoinTimer);
@@ -1816,18 +1816,18 @@ function finish(why) {
     board = { waitUntil: 0, notice: '' };
     notice = why && call ? { ...why, den: call.den, channel: call.channel, label: call.label } : null;
     call = null;
-    // The browser holds a call's keys only while it lasts (M16.2).
+    // The browser holds a call's keys only while it lasts.
     frames?.postMessage({ t: 'end' });
     notify();
     if (left) playSound('left');
 }
 
-// Notes for the log (M11) -----------------------------------------------------
+// Notes for the log -----------------------------------------------------
 
 // The page notes what its call's connection does, which the service logs
 // at debug by the notes' own fields alone: each change of its state, the
 // restarts it asks for, each join again and giving up, with why, its tab
-// hidden or shown, its page frozen and thawed (M12), and at each change and
+// hidden or shown, its page frozen and thawed, and at each change and
 // every STATS_EVERY a summary of its statistics. Notes made while the
 // stream to the service is down wait, the newest NOTES_KEPT, and go once
 // it's back, saying how long before.
@@ -1857,7 +1857,7 @@ function sendNotes() {
 // noteStats notes a summary of the call's statistics, with the rate it has
 // sent at since the last, and how far the voice processor runs behind,
 // which tell a renderer short of CPU, as on a phone off screen, apart from
-// Opus's rate falling with the network's (M12).
+// Opus's rate falling with the network's.
 async function noteStats() {
     const own = pc;
     if (!own) return;
@@ -1880,11 +1880,11 @@ async function noteStats() {
         if (counts) stats.frames = frameNotes(counts);
     }
     note({ what: 'stats', stats });
-    // Each of the page's senders, its seal checked again (M18).
+    // Each of the page's senders, its seal checked again.
     checkSeals(own, true);
 }
 
-// frameNotes is what the call's notes say of the worker's counts (M18):
+// frameNotes is what the call's notes say of the worker's counts:
 // each track's frames sealed and opened, those that came empty, and those
 // dropped, by why, and those on a receiver the page hadn't named.
 export function frameNotes(counts) {
@@ -1925,7 +1925,7 @@ export function behindBy(start, now) {
 // summarize sums a getStats report up for the log: the path the call takes,
 // its protocol and its candidates' types, packets and bytes sent and
 // received, packets lost on the way in, and jitter and round-trip time, in
-// milliseconds, with the rate in kbit/s its encoder aims at (M12), which
+// milliseconds, with the rate in kbit/s its encoder aims at, which
 // Firefox doesn't say. Chromium names the path in its transport's stats,
 // and Firefox marks its candidate pair selected; Firefox times the round
 // trip only in what the den reports back.
@@ -1954,7 +1954,7 @@ export function summarize(report) {
     };
 }
 
-// Sealing (M16.2) -------------------------------------------------------------
+// Sealing -------------------------------------------------------------
 
 // The tracks of a member's, as the worker numbers and names them.
 export const VOICE_TRACK = 0;
@@ -1980,7 +1980,7 @@ function framesWorker() {
 // the task the offer was applied in, while applying.now holds, before
 // anything awaits, since Chromium sends a sender it made for an offer
 // around a transform it gets any later, for good, taking it without an
-// error (M18). A sender sealed any later carries no track. A sender keeps
+// error. A sender sealed any later carries no track. A sender keeps
 // its transform as its track changes, and the den keeps the sections, so a
 // later share in the call finds its senders sealed.
 function sealSections(c, own, sections, applying) {
@@ -2009,7 +2009,7 @@ export function sendingTransceivers(transceivers, sections) {
 // in a call that isn't sealed, and in one that is, only a sender sealed as
 // its offer was applied, and never one the browser sent around its seal.
 // So a change that broke the order again would leave a sender silent
-// rather than in the clear (M18).
+// rather than in the clear.
 function carries(c, sender) {
     return !c.sealed || (sealedInTime.has(sender) && !unsealed.has(sender));
 }
@@ -2079,7 +2079,7 @@ function frameCounts() {
     });
 }
 
-// Each sender's seal (M18) ---------------------------------------------------
+// Each sender's seal ---------------------------------------------------
 
 // The page seals each of its senders in the task its offer was applied in,
 // when Chromium takes a transform, but a browser could still send one
@@ -2250,7 +2250,7 @@ async function loadDen(c) {
             names: new Map((v.members || []).map((m) => [m.id, m.display_name])),
             sounds: v.sounds || [],
             soundLimits: readSoundLimits(v.sound_limits),
-            // From M16.2: whether the den seals its calls, whether this
+            // Whether the den seals its calls, whether this
             // device holds the member's seal, and the identities their Dens
             // kept, for the call's lock.
             sealed: !!v.sealed_calls,
@@ -2280,13 +2280,13 @@ function denEvents(events) {
 }
 
 // readSoundLimits reads a den's limits for its soundboard, or null for a
-// den older than it, which has none (M14.3).
+// den older than it, which has none.
 export function readSoundLimits(l) {
     return l && Number.isInteger(l.longest) && l.longest > 0 ? { sounds: l.sounds, longest: l.longest, wait: l.wait } : null;
 }
 
 // applySounds brings a den's sounds up to date with one of its events: one
-// added or renamed, or deleted (M14.3).
+// added or renamed, or deleted.
 export function applySounds(sounds, e) {
     const rest = (sounds || []).filter((s) => s.id !== e.d.id);
     return e.t === 'sound.deleted' ? rest : [...rest, e.d];
@@ -2325,7 +2325,7 @@ function followDen() {
     notify();
 }
 
-// Sounds (M14.2) ------------------------------------------------------------
+// Sounds ------------------------------------------------------------
 
 // micOpen says whether the member's microphone is open in their call:
 // unless they or staff muted them, and by push to talk while they hold it.
@@ -2372,7 +2372,7 @@ export async function startShare() {
     if (call !== c || share || !denView) return;
     shareNotice = null;
     // A sender the browser sent around its seal carries nothing more in the
-    // call (M18): without the screen's there's no share, and without its
+    // call: without the screen's there's no share, and without its
     // sound's the share goes without sound.
     const blocked = unsealedOn(c.screenMid) ? UNSEALED_AGAIN : shareBlocked(denView.limits, denView.calls);
     if (blocked) {
@@ -2467,7 +2467,7 @@ function endShare(why) {
 
 // attachShare puts the page's screen and its sound on the den's sections
 // for them, once the den has added them, on senders sealed as their offer
-// was applied (M18).
+// was applied.
 async function attachShare(own) {
     const c = call;
     const s = share;
@@ -2573,7 +2573,7 @@ export function speakerID() {
 }
 
 // refused is the den refusing the page's share, its watch of one, or a
-// sound it asked to play (M14.3), whose wait the page takes as starting
+// sound it asked to play, whose wait the page takes as starting
 // now where it didn't know of it.
 function refused(r) {
     const limits = denView?.limits;
@@ -2597,7 +2597,7 @@ export function clearShareNotice() {
     notify();
 }
 
-// Soundboard (M14.3) ---------------------------------------------------------
+// Soundboard ---------------------------------------------------------
 
 // sounded is the den's word on whose sound plays in the call: the member's
 // own ending starts their wait.
@@ -2646,7 +2646,7 @@ function startMeters() {
     }
     meterTimer = setInterval(measure, METER_MS);
     // Where the call's context plays its sounds, they're decoded for it
-    // now, so the first of each plays without waiting (M14.2), and Relay's
+    // now, so the first of each plays without waiting, and Relay's
     // sound moves into it, onto the call's route.
     if (autoplays()) {
         warmSounds(callContext);
@@ -2730,7 +2730,7 @@ export function speakingNow(levels, last, now) {
 // there; past it, a gain in the call's context plays them (boost). A page
 // that keeps only volumes under 1 reads one past it as full.
 //
-// The call's volume turns everyone down at once, under their own (M12):
+// The call's volume turns everyone down at once, under their own:
 // a phone's loudspeaker plays a call loud even at its lowest call volume.
 // The browser keeps it too.
 
@@ -2922,7 +2922,7 @@ export function endedText(reason, ports) {
 
 // micProblem says why the microphone didn't open, and where a refused one
 // is allowed: a browser's site settings, or where the app holds the page's
-// permissions, Android's (M13.3).
+// permissions, Android's.
 export function micProblem(e, app = inApp()) {
     switch (e?.name) {
         case 'NotAllowedError':

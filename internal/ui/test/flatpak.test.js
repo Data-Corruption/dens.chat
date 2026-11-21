@@ -1,4 +1,4 @@
-// What the page says of what differs in the Flatpak (M9.3).
+// What the page says of what differs in the Flatpak.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -10,13 +10,13 @@ test("an installed Dens's notice gives the update command, and no update gives n
         { text: 'Dens v1.2.0 is available. To update, run:', command: 'sudo dens update' });
 });
 
-test("the Android app's notice installs an update it downloaded and checked (M12.4)", () => {
+test("the Android app's notice installs an update it downloaded and checked", () => {
     assert.deepEqual(updateNotice({ updateReady: 'v1.5.1' }), { text: 'Dens v1.5.1 is ready to install.', action: 'install', label: 'Install' });
 });
 
 test("the Flatpak's notice restarts into an installed update, updates where Flatpak lets Dens, and sends to the software center otherwise", () => {
     assert.equal(updateNotice({ flatpakUpdate: { available: false, installed: true } }).action, 'restart');
-    // The version, where Dens asked the newest build installed (M9.4).
+    // The version, where Dens asked the newest build installed.
     assert.equal(updateNotice({ flatpakUpdate: { installed: true, version: 'v1.2.1' } }).text, 'Dens v1.2.1 is installed.');
     assert.equal(updateNotice({ flatpakUpdate: { installed: true } }).text, 'An update to Dens is installed.');
     assert.equal(updateNotice({ flatpakUpdate: { available: true, installed: true, can_install: true } }).action, 'restart');

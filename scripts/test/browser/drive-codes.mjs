@@ -1,4 +1,4 @@
-// The M16.1 check of identities and codes: alice, who owns the den, in
+// The codes check, of identities and codes: alice, who owns the den, in
 // Chromium, and bob in the browser named. Their DM opens at once, its
 // composer showing on both pages with nothing to type, and both write at
 // the same moment, each reading both. Each compares the other's code: from

@@ -1,7 +1,7 @@
-// YouTube's players (M4.1). With them on, a message's YouTube links get
+// YouTube's players. With them on, a message's YouTube links get
 // covers under it: each video's picture, title and channel, which the local
-// service fetched, the title and channel linking to them on YouTube
-// (M14.1), and a play button that swaps in YouTube's own player, in the
+// service fetched, the title and channel linking to them on YouTube,
+// and a play button that swaps in YouTube's own player, in the
 // same box, of the size the member chose in Appearance. One plays at a
 // time. A Short's box is portrait, and its picture is the Short's own.
 //
@@ -146,7 +146,7 @@ function Player({ video }) {
 
 // channelURL is the address a cover links its channel's name to, which
 // the service keeps only on YouTube's own site; the page takes no other
-// either (M14.1).
+// either.
 export function channelURL(about) {
     const url = about?.channel_url;
     return typeof url === 'string' && url.startsWith('https://www.youtube.com/') ? url : null;
@@ -155,7 +155,7 @@ export function channelURL(about) {
 // Cover is what a video shows until it plays: its picture under a play
 // button that fills the box, and its title and channel laid over that, as
 // links to the video and the channel on YouTube, each opening a new tab as
-// a message's links do (M14.1). A link can't sit in a button, so the words
+// a message's links do. A link can't sit in a button, so the words
 // lie over it, taking the pointer only where they are, and a click
 // anywhere else on the cover plays the video. Each takes 24 pixels of
 // height, a finger's least. The button's group is named, since the

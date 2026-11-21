@@ -407,7 +407,7 @@ func TestBadgesOnProfiles(t *testing.T) {
 }
 
 // TestBadgeHidden checks a member hides a badge they earned from their
-// card and shows it again (M17.6): their own profile carries it marked,
+// card and shows it again: their own profile carries it marked,
 // everyone else's copy leaves it out, the den keeps the mark alone and
 // tells nobody, and a badge they didn't earn, or whose event they no
 // longer see, is no such badge.

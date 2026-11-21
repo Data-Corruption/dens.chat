@@ -10,7 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// The den's emoji (M15.2): staff's page adds an emoji by an upload, a PNG
+// The den's emoji: staff's page adds an emoji by an upload, a PNG
 // its canvas drew or a GIF this service made (see UploadAnimated), and a
 // name; every page draws the den's emoji, by their images, which this
 // service fetches into the cache ahead of their use.

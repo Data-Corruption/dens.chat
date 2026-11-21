@@ -1,11 +1,11 @@
 // The player that floats over the page and plays the shares this member
-// watches (M4.2), and their own while they share, as a preview: they drag
+// watches, and their own while they share, as a preview: they drag
 // it by its bar and resize it from its corners, and the browser keeps
 // where it was and its size. It holds every share side by side; clicking
 // one makes it fill the player, while the others go on out of sight, and
-// clicking it again puts it back. From M11 a share they watch can play in
-// a window of its own, while the player keeps its place. From M13.4 the
-// phone layout docks it instead, across the top of the channel's pane.
+// clicking it again puts it back. A share they watch can play in a
+// window of its own, while the player keeps its place. The phone layout
+// docks it instead, across the top of the channel's pane.
 
 import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -144,7 +144,7 @@ export function SharePlayer() {
     );
 }
 
-// DockedPlayer is the player on the phone layout (M13.4): across the top of
+// DockedPlayer is the player on the phone layout: across the top of
 // the channel's pane, under the call's bar, or under Home's call box, at
 // the screen's width and the share's shape, up to half the screen's
 // height. It shows one share at a time, the one the member last began to
@@ -182,7 +182,7 @@ export function DockedPlayer() {
     );
 }
 
-// Away holds the place of a share that plays in a window of its own (M11),
+// Away holds the place of a share that plays in a window of its own,
 // saying so, with a button that brings it back, and fills that window from
 // the page's own render: Preact makes the window's elements, which its
 // document takes in.
@@ -214,10 +214,10 @@ function Away({ w, win, deafened, hidden }) {
 // and controls of the page's own that show on hover or focus. The member's
 // own share shows without sound, and its ✕ hides it, while they go on
 // sharing. doc is the document the tile shows in: the page's, or a share's
-// own window's, where alone has it fill the window (M11). docked has it
+// own window's, where alone has it fill the window. docked has it
 // fill the docked player, where a tap on the picture plays it full screen
 // and, of several, place says which it is, with a button to the next; and
-// it says its share's size through onSize (M13.4).
+// it says its share's size through onSize.
 function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alone, docked, place, onNext, onSize }) {
     const frame = useRef(null);
     const video = useRef(null);
@@ -250,7 +250,7 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
         const t = setTimeout(() => setPopped(''), 6000);
         return () => clearTimeout(t);
     }, [popped]);
-    // The page's layout holds while its share plays full screen (M13.4).
+    // The page's layout holds while its share plays full screen.
     function toggleFull() {
         if (doc.fullscreenElement) {
             doc.exitFullscreen().catch(() => {});
@@ -287,7 +287,7 @@ function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alo
                 </span>
             )}
             {popped && <span role="status" class="absolute inset-x-0 top-0 bg-black/70 p-2 text-center text-xs text-white">{popped}</span>}
-            {/* A touch screen, which has no hover, always shows them (M13.2). */}
+            {/* A touch screen, which has no hover, always shows them. */}
             <div class="absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white opacity-0 transition-opacity group-hover:opacity-100 group-has-[:focus-visible]:opacity-100 pointer-coarse:opacity-100">
                 <span class="min-w-0 flex-1 truncate px-1 text-xs">{w.label}</span>
                 <div class={`group/volume relative shrink-0 ${w.self ? 'hidden' : 'flex'}`}>

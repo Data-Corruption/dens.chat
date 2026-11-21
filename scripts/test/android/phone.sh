@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Works a device through the Android container's adb (M12): the emulator,
+# Works a device through the Android container's adb: the emulator,
 # or a phone paired over wireless debugging. adb has the shell's rights on
 # a phone, so everything here keeps to the app's own: its files (through
 # run-as, which a development build allows), its log lines (by its UID),

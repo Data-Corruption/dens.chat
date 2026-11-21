@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-// The shell writes the data key and closes the pipe (M12): exactly a key is
+// The shell writes the data key and closes the pipe: exactly a key is
 // one, and anything else is refused.
 func TestShellKeyIsExactlyAKey(t *testing.T) {
 	want := bytes.Repeat([]byte{7}, HostKeySize)

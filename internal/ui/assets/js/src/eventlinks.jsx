@@ -1,4 +1,4 @@
-// Links to events (M17.5). In a message, a link to an event shows as a
+// Links to events. In a message, a link to an event shows as a
 // chip naming it, as a link to a message names its channel, and under the
 // message as the event's card (denevents.jsx). Both read the event here:
 // one of the open den's events to come from its state, which keeps it

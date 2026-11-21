@@ -32,9 +32,9 @@ import (
 	"strings"
 )
 
-// Protocol versions this build speaks. Version 2 (M16.3) brings group
+// Protocol versions this build speaks. Version 2 brings group
 // DMs, which a den sends nothing of to a client speaking 1, and version 3
-// (M17.3) notes to self, which it sends nothing of to one speaking 1 or 2.
+// notes to self, which it sends nothing of to one speaking 1 or 2.
 const (
 	Version    = 3
 	MinVersion = 1
@@ -103,7 +103,7 @@ var codes = map[string]bool{
 
 // KnownCode reports whether code is one of the protocol's error codes. A
 // den's code is its own text, so the client shows a member only the codes
-// it knows (M8).
+// it knows.
 func KnownCode(code string) bool { return codes[code] }
 
 // WebSocket close codes beyond the standard ones.
@@ -294,33 +294,33 @@ type Den struct {
 	URL  string `json:"url"`
 	// Limits, CallLimits, Retention, SoundLimits, EmojiLimits and
 	// EventLimits come to members, in ready and den.updated, and not in a
-	// join preview. CallLimits are from M4.2, Retention, the days a message
-	// is kept, 0 for ever, from M5, SoundLimits, the soundboard's, from
-	// M14.3, EmojiLimits from M15.2 and EventLimits from M17.4. Emoji turned
-	// off are a count of 0, which a den sends as it is, so it needs telling
-	// from a den older than emoji, which sends none; and a den sends
-	// EventLimits to say it has events at all.
+	// join preview. Retention is the days a message is kept, 0 for ever.
+	// A den older than v1.7.0 sends no SoundLimits, the soundboard's, one
+	// older than v1.8.0 no EmojiLimits, and one older than v1.10.0 no
+	// EventLimits. Emoji turned off are a count of 0, which a den sends as
+	// it is, so it needs telling from a den older than emoji, which sends
+	// none; and a den sends EventLimits to say it has events at all.
 	Limits      Limits       `json:"limits,omitzero"`
 	CallLimits  CallLimits   `json:"call_limits,omitzero"`
 	Retention   int          `json:"retention,omitempty"`
 	SoundLimits SoundLimits  `json:"sound_limits,omitzero"`
 	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"`
 	EventLimits *EventLimits `json:"event_limits,omitempty"`
-	// SealedCalls says the den seals every call end to end (M16.2), and
+	// SealedCalls says the den seals every call end to end, and
 	// takes no join that doesn't; a den older than it doesn't say so.
 	SealedCalls bool `json:"sealed_calls,omitempty"`
 	// Disappearing says the den deletes a DM's and a group's messages at
-	// the time their members set (M16.4); a den older than it doesn't.
+	// the time their members set; a den older than it doesn't.
 	Disappearing bool `json:"disappearing,omitempty"`
 	// Spoilers says the den keeps which of a channel's files went as
 	// spoilers, and MoveMembers that staff move members from one call to
-	// another (M17.2); a den older than them says neither.
+	// another; a den older than them says neither.
 	Spoilers    bool `json:"spoilers,omitempty"`
 	MoveMembers bool `json:"move_members,omitempty"`
 	// NameStyles says the den keeps a style for each member's name; a den
 	// older than them drops one a member sets.
 	NameStyles bool `json:"name_styles,omitempty"`
-	// Relay says the den passes boxes between a member's devices (M20), so
+	// Relay says the den passes boxes between a member's devices, so
 	// their installs ask only a den that does.
 	Relay bool `json:"relay,omitempty"`
 }
@@ -335,7 +335,7 @@ const (
 // Member is an account on a den. A member who left or was removed keeps
 // their record, with LeftAt set, so their messages still have a name. Bio
 // comes only with GET /api/members/{id}, to keep snapshots small.
-// Identity is the hash of the identity their Dens published (M16.1), as
+// Identity is the hash of the identity their Dens published, as
 // base64url, which a change to it reaches everyone with; none before it
 // published one, as from an older Dens. NameStyle is how their name
 // shows, left out when they set none.
@@ -355,7 +355,7 @@ type Member struct {
 
 // MemberProfile is a member as GET /api/members/{id} answers, for their
 // profile card: their record with their bio, and the badges they earned
-// whose events the asker sees, latest first (M17.5), which travel with the
+// whose events the asker sees, latest first, which travel with the
 // card alone, as the bio does.
 type MemberProfile struct {
 	Member
@@ -407,8 +407,7 @@ type JoinRequest struct {
 	DeviceLabel string `json:"device_label"`
 	Nonce       Bytes  `json:"nonce"`
 	Proof       Bytes  `json:"proof"`
-	// SealCheck identifies the DM seal the joining member's client holds
-	// (M1.7).
+	// SealCheck identifies the DM seal the joining member's client holds.
 	SealCheck Bytes `json:"seal_check"`
 }
 
@@ -454,11 +453,11 @@ type DenUpdateRequest struct {
 	URL        *string     `json:"url,omitempty"`
 	Limits     *Limits     `json:"limits,omitempty"`
 	CallLimits *CallLimits `json:"call_limits,omitempty"`
-	// Retention is the days a message is kept, or 0 to keep them all (M5).
+	// Retention is the days a message is kept, or 0 to keep them all.
 	Retention   *int         `json:"retention,omitempty"`
-	SoundLimits *SoundLimits `json:"sound_limits,omitempty"` // M14.3
-	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"` // M15.2
-	EventLimits *EventLimits `json:"event_limits,omitempty"` // M17.4
+	SoundLimits *SoundLimits `json:"sound_limits,omitempty"`
+	EmojiLimits *EmojiLimits `json:"emoji_limits,omitempty"`
+	EventLimits *EventLimits `json:"event_limits,omitempty"`
 }
 
 // Ready is the snapshot that starts a connection, or replaces the client's
@@ -473,25 +472,25 @@ type Ready struct {
 	Channels   []Channel   `json:"channels"`
 	ReadStates []ReadState `json:"read_states"`
 	Online     []string    `json:"online"`
-	// M1.7: the member's seal check, the keys of their DMs without their
+	// The member's seal check, the keys of their DMs without their
 	// exchanges, and sign-ins waiting for their approval.
 	SealCheck      Bytes           `json:"seal_check"`
 	DMKeys         []DMKey         `json:"dm_keys"`
 	DeviceRequests []DeviceRequest `json:"device_requests"`
-	// M2: the calls the member can see that have someone in them.
+	// The calls the member can see that have someone in them.
 	Calls []Call `json:"calls"`
-	// M6: where the den's changes stand, for a client to check what it
+	// Where the den's changes stand, for a client to check what it
 	// cached against.
 	Sync Sync `json:"sync"`
-	// M14.3: the den's sounds, by name.
+	// The den's sounds, by name.
 	Sounds []Sound `json:"sounds"`
-	// M15.2: the den's emoji, by name.
+	// The den's emoji, by name.
 	Emoji []Emoji `json:"emoji"`
-	// M16.1: the keys of the member's DMs sealed to identities, each with
-	// their own copy. A den older than M16.1 sends none, which tells a
+	// The keys of the member's DMs sealed to identities, each with
+	// their own copy. A den older than v1.9.0 sends none, which tells a
 	// client it keeps no identities.
 	SignedKeys []SignedKey `json:"signed_keys"`
-	// M17.4: the den's events to come and live that the member sees, live
+	// The den's events to come and live that the member sees, live
 	// first and then by their start, each with the member's own mark.
 	Events []DenEvent `json:"events"`
 }

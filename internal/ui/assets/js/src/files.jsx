@@ -68,11 +68,11 @@ export const downloadURL = (denID, f) => `/api/dens/${denID}/files/${f.id}?downl
 // upload sends a file to a den through the local service, which takes an
 // image's metadata out on the way, and seals a DM's. channelID names the
 // channel it's for, empty for a profile's picture, and replaces the file
-// it's made to take the place of, if any (M5). send, for a message's file,
+// it's made to take the place of, if any. send, for a message's file,
 // says which version of a photo or video goes, "smaller" or "full", and the
-// local service keeps both to compare (M5); progress names the upload for
-// the page to follow, which onFollow hears, while a video's copy is made
-// (M5.4), and in Chrome and Edge, the page makes the copy itself (M5.5). It
+// local service keeps both to compare; progress names the upload for
+// the page to follow, which onFollow hears, while a video's copy is made,
+// and in Chrome and Edge, the page makes the copy itself. It
 // reports how much of the file went to the local service, from 0 to 1, and
 // returns the upload's promise and a way to stop it.
 export function upload(denID, channelID, file, name, onProgress, replaces, send, progress, onFollow) {
@@ -116,7 +116,7 @@ export function upload(denID, channelID, file, name, onProgress, replaces, send,
 // uploadAnimated sends an animated GIF or WebP as it is, to be a profile's
 // picture or banner, with the part of it the member framed, in its pixels,
 // which the local service makes into a GIF of the picture's size before it
-// goes to the den (M15.1); replaces is the picture it takes the place of,
+// goes to the den; replaces is the picture it takes the place of,
 // if any. Making it takes a moment, and its answer is the upload.
 export async function uploadAnimated(denID, picture, file, rect, replaces) {
     const query = new URLSearchParams({ picture, crop: [rect.x, rect.y, rect.w, rect.h].join(',') });
@@ -139,8 +139,8 @@ export async function uploadAnimated(denID, picture, file, rect, replaces) {
 }
 
 // fileWhere says what uses one of a member's files, as their list of them
-// shows it (M5): a channel or a DM, a picture on their profile, an event's
-// banner (M17.4), or nothing while it waits to be sent. view is the den as
+// shows it: a channel or a DM, a picture on their profile, an event's
+// banner, or nothing while it waits to be sent. view is the den as
 // the page has it.
 export function fileWhere(f, view) {
     if (f.profile === 'avatar') return 'Your profile picture';
@@ -171,8 +171,8 @@ export function attachmentKind(f) {
 // Attachments shows a message's files: images as previews that open the
 // viewer, video and audio as players, anything else as a card to download.
 // A photo or video sent as a spoiler shows covered until it's clicked or
-// tapped, each time its message shows, and nothing of it plays before
-// (M17.2); onOpen opens the viewer at an image with the spoilers still
+// tapped, each time its message shows, and nothing of it plays before;
+// onOpen opens the viewer at an image with the spoilers still
 // covered, which the viewer leaves out.
 export function Attachments({ denID, files, onOpen }) {
     const [shown, setShown] = useState(() => new Set());
@@ -211,7 +211,7 @@ export function playbackTime(seconds, total) {
     return total > 0 ? `${at} / ${formatDuration(total * 1000)}` : at;
 }
 
-// Videos play at one volume, which the browser keeps (M3.3): set it on any
+// Videos play at one volume, which the browser keeps: set it on any
 // video and every video follows, playing or still to start. Muting stays
 // each video's own.
 const VIDEO_VOLUME = 'DENS_VIDEO_VOLUME';
@@ -360,7 +360,7 @@ function VideoTile({ denID, file, box }) {
                         style={{ '--seek': `${duration > 0 ? Math.min(100, (time / duration) * 100) : 0}%` }}
                         onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
                     {/* The volume shows above the mute button on hover or
-                        keyboard focus (M3.3), wherever the mute fits. */}
+                        keyboard focus, wherever the mute fits. */}
                     <div class="group/volume relative hidden shrink-0 @min-[9rem]:flex">
                         <button type="button" class={button} onClick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
                             <SoundIcon muted={silent} />
@@ -465,13 +465,13 @@ function ImageTile({ denID, file, box, onOpen }) {
 }
 
 // covers says whether a file shows covered: a spoiler the member hasn't
-// clicked yet, of those shown (M17.2).
+// clicked yet, of those shown.
 export function covers(file, shown) {
     return !!file.spoiler && !shown.has(file.id);
 }
 
-// Covered is a spoiler's photo or video before it's clicked or tapped
-// (M17.2): its preview, blurred past telling, under Spoiler, at the size
+// Covered is a spoiler's photo or video before it's clicked or tapped:
+// its preview, blurred past telling, under Spoiler, at the size
 // the file takes once shown, and nothing that names it.
 function Covered({ denID, file, box, onShow }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
@@ -543,16 +543,16 @@ function ViewedImage({ denID, file, alt }) {
     );
 }
 
-// Viewer shows a message's images whole, over everything (M5): the one at
+// Viewer shows a message's images whole, over everything: the one at
 // index of files, its preview at once and the original as it loads. In a
 // wide window it's fitted with room round it, and ‹ and › beside it move
 // between them, as do ← and →; on the phone layout it takes the screen,
 // the picture its width, and a swipe sideways moves to the next or last,
-// and one down closes it (M13.3). Two fingers or a double tap zoom it, as
+// and one down closes it. Two fingers or a double tap zoom it, as
 // do the wheel and a double click, and a finger or the mouse pans it then
 // (zoom.js). Its name and size, Download and its ✕ sit in a bar at its
-// top, as a dialog's ✕ does (M22.4), and ‹ and › at the picture's edges.
-// onIndex hears where to move; Back closes it (M13.1).
+// top, as a dialog's ✕ does, and ‹ and › at the picture's edges.
+// onIndex hears where to move; Back closes it.
 // ARROW is the width of the viewer's ‹ and ›, a circle button's.
 const ARROW = 40;
 

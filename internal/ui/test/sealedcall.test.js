@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-// A sealed call as the page joins it (M16.2), with stand-ins for what the
+// A sealed call as the page joins it, with stand-ins for what the
 // browser gives it: the microphone, the peer connection, its senders and
 // receivers, Encoded Transform and the worker, and the stream to the
 // service. A den that seals its calls takes the page only where it seals

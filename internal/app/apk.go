@@ -26,7 +26,7 @@ import (
 	"golang.org/x/mod/semver"
 )
 
-// The Android app's updater (M12). The update check finds a newer release
+// The Android app's updater. The update check finds a newer release
 // as an installed instance's does. The service then downloads the
 // release's checksums and their cosign bundle, checks the bundle as cosign
 // would, against the release identity this build carries, then this
@@ -77,7 +77,7 @@ type apkUpdate struct {
 	refused   string
 	refusedAt time.Time
 	// staging lets one download run at a time: the daily check's, or the
-	// one the member asked for from the settings (M17.2).
+	// one the member asked for from the settings.
 	staging sync.Mutex
 }
 
@@ -205,7 +205,7 @@ func (a *App) setReady(u UpdateReady) {
 
 // readyAndroidUpdate downloads and checks the newer release the last check
 // found, unless it's ready already. A release that didn't check out waits
-// a day, unless the member asked: again lets them try it again (M17.2).
+// a day, unless the member asked: again lets them try it again.
 func (a *App) readyAndroidUpdate(ctx context.Context, again bool) error {
 	cfg, err := config.View(a.DB)
 	if err != nil {
@@ -242,11 +242,11 @@ func (a *App) readyAndroidUpdate(ctx context.Context, again bool) error {
 }
 
 // ErrUpdateRefused is a newer release that doesn't check out against its
-// signed checksums, which the Android app won't install (M17.2).
+// signed checksums, which the Android app won't install.
 var ErrUpdateRefused = errRefused
 
 // CheckNow checks for an update at once, as the member asks from the
-// Android app's settings (M17.2), whatever the daily checks are set to: it
+// Android app's settings, whatever the daily checks are set to: it
 // asks the release host for the newest version, and downloads and checks
 // a newer one, as the daily check does, trying again even one that didn't
 // check out within the day. It returns the update ready to install, or ""
@@ -276,7 +276,7 @@ func (a *App) CheckNow(ctx context.Context) (string, error) {
 }
 
 // quietNetError is err without the address Go's network errors name,
-// which logs don't keep (M8).
+// which logs don't keep.
 func quietNetError(err error) error {
 	var netErr net.Error
 	if errors.As(err, &netErr) {

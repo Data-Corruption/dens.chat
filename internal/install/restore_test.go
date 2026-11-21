@@ -42,7 +42,7 @@ func emptyTarget(t *testing.T) layout.Layout {
 }
 
 // A wrong password is refused once the database is out, before any upload
-// is written, rather than after all of them (M10).
+// is written, rather than after all of them.
 func TestRestoreChecksBeforeUploads(t *testing.T) {
 	key := testKey(t)
 	archive := makeBackupWith(t, key, "correct horse battery", map[string]string{"0123456789abcdef": "sealed bytes"})
@@ -68,7 +68,7 @@ func TestRestoreChecksBeforeUploads(t *testing.T) {
 
 // A disk without room for the backup is refused before anything is
 // written, and one that runs out partway stops before it fills, saying
-// how much more the rest needs (M10).
+// how much more the rest needs.
 func TestRestoreNeedsRoom(t *testing.T) {
 	archive := makeBackupWith(t, testKey(t), "correct horse battery", map[string]string{"0123456789abcdef": "sealed bytes"})
 	info, err := os.Stat(archive)
@@ -133,7 +133,7 @@ func holdIn(t *testing.T, target layout.Layout, public []byte, joined int) *sql.
 	return db
 }
 
-// A den's export goes only where nothing would be lost (M10). Over an
+// A den's export goes only where nothing would be lost. Over an
 // instance that has joined a den, or hosts another, it's refused before
 // any upload is extracted, saying what the instance holds and where to
 // restore it instead. An instance that holds nothing yet takes it, as does
@@ -186,7 +186,7 @@ func TestAnExportGoesWhereNothingIsLost(t *testing.T) {
 }
 
 // Reading what an instance holds leaves nothing beside its database, as
-// root must not (M10): while the service's connections hold it open, its
+// root must not: while the service's connections hold it open, its
 // WAL and index are read as they are, and once they've closed, the file
 // alone. A WAL a crash left without its index isn't read.
 func TestReadingHoldingsLeavesNothing(t *testing.T) {

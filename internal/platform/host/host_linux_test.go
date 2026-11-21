@@ -13,7 +13,7 @@ import (
 
 // testControlPath is a socket's path in a directory of the test's own, kept
 // short: a socket's path may be no longer than 107 bytes, and an Android
-// app's files are deep enough for a test's name to pass that (M12).
+// app's files are deep enough for a test's name to pass that.
 func testControlPath(t *testing.T) string {
 	dir, err := os.MkdirTemp("", "c")
 	if err != nil {

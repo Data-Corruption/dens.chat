@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M17.3 check's den: alice's install hosts it, with #general, and bob
+# The notes check's den: alice's install hosts it, with #general, and bob
 # joins; bob's laptop, m2e, signs in as him through his first device's
 # approval, so it holds his seal, which his notes' key comes from. Neither
 # of bob's Dens has opened his notes yet.

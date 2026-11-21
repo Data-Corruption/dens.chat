@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A release host in a directory, for the Flatpak's publisher (M9.4): the
+# A release host in a directory, for the Flatpak's publisher: the
 # Flatpak e2e, the publisher's tests and the VMs' builds. release writes
 # what a release leaves on the host, its checksums signed by a stand-in for
 # cosign, as the release tests' are; publish runs ./scripts/ci.sh --flatpak

@@ -140,7 +140,7 @@ func TestRemoveBanAndReclaim(t *testing.T) {
 	ownerSub, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
 
 	// A ban also deletes their recent messages, DMs and their files among
-	// them (M8), and revokes the invite they came back with, which had a
+	// them, and revokes the invite they came back with, which had a
 	// use left.
 	if err := f.d.Remove(ctx, carol, bob, denproto.RemoveRequest{Ban: true, DeleteMessages: 3600, RevokeInvite: true}); err != nil {
 		t.Fatalf("ban: %v", err)
@@ -192,7 +192,7 @@ func TestRemoveBanAndReclaim(t *testing.T) {
 	wantCode(t, err, denproto.CodeBanned)
 
 	// Lifting the ban lets them reclaim their name again. Staff lift the
-	// bans of their rank or below, and only the owner the owner's (M8).
+	// bans of their rank or below, and only the owner the owner's.
 	erin := f.member(owner, "erin")
 	if err := f.d.Remove(ctx, owner, denproto.FormatID(erin.MemberID), denproto.RemoveRequest{Ban: true}); err != nil {
 		t.Fatal(err)
@@ -249,7 +249,7 @@ func (f *fixture) sessions(member int64) int {
 }
 
 // TestDMDeletesAreTheAuthors checks that staff powers stop at DMs: in a
-// DM only a message's author deletes it, whoever outranks them (M8).
+// DM only a message's author deletes it, whoever outranks them.
 func TestDMDeletesAreTheAuthors(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()
@@ -296,7 +296,7 @@ func TestDirectMessages(t *testing.T) {
 	bob := denproto.FormatID(member.MemberID)
 	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
 
-	// Their Dens publish their identities as they sign in (M16.1).
+	// Their Dens publish their identities as they sign in.
 	f.publish(owner.MemberID)
 	f.publish(member.MemberID)
 	carolSub, _, _, _ := f.d.Hub.Subscribe(carol.MemberID, false, "", 0)

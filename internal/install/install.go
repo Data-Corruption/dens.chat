@@ -44,7 +44,7 @@ type Options struct {
 	Out          io.Writer
 	// Confirm, where given, asks before an uninstall deletes the instance,
 	// once its plan is printed, and stops it with an error. holds is what
-	// the instance holds, as "hosts the den Foo" (M10), or "" where that
+	// the instance holds, as "hosts the den Foo", or "" where that
 	// can't be read: uninstall is the way out of a broken install too.
 	Confirm func(holds string) error
 }
@@ -335,7 +335,7 @@ func Install(ctx context.Context, sys System, bi build.BuildInfo, opts Options) 
 }
 
 // errNoDesktop is a desktop user with no desktop session to start the
-// shortcut helper in, as on a server (M10).
+// shortcut helper in, as on a server.
 var errNoDesktop = errors.New("no desktop session")
 
 // serverGuide is where the docs say how to host a den on a computer with
@@ -388,7 +388,7 @@ func installedInstances(base string) ([]string, error) {
 }
 
 // refuseOlder refuses to move an instance to this build's version when it
-// has a newer one (M8): a signature proves who built a release, not that
+// has a newer one: a signature proves who built a release, not that
 // it's the newest, so a release host or mirror that served an older one
 // could otherwise roll installs back to holes since fixed. An instance
 // that was moving to a version has it, since its service may have

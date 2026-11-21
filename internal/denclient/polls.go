@@ -10,7 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Polls (M15.4) pass through as the den sends them, each as this member
+// Polls pass through as the den sends them, each as this member
 // may see it: the den holds to a poll's rules. Its events carry how it
 // stands, the totals in batches, a voter's own votes to their sessions,
 // and the final totals as it ends, which the cache applies to its copy of

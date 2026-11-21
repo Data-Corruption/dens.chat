@@ -1,4 +1,4 @@
-// Notes to self (M17.3): the member's own conversation in each den, which
+// Notes to self: the member's own conversation in each den, which
 // only their devices read. The Direct messages tab keeps their row at its
 // top, and the member's own profile card opens them too; nothing in them
 // waits to be read or notifies, since everything in them is the member's,

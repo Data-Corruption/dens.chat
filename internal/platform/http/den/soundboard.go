@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// The den's soundboard (M14.3): staff add sounds, rename and delete them.
+// The den's soundboard: staff add sounds, rename and delete them.
 
 func (h *handler) addSound(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {

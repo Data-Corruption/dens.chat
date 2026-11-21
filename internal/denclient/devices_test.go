@@ -79,7 +79,7 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 		if approved.Half != request.Half {
 			t.Fatalf("the approving device's digits once it approved: %+v", approved)
 		}
-		// Its digits' code goes on showing them (M22.6).
+		// Its digits' code goes on showing them.
 		if code, err := approver.DigitsCode(denID, request.ID); err != nil || code.Size != 25 || len(code.Rows) != 25 {
 			t.Fatalf("the approving device's code: %+v %v", code, err)
 		}
@@ -87,7 +87,7 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 			t.Fatalf("the new device's check: %v", err)
 		}
 		// The new device connects, which ends the approving device's
-		// digits by itself (M22.6).
+		// digits by itself.
 		waitNoRequests(t, approver, denID)
 		if _, err := approver.DigitsCode(denID, request.ID); !isInput(err) {
 			t.Fatalf("a code for digits no longer shown: %v", err)
@@ -99,7 +99,7 @@ func signInApproved(t *testing.T, m, approver *denclient.Manager, denID string, 
 		if err := approver.ApproveSignIn(ctx, denID, request.ID, fresh.Half); err != nil {
 			t.Fatalf("approve: %v", err)
 		}
-		// Closed by hand, as a den older than M22.6 leaves it, or by the
+		// Closed by hand, as a den older than v1.14.0 leaves it, or by the
 		// new device connecting, whichever comes first.
 		if err := approver.DismissApproved(denID, request.ID); err != nil {
 			t.Fatal(err)
@@ -234,7 +234,7 @@ func TestRecoverOnAFreshMachineAndRevokeTheOldKey(t *testing.T) {
 	}
 	waitFor(t, fresh, "the fresh machine connected", connected)
 	// Add device's code names the den's address and the member's username
-	// there (M22.6).
+	// there.
 	if view, err := fresh.DeviceCode(denID); err != nil || view.URL != "https://example.com" || view.Username != "erin" || view.Code.Size < 21 {
 		t.Fatalf("Add device's code: %+v %v", view, err)
 	}
@@ -518,7 +518,7 @@ func rename(t *testing.T, owner, member *denclient.Manager, denID, name, url str
 }
 
 // A den reached elsewhere can't send its members to an address on their
-// own computers (M8): neither a connected member nor one signing in again
+// own computers: neither a connected member nor one signing in again
 // asks there, and the den stays where they reached it.
 func TestMovesStayOffThisComputer(t *testing.T) {
 	h, owner, _, denID, _ := chatDen(t)
@@ -541,7 +541,7 @@ func TestMovesStayOffThisComputer(t *testing.T) {
 	}
 }
 
-// A den's member checks a new address for it at most once a minute (M8),
+// A den's member checks a new address for it at most once a minute,
 // so a den that keeps naming new ones can't turn its members into a crowd
 // asking someone else's server.
 func TestFollowsAreThrottled(t *testing.T) {
@@ -562,8 +562,8 @@ func TestFollowsAreThrottled(t *testing.T) {
 	}
 }
 
-// An answer from a den's address that redirects elsewhere isn't followed
-// (M8): the client asks a den only where it proved itself.
+// An answer from a den's address that redirects elsewhere isn't followed:
+// the client asks a den only where it proved itself.
 func TestRedirectsArentFollowed(t *testing.T) {
 	h, owner, _, denID, _ := chatDen(t)
 	port, conns := countConns(t)
@@ -636,7 +636,7 @@ var labelCases []byte
 // A device's label is its name and what it is, as the page shows them, the
 // one under the other, and as a den takes a label: what a name can't show
 // comes out, a long one is cut to fit, and one with nothing to show is
-// Dens (M13.3).
+// Dens.
 func TestDeviceLabels(t *testing.T) {
 	var shared struct {
 		Cases []struct {
@@ -692,7 +692,7 @@ func TestPhoneLabels(t *testing.T) {
 }
 
 // A phone joins a den as the Android app names it, by its name and its
-// model, and the den lists it so among the member's devices (M13.3).
+// model, and the den lists it so among the member's devices.
 func TestAPhoneJoinsByItsNameAndModel(t *testing.T) {
 	h, owner, _, denID, _ := chatDen(t)
 	phone := h.client(t, noOwnDen)

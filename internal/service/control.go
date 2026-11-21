@@ -116,7 +116,7 @@ func passwordProblem(a *app.App, err error, doing string) error {
 }
 
 // logsReply streams the newest logs, or with level sets how much they say
-// from now on (M11).
+// from now on.
 func logsReply(a *app.App, level string) (control.Reply, error) {
 	if level != "" {
 		normalized, err := xlog.NormalizeLevel(level)
@@ -181,7 +181,7 @@ func backupReply(ctx context.Context, a *app.App, password string) (control.Repl
 	return control.Reply{Result: control.Backup{Name: archive.Name, Size: archive.Size}, Body: archive}, nil
 }
 
-// hostingReply turns hosting on or off, as the page's switch does (M10):
+// hostingReply turns hosting on or off, as the page's switch does:
 // on takes the local password, since it opens ports to the internet, and
 // fails, naming the port and the flag that moves it, while another program
 // holds one.
@@ -215,7 +215,7 @@ func hostingReply(ctx context.Context, a *app.App, req control.Request) (control
 	return control.Reply{Result: result}, nil
 }
 
-// exportReply streams the den's export (M10), as backupReply streams a
+// exportReply streams the den's export, as backupReply streams a
 // backup, which the local password protects the same way. Hosting must be
 // off first, so nothing reaches the den after the export's snapshot.
 func exportReply(ctx context.Context, a *app.App, password string) (control.Reply, error) {
@@ -243,7 +243,7 @@ func exportReply(ctx context.Context, a *app.App, password string) (control.Repl
 }
 
 // removeDenReply deletes this install's copy of its den once another
-// computer serves it (M10), after the local password. A refusal says which
+// computer serves it, after the local password. A refusal says which
 // of the checks didn't hold, and what to do.
 func removeDenReply(ctx context.Context, a *app.App, password string) (control.Reply, error) {
 	info, ok := a.Den.Info()
@@ -283,7 +283,7 @@ func commandFor(a *app.App, args string) string {
 }
 
 // ownerInviteReply makes an invite that hands the den this instance hosts
-// to whoever redeems it, and makes its owner a moderator (M8). The den's
+// to whoever redeems it, and makes its owner a moderator. The den's
 // machine has the last word on who owns it, so the desktop user's local
 // password is all it takes: that's also the way back for an owner locked
 // out of their account.
@@ -311,7 +311,7 @@ func ownerInviteReply(ctx context.Context, a *app.App, password string) (control
 }
 
 // passwordReply sets the local password, or changes it given the current
-// one, as the page does (M10), so a server never needs the page. The
+// one, as the page does, so a server never needs the page. The
 // Flatpak's first password asks whether to remember its key, which only
 // its page does, so the Flatpak keeps its password in its settings.
 func passwordReply(ctx context.Context, a *app.App, req control.Request) (control.Reply, error) {
@@ -333,8 +333,8 @@ func passwordReply(ctx context.Context, a *app.App, req control.Request) (contro
 	return control.Reply{Result: control.PasswordChanged{First: first}}, nil
 }
 
-// createDenReply creates the den this instance hosts from the command line
-// (M10), with no account on this computer, and makes the owner invite that
+// createDenReply creates the den this instance hosts from the command line,
+// with no account on this computer, and makes the owner invite that
 // whoever will own it redeems from their own Dens. Create your den, on the
 // page, joins as the owner here instead. Hosting must be serving, so the
 // invite reaches the den at its address.

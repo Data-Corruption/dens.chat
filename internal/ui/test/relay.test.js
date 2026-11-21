@@ -1,4 +1,4 @@
-// Relay's player (M20.2), run in Node: the worklet's buffer as plain
+// Relay's player, run in Node: the worklet's buffer as plain
 // code, a block at a time as an output asks for them, its target
 // following the output's stride, its steering, a gap the path left faded
 // across, a run dry counted; the worker cutting a message into packets;

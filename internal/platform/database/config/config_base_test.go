@@ -120,7 +120,7 @@ func TestUpdateValidatesVoiceKeys(t *testing.T) {
 }
 
 // The page's sounds are kept by name, each off or at a volume of its own,
-// from 0 to 100 percent (M14.2).
+// from 0 to 100 percent.
 func TestUpdateValidatesSounds(t *testing.T) {
 	tmp := t.TempDir()
 	logger, err := xlog.New(filepath.Join(tmp, "logs"), "error")
@@ -226,7 +226,7 @@ func TestReadsV1_12_0Configuration(t *testing.T) {
 }
 
 // The configuration v1.11.0 kept reads as it was, with Relay off and no
-// Relay ID (M20), and takes them.
+// Relay ID, and takes them.
 func TestReadsTheReleasedConfiguration(t *testing.T) {
 	tmp := t.TempDir()
 	logger, err := xlog.New(filepath.Join(tmp, "logs"), "error")

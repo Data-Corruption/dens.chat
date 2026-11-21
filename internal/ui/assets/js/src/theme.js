@@ -5,7 +5,7 @@
 // themes.js) is kept by the browser too, and shows as DaisyUI's variables
 // set on the page's root, over Light or Dark for what it leaves. The
 // service hears the theme's background as it changes, for the Android
-// app's bars (M13.3).
+// app's bars.
 
 import { setBars } from './events.js';
 import { COLORS, DAISY, FIELDS, MOST_THEMES, SHOWN, VARIABLES, cleanTheme, newID, readThemes, readValue, variables } from './themes.js';

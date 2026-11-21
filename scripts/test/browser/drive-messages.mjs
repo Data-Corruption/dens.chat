@@ -1,10 +1,10 @@
-// The M11.2 check of each message's ⋯ menu and links to messages, as bob
+// The messages check, of each message's ⋯ menu and links to messages, as bob
 // in the browser named: the ⋯ showing on hover and focus, and its menu by
 // keyboard, Reply, Copy text and Copy message link, Edit, and Delete through its
-// dialog; from M22.4 the hover bar's Reply and Edit, an edit's one row,
+// dialog; the hover bar's Reply and Edit, an edit's one row,
 // and who else edits from the ⋯; the menu by touch, through a long press, a touch screen having
-// no ⋯ (M13.2); a message's link in its color, underlined only on hover
-// and keyboard focus (M14.1); the chips of links to messages, opening one
+// no ⋯; a message's link in its color, underlined only on hover
+// and keyboard focus; the chips of links to messages, opening one
 // in its channel, in another channel, from another den and at an address
 // its den left, and saying why one can't open: out of sight, gone, or in
 // a den bob hasn't joined, even at his den's address; the
@@ -305,7 +305,7 @@ try {
         const coarse = await t.eval(`matchMedia('(pointer: coarse)').matches && matchMedia('(hover: none)').matches`);
         await t.eval(`document.activeElement?.blur(), true`);
         // A touch screen's messages have no ⋯: a long press opens the menu,
-        // which a wide window keeps beside the message (M13.2).
+        // which a wide window keeps beside the message.
         const none = await t.eval(`getComputedStyle(${BAR("Alice's first")}).display === 'none'`);
         const p = await waitFor(() => at(t, `${ROW("Alice's first")}.querySelector('.wrap-break-word')`), "alice's first");
         await t.tap(p[0], p[1]);

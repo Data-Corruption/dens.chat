@@ -10,7 +10,7 @@ import (
 // ReplaceProcess starts path with args as a process of its own, detached
 // from this one, which should exit next: Windows can't run another binary
 // in a process's place. The shortcut helper takes up a newer binary this
-// way after an update (M7). The new process leaves the job this one runs
+// way after an update. The new process leaves the job this one runs
 // in, as Task Scheduler's, which may end with this process, where the job
 // allows it.
 func ReplaceProcess(path string, args ...string) error {

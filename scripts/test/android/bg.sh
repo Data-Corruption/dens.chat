@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# A call off screen on a device (M12): the app's page in a call its member
+# A call off screen on a device: the app's page in a call its member
 # joined, with the screen off for SECONDS, ten minutes unless given, as the
 # manual test runs it on a phone over wireless debugging. The page's side
 # of the call every 5 seconds (call.mjs watch), and every 30 the app's

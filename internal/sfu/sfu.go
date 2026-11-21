@@ -44,16 +44,16 @@ const (
 var ErrClosed = errors.New("calls have stopped")
 
 // voiceParams is what every offer asks of the browser's Opus encoder for
-// voice: the voice channel's bitrate (M4.2), where a browser left to itself
+// voice: the voice channel's bitrate, where a browser left to itself
 // sends 32 kbps; error correction in each packet for the one before,
-// against loss; and discontinuous transmission (M3.3), so a member who
+// against loss; and discontinuous transmission, so a member who
 // isn't speaking, or whose gate holds them back, sends a packet every 400
 // ms instead of 50 a second. Browsers read it from the den's offer.
 func voiceParams(bitrate int) string {
 	return "minptime=10;useinbandfec=1;usedtx=1;maxaveragebitrate=" + strconv.Itoa(bitrate)
 }
 
-// soundParams is what offers ask for a share's sound (M4.2): stereo, for
+// soundParams is what offers ask for a share's sound: stereo, for
 // music and games, at 128 kbps, and no discontinuous transmission, which
 // would cut a film's quiet passages.
 const soundParams = "minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxaveragebitrate=128000"
@@ -63,7 +63,7 @@ const soundParams = "minptime=10;useinbandfec=1;stereo=1;sprop-stereo=1;maxavera
 var opus = webrtc.RTPCodecCapability{MimeType: webrtc.MimeTypeOpus, ClockRate: 48000, Channels: 2,
 	SDPFmtpLine: "minptime=10;useinbandfec=1"}
 
-// vp9 is the one codec screen shares carry (M4.2): every target browser
+// vp9 is the one codec screen shares carry: every target browser
 // sends and receives it. Profile 0 is what browsers send unless asked
 // otherwise. Viewers ask for keyframes with PLI or FIR; NACK, PLI and TWCC
 // feedback come with Pion's default interceptors.
@@ -178,7 +178,7 @@ type Config struct {
 	// development instances set it; otherwise they're dropped.
 	Log func(string)
 	// Debugf takes the SFU's own notes on each call, which name members
-	// and channels by ID alone (M11): its ICE and DTLS states and its
+	// and channels by ID alone: its ICE and DTLS states and its
 	// path's protocol, offers sent, answered and unanswered, and restarts.
 	Debugf func(format string, args ...any)
 	// Loopback has the den answer checks that reach it on loopback, which

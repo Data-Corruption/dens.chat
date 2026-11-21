@@ -1,4 +1,4 @@
-// What someone pastes to add a den (M8.3): an invite, which names its den
+// What someone pastes to add a den: an invite, which names its den
 // and lets them join it or sign in to an account there, or a den's
 // address, which signs in.
 

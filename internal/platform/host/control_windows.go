@@ -135,7 +135,7 @@ func (l *pipeListener) Accept() (net.Conn, error) {
 
 // connect waits for a client on h, or for Close. A client that opened the
 // pipe and closed it again before the service connected leaves the
-// instance unusable, and ConnectNamedPipe says so with ERROR_NO_DATA (M8).
+// instance unusable, and ConnectNamedPipe says so with ERROR_NO_DATA.
 // Disconnecting it makes the same instance ready for the next client, as
 // go-winio retries this case, so the pipe's name stays held throughout.
 func (l *pipeListener) connect(h windows.Handle) error {

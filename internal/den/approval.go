@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Approving new devices (M1.7). A password sign-in on a device new to the
+// Approving new devices. A password sign-in on a device new to the
 // den doesn't add it at once. The den holds it for ten minutes and asks
 // the member's other devices; one of them runs an exchange with it through
 // the den, and once the member compared the check codes on both, hands it
@@ -326,7 +326,7 @@ func (d *Den) ApproveRequest(ctx context.Context, s *Session, id []byte, req den
 
 // deviceConnected tells the member's sessions that a device the den let
 // in by approval opened its first socket, while its request lasts: the
-// device that approved it shows its digits until then (M22.6).
+// device that approved it shows its digits until then.
 func (d *Den) deviceConnected(member int64, keyID []byte) {
 	d.requests.mu.Lock()
 	found := false

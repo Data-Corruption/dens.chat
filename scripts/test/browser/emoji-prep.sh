@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M15.2 check's den: alice's install hosts it, with #general, where
+# The emoji check's den: alice's install hosts it, with #general, where
 # alice says something, and a DM between alice and bob; and the images
 # alice adds as emoji: a still face larger than an emoji, and an animated
 # GIF.

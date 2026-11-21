@@ -1,4 +1,4 @@
-// Scanning sign-in codes (M22.6): whether there's a camera, the camera
+// Scanning sign-in codes: whether there's a camera, the camera
 // read for a code by the page's own reader, and a code the service made
 // drawn as squares.
 

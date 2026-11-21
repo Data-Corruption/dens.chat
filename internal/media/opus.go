@@ -9,7 +9,7 @@ import (
 	"io"
 )
 
-// Opus in Ogg (M14.3): the den's sounds. The page of the staff member
+// Opus in Ogg: the den's sounds. The page of the staff member
 // adding one encodes it as Opus and writes it in Ogg, and the den strips it
 // with the media module like any audio, which writes Ogg's pages anew, up
 // to about a second of packets in each. The den sends a sound's packets as

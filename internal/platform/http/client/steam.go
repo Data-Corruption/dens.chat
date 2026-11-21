@@ -11,7 +11,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// mountSteam serves Steam's cards (M22.2): a linked app's details, its
+// mountSteam serves Steam's cards: a linked app's details, its
 // header picture and its first screenshots. The page asks only while a
 // member has the cards on, and only for cards on screen.
 func (rt *router) mountSteam(r chi.Router) {

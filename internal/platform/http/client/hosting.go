@@ -9,11 +9,11 @@ import (
 	"github.com/Data-Corruption/dens.chat/pkg/xhttp"
 )
 
-// hostingView is hosting as the settings show it (M9.1): the switch,
+// hostingView is hosting as the settings show it: the switch,
 // whether the den serves and why not, and the ports Caddy and the router
 // send it; and the den this install holds, once created, with when it
 // was exported to move it to another computer, if it hasn't been hosted
-// here since (M10).
+// here since.
 type hostingView struct {
 	// CanHost is false where the form hosts no den, as the Flatpak.
 	CanHost      bool   `json:"can_host"`
@@ -29,7 +29,7 @@ type hostingView struct {
 	Exported int64 `json:"exported,omitempty"`
 }
 
-// cantHost is the page's word for a form that hosts no den (M9.3).
+// cantHost is the page's word for a form that hosts no den.
 const cantHost = "Hosting a den needs Dens installed on Linux or Windows, where it keeps running when nobody is signed in."
 
 func (rt *router) hostingView() (hostingView, error) {
@@ -99,7 +99,7 @@ func (rt *router) handleSetHosting(w http.ResponseWriter, r *http.Request) {
 	rt.writeHosting(w, r)
 }
 
-// handleExportDen starts moving the den to another computer (M10): after
+// handleExportDen starts moving the den to another computer: after
 // the local password, it turns hosting off, so nothing reaches the den
 // after the export's snapshot, and gives the page the link to download the
 // export from, as a backup's.
@@ -133,7 +133,7 @@ func (rt *router) handleExportDen(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleRemoveDen deletes this computer's copy of the den once another
-// computer serves it (M10), after the local password. A refusal says which
+// computer serves it, after the local password. A refusal says which
 // of its checks didn't hold, and what to do.
 func (rt *router) handleRemoveDen(w http.ResponseWriter, r *http.Request) {
 	var body struct {

@@ -20,7 +20,7 @@ import (
 
 // TestBackupHoldsDeletedFiles checks that a backup holds every file its
 // database snapshot names, though the den deletes one while the archive is
-// written (M8): the den takes it off the disk only once the backup is done.
+// written: the den takes it off the disk only once the backup is done.
 // It runs the backup's handler in process, as a control request would, so
 // it opens no port: the den's own listeners bind every interface, which
 // Windows asks the desktop user about.

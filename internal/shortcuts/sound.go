@@ -9,7 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/control"
 )
 
-// The computer's sound (M20.2). While Relay shares it with another of the
+// The computer's sound. While Relay shares it with another of the
 // member's devices, the service's state asks the helper to read it, and
 // the helper sends it on a request of its own, control.OpSound, in
 // pieces, a frame each: the rate, 4 bytes little-endian, then PieceFrames

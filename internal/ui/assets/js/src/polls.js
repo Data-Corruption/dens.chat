@@ -1,4 +1,4 @@
-// Polls (M15.4) on the page: the draft the composer writes, which goes
+// Polls on the page: the draft the composer writes, which goes
 // with the message whose text is its question; and a poll as the member
 // sees it, by its rules, which the den holds to: who voted for what shows
 // never, once it ends, or with the totals; and the totals show as votes

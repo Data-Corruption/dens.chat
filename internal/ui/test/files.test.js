@@ -162,7 +162,7 @@ test("a message's GIF plays under Always, and under Hover while the pointer is o
     delete globalThis.window;
 });
 
-// File names on hover (M22.7): a photo's and a video's name as the
+// File names on hover: a photo's and a video's name as the
 // browser's tooltip, on until the member turns it off.
 test("a photo's and a video's name show on hover until File names on hover is off", async () => {
     const kept = new Map();

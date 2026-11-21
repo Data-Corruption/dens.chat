@@ -1,4 +1,4 @@
-// The call timer (M21.2): each call's length on its channel's row, from
+// The call timer: each call's length on its channel's row, from
 // when the call began on this computer's clock, which the member's Dens
 // gives as started_at; a moving rainbow while it's longer than its
 // channel's record as it began, record_ms, and fireworks as it passes it.

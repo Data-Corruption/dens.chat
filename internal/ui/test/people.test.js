@@ -41,7 +41,7 @@ test('roles rank as the den ranks them', () => {
     assert.equal(rank(undefined), rank('member'));
 });
 
-// The profile card as a card (M17.6): its role marks, its buttons and ⋯,
+// The profile card as a card: its role marks, its buttons and ⋯,
 // and the badges its member shows, which Edit profile turns by their eyes.
 
 // A window for the card's place in the history, as the nav tests' is.

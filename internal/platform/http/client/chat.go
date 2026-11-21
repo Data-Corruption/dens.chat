@@ -129,7 +129,7 @@ func (rt *router) handleDeleteMessage(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleReact adds the member's reaction to a message in the channel the
-// query names, or takes it back (M15.3). A DM's answers with the member's
+// query names, or takes it back. A DM's answers with the member's
 // set as it now is, which this service sealed; a channel's comes back as
 // the den's event.
 func (rt *router) handleReact(w http.ResponseWriter, r *http.Request) {
@@ -159,7 +159,7 @@ func (rt *router) handleClearReaction(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]bool{"ok": true})
 }
 
-// handleVote sets the member's vote on a poll (M15.4), the choices they
+// handleVote sets the member's vote on a poll, the choices they
 // pick by their place in it, or none to take it back, and answers with the
 // poll as they now see it.
 func (rt *router) handleVote(w http.ResponseWriter, r *http.Request) {
@@ -199,7 +199,7 @@ func (rt *router) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCallRecord reads a voice channel's longest call, for staff's
-// dialog (M21.2).
+// dialog.
 func (rt *router) handleCallRecord(w http.ResponseWriter, r *http.Request) {
 	rec, err := rt.a.Dens.CallRecord(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"))
 	if err != nil {

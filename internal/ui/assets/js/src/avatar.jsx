@@ -2,7 +2,7 @@
 // colored circle with the first letter or digit of their username. The
 // color comes from the member's ID, so every device shows the same one
 // without the den storing or sending anything. An animated picture plays as
-// Appearance's Animations says (M15.1).
+// Appearance's Animations says.
 
 import { createContext } from 'preact';
 import { useContext, useState } from 'preact/hooks';

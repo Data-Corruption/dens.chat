@@ -9,7 +9,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// Relay (M20).
+// Relay.
 //
 // A member's installs link straight across their network, and the den only
 // introduces them: relay.signal carries a box from one of the member's

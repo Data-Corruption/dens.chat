@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// The Flatpak's portals (M9.3) are Linux's; on Windows each fails with
+// The Flatpak's portals are Linux's; on Windows each fails with
 // errors.ErrUnsupported.
 
 var (

@@ -10,7 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 )
 
-// Erasing the den, once another computer serves it (M10), empties every
+// Erasing the den, once another computer serves it, empties every
 // den table and the uploads, and forgets the den in memory: its identity,
 // the sign-ins outstanding and the events a client would resume into. A
 // den made here afterwards starts its IDs again.

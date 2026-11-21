@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// The den's emoji (M15.2): staff's page adds an emoji by an upload, a PNG
+// The den's emoji: staff's page adds an emoji by an upload, a PNG
 // it drew or a GIF this service made, and renames and deletes them. Every
 // page shows them by their images, which the den's files serve.
 func (rt *router) mountEmoji(r chi.Router) {

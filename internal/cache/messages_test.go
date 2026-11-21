@@ -414,7 +414,7 @@ func (f *fixture) held(channel, id int64) denproto.Message {
 	return denproto.Message{}
 }
 
-// A message's reactions change without its revision (M15.3): a reaction's
+// A message's reactions change without its revision: a reaction's
 // event changes the cached copy in place; an edit's event, of a newer
 // revision, replaces it whole, while one at the same revision, as a page
 // fetched before the event, changes nothing; and what the den sends after

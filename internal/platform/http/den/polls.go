@@ -8,7 +8,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Polls (M15.4): a member votes on a poll, or takes their vote back, and
+// Polls: a member votes on a poll, or takes their vote back, and
 // its author ends it early. Each answers with the poll as the member now
 // sees it, and counts toward their other writes.
 

@@ -88,7 +88,7 @@ func TestServiceStatusOfMissingService(t *testing.T) {
 // TestServiceFailureEndsAsACrash checks how the service handler ends: a
 // refusal stops with ExitRefused, which the SCM doesn't retry, and any other
 // failure ends the process without reporting the stop, which the SCM takes
-// for a crash and restarts (M8).
+// for a crash and restarts.
 func TestServiceFailureEndsAsACrash(t *testing.T) {
 	defer func(record func(string, error), c func()) { recordFailure, crash = record, c }(recordFailure, crash)
 	var recorded []error

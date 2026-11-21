@@ -1,6 +1,6 @@
 // The page's drawn icons that more than one place shows, in the one style
 // they all share: 16 units square and stroked at 1.5, so a channel's kind,
-// a lock and the call's controls look alike wherever they sit (M8.3).
+// a lock and the call's controls look alike wherever they sit.
 
 export const ICON = { viewBox: '0 0 16 16', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.5', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' };
 
@@ -14,7 +14,7 @@ export function HashIcon({ size = 'h-4 w-4' }) {
 }
 
 // CogIcon is an eight-toothed cog, for settings: the app's, the call's
-// voice settings, and the soundboard's sounds in Manage (M14.3).
+// voice settings, and the soundboard's sounds in Manage.
 export function CogIcon({ size = 'h-[18px] w-[18px]' }) {
     return (
         <svg class={size} {...ICON} stroke-width="1.3">
@@ -36,7 +36,7 @@ export function SpeakerIcon({ size = 'h-[18px] w-[18px]' }) {
 }
 
 // LockIcon marks end-to-end encryption: a DM's, a group's and a call's;
-// open, a call that isn't (M16.2).
+// open, a call that isn't.
 export function LockIcon({ size = 'h-3.5 w-3.5', open = false }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -57,7 +57,7 @@ export function InfoIcon({ size = 'h-3.5 w-3.5' }) {
     );
 }
 
-// BellIcon is notifications (M12.3): a den's, a channel's or a DM's bell,
+// BellIcon is notifications: a den's, a channel's or a DM's bell,
 // struck through where the member muted them.
 export function BellIcon({ off, size = 'h-4 w-4' }) {
     return (
@@ -69,7 +69,7 @@ export function BellIcon({ off, size = 'h-4 w-4' }) {
     );
 }
 
-// BackIcon is ←, a page's way back to the one it opened from (M13.3).
+// BackIcon is ←, a page's way back to the one it opened from.
 export function BackIcon({ size = 'h-5 w-5' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -78,7 +78,7 @@ export function BackIcon({ size = 'h-5 w-5' }) {
     );
 }
 
-// OnwardIcon is ›, where a row opens a page of its own (M13.3).
+// OnwardIcon is ›, where a row opens a page of its own.
 export function OnwardIcon({ size = 'h-4 w-4' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -88,7 +88,7 @@ export function OnwardIcon({ size = 'h-4 w-4' }) {
 }
 
 // PlayIcon is ▶, filled as a player's is: a video's, and a sound's in the
-// settings (M14.2).
+// settings.
 export function PlayIcon({ size = 'h-3.5 w-3.5' }) {
     return (
         <svg viewBox="0 0 16 16" class={`${size} shrink-0`} fill="currentColor" aria-hidden="true">
@@ -107,7 +107,7 @@ export function ChevronIcon({ down, size = 'h-[18px] w-[18px]' }) {
     );
 }
 
-// SoundboardIcon is the soundboard (M14.3): a sampler's pads, one lit.
+// SoundboardIcon is the soundboard: a sampler's pads, one lit.
 export function SoundboardIcon({ size = 'h-[18px] w-[18px]' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -119,7 +119,7 @@ export function SoundboardIcon({ size = 'h-[18px] w-[18px]' }) {
     );
 }
 
-// SmileyIcon is a face, smiling, for emoji (M15.2): the composer's picker.
+// SmileyIcon is a face, smiling, for emoji: the composer's picker.
 export function SmileyIcon({ size = 'h-5 w-5' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -131,7 +131,7 @@ export function SmileyIcon({ size = 'h-5 w-5' }) {
     );
 }
 
-// TimerIcon marks messages that disappear (M16.4): a DM's or a group's
+// TimerIcon marks messages that disappear: a DM's or a group's
 // time, its line, and each message sent under one.
 export function TimerIcon({ size = 'h-3.5 w-3.5' }) {
     return (
@@ -143,7 +143,7 @@ export function TimerIcon({ size = 'h-3.5 w-3.5' }) {
 }
 
 // ShieldIcon marks a staff-only channel, which only moderators and the
-// owner see (M16.4): the lock is end-to-end encryption's.
+// owner see: the lock is end-to-end encryption's.
 export function ShieldIcon({ size = 'h-3.5 w-3.5' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -152,7 +152,7 @@ export function ShieldIcon({ size = 'h-3.5 w-3.5' }) {
     );
 }
 
-// CrownIcon marks the den's owner (M17.6), beside their name in their
+// CrownIcon marks the den's owner, beside their name in their
 // profile and the member list, where a shield marks a moderator.
 export function CrownIcon({ size = 'h-3.5 w-3.5' }) {
     return (
@@ -163,7 +163,7 @@ export function CrownIcon({ size = 'h-3.5 w-3.5' }) {
 }
 
 // EyeIcon is whether something shows: open while it does, struck through
-// while it's hidden, as a badge in the member's own Edit profile (M17.6).
+// while it's hidden, as a badge in the member's own Edit profile.
 export function EyeIcon({ off, size = 'h-3.5 w-3.5' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -175,7 +175,7 @@ export function EyeIcon({ off, size = 'h-3.5 w-3.5' }) {
 }
 
 // CalendarIcon is a day: how long a member has been in the den, on their
-// profile (M17.6).
+// profile.
 export function CalendarIcon({ size = 'h-3.5 w-3.5' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -238,7 +238,7 @@ export function MenuIcon({ name, size = 'h-4 w-4' }) {
     );
 }
 
-// STATUS_PATHS draw a status's state (M22.3): an i for news, a tick for
+// STATUS_PATHS draw a status's state: an i for news, a tick for
 // done, a triangle for a warning and a circled ! for what failed.
 const STATUS_PATHS = {
     info: 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0zM8 7.25v4M8 4.75v.01',
@@ -256,7 +256,7 @@ export function StatusIcon({ kind, size = 'h-4 w-4' }) {
     );
 }
 
-// PlusIcon is a plus, for what makes something new: a tab's + (M22.2).
+// PlusIcon is a plus, for what makes something new: a tab's +.
 export function PlusIcon({ size = 'h-4 w-4' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>

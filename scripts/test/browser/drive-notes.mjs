@@ -1,4 +1,4 @@
-// The M17.3 check of notes to self: bob's phone, his first device, in the
+// The notes check, of notes to self: bob's phone, his first device, in the
 // browser named, and his laptop in Chromium; alice through her page's API.
 // Bob opens his notes from the top of his Direct messages tab, which the
 // den makes as he first does, their header saying they're encrypted, with

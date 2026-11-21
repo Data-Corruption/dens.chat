@@ -7,7 +7,7 @@ import (
 	"sync"
 )
 
-// The system bars (M13.3). The Android app's shell paints its status and
+// The system bars. The Android app's shell paints its status and
 // navigation bars with the page's background, which the page says as its
 // theme changes, so the bars follow a theme the member picks as well as
 // the phone's light or dark mode. The service keeps the last color the

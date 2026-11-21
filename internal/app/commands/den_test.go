@@ -157,7 +157,7 @@ func runDens(t *testing.T, stdin string, args ...string) (string, error) {
 // answers for scripts; on takes the local password, says what it serves
 // and where Caddy and the router send it, or names a held port, and, for
 // a den exported since, asks first, though not on the input the password
-// comes from (M10).
+// comes from.
 func TestHostingCommands(t *testing.T) {
 	f := serveDen(t)
 	if _, err := runDens(t, "", "den", "hosting", "off"); err == nil || len(f.questions()) != 1 || len(f.kept()) != 0 {
@@ -212,7 +212,7 @@ func TestHostingCommands(t *testing.T) {
 
 // dens den export writes the den's export where it's told, and says how to
 // finish the move; dens den remove asks first, takes the local password,
-// and says where Dens reaches the den now (M10).
+// and says where Dens reaches the den now.
 func TestExportAndRemoveCommands(t *testing.T) {
 	f := serveDen(t)
 	path := filepath.Join(t.TempDir(), "den.backup")
@@ -249,7 +249,7 @@ func TestExportAndRemoveCommands(t *testing.T) {
 
 // dens password sets the local password where none is set, which standard
 // input gives once where the terminal asks twice, and changes it given the
-// current one, which comes first (M10).
+// current one, which comes first.
 func TestPasswordCommand(t *testing.T) {
 	f := serveDen(t)
 	out, err := runDens(t, "a new password\n", "password", "--password-stdin")
@@ -272,8 +272,8 @@ func TestPasswordCommand(t *testing.T) {
 }
 
 // dens den create creates the den with its name and address, after the
-// local password, and prints its owner invite, and how to make another
-// (M10). Where the instance hosts a den already, or hosting is off, it
+// local password, and prints its owner invite, and how to make another.
+// Where the instance hosts a den already, or hosting is off, it
 // says so before asking for the password.
 func TestCreateCommand(t *testing.T) {
 	f := serveDen(t)
@@ -302,7 +302,7 @@ func TestCreateCommand(t *testing.T) {
 }
 
 // dens logs saves the newest logs, as the settings' Logs card downloads
-// them, and with --level sets how much they say, as the card does (M11).
+// them, and with --level sets how much they say, as the card does.
 func TestLogsCommand(t *testing.T) {
 	f := serveDen(t)
 	saved := filepath.Join(t.TempDir(), "logs.txt")

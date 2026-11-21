@@ -47,7 +47,7 @@ test('shares lay out side by side in a wide player, and above each other in a ta
     assert.deepEqual(tileLayout(5, 400, 700), { cols: 2, rows: 3 });
 });
 
-// The phone layout's docked player shows one share at a time (M13.4).
+// The phone layout's docked player shows one share at a time.
 test('the docked player shows the share last begun, keeps the one shown, and taps on to the next', () => {
     assert.equal(dockedShown(['a'], [], ''), 'a');
     assert.equal(dockedShown(['a', 'b'], ['a'], 'a'), 'b', 'one the member just began to watch');

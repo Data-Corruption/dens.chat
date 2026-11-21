@@ -48,8 +48,7 @@ const (
 	EventReadStateUpdated  = "read_state.updated"
 )
 
-// MaxRetention is the longest retention period an owner sets, in days
-// (M5).
+// MaxRetention is the longest retention period an owner sets, in days.
 const MaxRetention = 3650
 
 // CheckRetention checks a retention period: days a message is kept, or 0
@@ -77,10 +76,10 @@ type RetentionPreview struct {
 
 // Channel is a text or voice channel, or a DM. A DM has no name, group or
 // position, and names its two members, lower ID first. A voice channel has
-// a bitrate, in bits a second, for its call's Opus (M4.2). A group DM
-// (M16.3) names its members as the den holds them, in the order they
+// a bitrate, in bits a second, for its call's Opus. A group DM
+// names its members as the den holds them, in the order they
 // joined, the number of its latest change, and its name sealed; a Dens
-// knows its members from its changes alone. A member's notes (M17.3) name
+// knows its members from its changes alone. A member's notes name
 // that member alone, and have no name, group or position either.
 type Channel struct {
 	ID          string   `json:"id"`
@@ -92,12 +91,12 @@ type Channel struct {
 	StaffOnly   bool     `json:"staff_only"`
 	Members     []string `json:"members,omitempty"`
 	Bitrate     int      `json:"bitrate,omitempty"`
-	// Changes and SealedName are a group DM's (M16.3).
+	// Changes and SealedName are a group DM's.
 	Changes    int         `json:"changes,omitempty"`
 	SealedName *SealedName `json:"sealed_name,omitempty"`
 	// ExpiresAfter is how long, in seconds, a DM's or a group's messages
 	// stay after they're sent, 0 while they stay, and ExpiresSet who last
-	// set it and when, once anyone has (M16.4).
+	// set it and when, once anyone has.
 	ExpiresAfter int        `json:"expires_after,omitempty"`
 	ExpiresSet   *ExpirySet `json:"expires_set,omitempty"`
 }
@@ -126,7 +125,7 @@ type Message struct {
 	// and tick its tasks.
 	Editors []string `json:"editors,omitempty"`
 	// Sealed is a DM message's text and files, sealed by its members'
-	// clients with the DM key KeyID names (M1.7). Its Text is empty, its
+	// clients with the DM key KeyID names. Its Text is empty, its
 	// files are listed only inside, and its Nonce comes everywhere,
 	// history too, since opening it takes the nonce.
 	Sealed Bytes  `json:"sealed,omitempty"`
@@ -134,17 +133,17 @@ type Message struct {
 	// Reactions are a channel's message's reactions, each emoji with the
 	// members who reacted with it, in the order each emoji came, and
 	// DMReactions a DM's, each of its members' sets as their client sealed
-	// it (M15.3).
+	// it.
 	Reactions   []Reaction        `json:"reactions,omitempty"`
 	DMReactions []SealedReactions `json:"dm_reactions,omitempty"`
 	// Poll is a channel's message's poll, whose question its text is, as
-	// the member it's sent to may see it (M15.4).
+	// the member it's sent to may see it.
 	Poll *Poll `json:"poll,omitempty"`
 	// Everyone marks a channel's message whose @everyone staff put there,
-	// which mentions every member who can see the channel (M15.4).
+	// which mentions every member who can see the channel.
 	Everyone bool `json:"everyone,omitempty"`
 	// ExpiresAt is when a DM's or a group's message disappears, by the
-	// time its channel had as it was sent (M16.4).
+	// time its channel had as it was sent.
 	ExpiresAt int64 `json:"expires_at,omitempty"`
 }
 
@@ -225,11 +224,11 @@ type SendRequest struct {
 	// Text empty; Attachments are then its sealed uploads.
 	Sealed Bytes  `json:"sealed,omitempty"`
 	KeyID  string `json:"key_id,omitempty"`
-	// Poll makes the message a poll, its text the question (M15.4): in a
+	// Poll makes the message a poll, its text the question: in a
 	// channel, without files or editors.
 	Poll *PollRequest `json:"poll,omitempty"`
-	// Spoilers are the uploads among Attachments that go as spoilers
-	// (M17.2): in a channel, which the den keeps on each file. A DM's
+	// Spoilers are the uploads among Attachments that go as spoilers:
+	// in a channel, which the den keeps on each file. A DM's
 	// spoilers go inside its seal, so the den never learns them.
 	Spoilers []string `json:"spoilers,omitempty"`
 }
@@ -239,7 +238,7 @@ type SendRequest struct {
 // and since the den can't compare texts, Unedited marks one that only
 // ticks a task or changes the editors, which doesn't mark it edited.
 // Attachments, which only the author sets, are the message's files after
-// the edit (M5): files it has and the author's uploads waiting to be used,
+// the edit: files it has and the author's uploads waiting to be used,
 // or in a DM every blob.
 type EditRequest struct {
 	Revision    int       `json:"revision"`
@@ -252,7 +251,7 @@ type EditRequest struct {
 }
 
 // MessageUpdated is a changed message, with the files the change took off
-// it, which are deleted and leave clients' caches (M5).
+// it, which are deleted and leave clients' caches.
 type MessageUpdated struct {
 	Message
 	Files []string `json:"files,omitempty"`
@@ -279,7 +278,7 @@ type ChannelRequest struct {
 	GroupID     *string `json:"group_id,omitempty"`
 	Position    *int    `json:"position,omitempty"`
 	StaffOnly   *bool   `json:"staff_only,omitempty"`
-	Bitrate     *int    `json:"bitrate,omitempty"` // a voice channel's (M4.2)
+	Bitrate     *int    `json:"bitrate,omitempty"` // a voice channel's
 }
 
 type GroupRequest struct {
@@ -365,7 +364,7 @@ func CheckMessage(m Message) error {
 		if err := checkSealed(m.Sealed, m.KeyID, m.Nonce, m.Revision); err != nil || m.Text != "" || len(m.Attachments) > 0 {
 			return errors.New("message has an invalid sealed text")
 		}
-		// A DM's other member, or from M16.3 a group's others.
+		// A DM's other member, or a group's others.
 		if len(m.Editors) > MaxGroupMembers-1 {
 			return errors.New("message has too many editors")
 		}

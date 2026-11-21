@@ -1,4 +1,4 @@
-// A call's sounds as the page plays them (M14.2), with stand-ins for the
+// A call's sounds as the page plays them, with stand-ins for the
 // browser and the den: the member joining once the den has them in the
 // call, others joining, leaving and sharing, nothing of that while
 // deafened, the microphone's sounds from each thing that moves it, the

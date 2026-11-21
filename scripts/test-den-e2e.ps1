@@ -31,7 +31,7 @@ one and deletes another. A HEIC sent smaller must arrive as a copy at
 lowered limit as an AV1 copy that fits, with its preview. The member's cache
 keeps what they viewed across both restarts, and drops what went. The owner
 and the member write in a DM at the same moment, neither typing a digit, and
-compare codes, which asks nothing of the den (M16.1); it carries text, a
+compare codes, which asks nothing of the den; it carries text, a
 photo, a photo's and a video's smaller copies and a video the den stores
 only sealed. The owner shares a checklist with the member, and the two tick
 different boxes at the same moment, all of which must stay. Instance fresh
@@ -247,7 +247,7 @@ function Wait-Value([scriptblock]$Get, [string]$What) {
 }
 
 # Wait-Identity waits until an instance's Dens has published its member's
-# identity and kept another member's (M16.1). Until then the member's
+# identity and kept another member's. Until then the member's
 # record leaves identity out, and strict mode refuses a property that
 # isn't there.
 function Wait-Identity($Browser, [string]$DenID, [string]$Member) {
@@ -322,8 +322,8 @@ function Approve-SignIn($New, $Old, [string]$DenID, [string]$Password, [switch]$
 
 # Send-Upload uploads a file as the page does, for a channel, whose DM's go
 # sealed, and returns what the local service answered. Send, for a photo
-# or video on a message, sends it smaller or full, keeping both versions
-# (M5); a video's copy takes a while (M5.4).
+# or video on a message, sends it smaller or full, keeping both versions;
+# a video's copy takes a while.
 function Send-Upload($Browser, [string]$DenID, [string]$Channel, [string]$Path, [string]$Name, [string]$Send = "") {
     $query = "channel=$Channel"
     if ($Send) { $query += "&send=$Send" }
@@ -463,7 +463,7 @@ function Wait-Channel($Browser, [string]$DenID) {
 }
 
 # Wait-Retention waits until an instance hears that the den keeps messages
-# Days days, 0 for ever (M5).
+# Days days, 0 for ever.
 function Wait-Retention($Browser, [string]$DenID, [int]$Days) {
     $deadline = (Get-Date).AddSeconds(15)
     while ((Get-Date) -lt $deadline) {
@@ -603,7 +603,7 @@ try {
     if ($ClientPort -ne 8484) { $mainArgs += @("-ClientPort", $ClientPort) }
     Invoke-Installer $mainArgs
     $owner = New-Browser "main" $ClientPort
-    # The owner turns hosting on from the page, with the local password (M9.1).
+    # The owner turns hosting on from the page, with the local password.
     $hosting = Invoke-Api $owner POST "/api/hosting" @{ on = $true; password = "local password" }
     if (-not $hosting.serving) { Fail "hosting didn't turn on" }
 
@@ -712,8 +712,7 @@ den.test:$HttpsPort {
         Wait-Probe $memberSide "the member, over $network,"
         Wait-Probe $ownerSide "the owner"
         # Each probe got the call's keys with the other's, which their
-        # services sealed to each other's identity and passed through the den
-        # (M16.2).
+        # services sealed to each other's identity and passed through the den.
         foreach ($side in @($memberSide, $ownerSide)) {
             if (-not ($side.Out.Result + $side.Err.Result).Contains("the call's keys: this member's numbered")) { Fail "the call's keys didn't pass between the services" }
         }
@@ -760,7 +759,7 @@ den.test:$HttpsPort {
 
     # The member shares their screen, with sound, and the owner watches it:
     # Pion's VP9 packets cross the den's media ports, and the den asks the
-    # sharer for a keyframe as the owner's section opens (M4.2).
+    # sharer for a keyframe as the owner's section opens.
     Step "the member shares their screen, and the owner watches it"
     $memberSide = Start-Probe $member $denID $lounge $aliceID "udp" -Then "share" -Stay "15" -Ready $memberReady
     $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp" -Then "watch:$bobID" -Ready $ownerReady
@@ -773,7 +772,7 @@ den.test:$HttpsPort {
     Write-Host "The owner watched the member's share, its screen and its sound, and the sharer got a keyframe request."
 
     # Staff change the voice channel's bitrate mid-call, and both members'
-    # next offers ask for it (M4.2).
+    # next offers ask for it.
     Step "a voice channel's new bitrate reaches the call in progress"
     $ownerSide = Start-Probe $owner $denID $lounge $bobID "udp" -Then "bitrate:48000" -Ready $ownerReady
     $memberSide = Start-Probe $member $denID $lounge $aliceID "udp" -Then "bitrate:48000" -Ready $memberReady
@@ -960,7 +959,7 @@ den.test:$HttpsPort {
     Invoke-Native -FilePath $Dens -Arguments @("service", "start", "--instance", "second") | Out-Null
     Wait-Connected $member 0 | Out-Null
     Wait-Gone $member $denID $cachedPhoto.id
-    # The edit and the delete reached the member's history (M6.2).
+    # The edit and the delete reached the member's history.
     $readsRight = { param($h) $h.Contains("edited while away") -and -not $h.Contains("to be deleted") }
     Wait-Value { & $readsRight (Get-History $member $denID $channel) } "the edit and the delete in the member's history" | Out-Null
     # With the den stopped, the video plays from the member's cache, and the
@@ -1168,7 +1167,7 @@ den.test:$HttpsPort {
     if ($refused -notmatch "banned") { Fail "rejoining after the ban: $refused" }
     Write-Host "The banned member can't come back as bob."
 
-    # The den's machine has the last word on who owns it (M8).
+    # The den's machine has the last word on who owns it.
     Step "hand the den on with an owner invite from its machine"
     $saved = $ErrorActionPreference
     try {

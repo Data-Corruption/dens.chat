@@ -7,7 +7,7 @@ import (
 )
 
 // TestCallNotesLogTheirFieldsAlone checks what the log says of a page's
-// notes on its call (M11): their own fields, words from the lists alone and
+// notes on its call: their own fields, words from the lists alone and
 // numbers within reason, whatever else the page sends.
 func TestCallNotesLogTheirFieldsAlone(t *testing.T) {
 	for _, c := range []struct {
@@ -37,8 +37,8 @@ func TestCallNotesLogTheirFieldsAlone(t *testing.T) {
 		{`{"what": "stats", "stats": {"protocol": "secret", "local": "192.0.2.5", "remote": "relay", "packets_sent": -5, "bytes_sent": 99999999999999999,
 			"packets_received": 0, "bytes_received": 0, "packets_lost": 0, "jitter": 0, "rtt": 0, "address": "192.0.2.5", "send_rate": -3}}`,
 			"over ?, from a ? candidate to a relay one: sent 0 packets, 9007199254740992 bytes; received 0 packets, 0 bytes, 0 lost; jitter 0 ms, round trip 0 ms; sending 0 kbit/s"},
-		// A sealed call's frames, by count alone (M16.2), on each track,
-		// and why the page dropped those it dropped (M18): a watcher whose
+		// A sealed call's frames, by count alone, on each track,
+		// and why the page dropped those it dropped: a watcher whose
 		// share's sound came in the clear.
 		{`{"what": "stats", "stats": {"protocol": "udp", "local": "host", "remote": "host", "packets_sent": 10, "bytes_sent": 1000,
 			"packets_received": 5, "bytes_received": 500, "packets_lost": 0, "jitter": 1, "rtt": 2, "send_rate": 40, "target_rate": 0,
@@ -59,8 +59,7 @@ func TestCallNotesLogTheirFieldsAlone(t *testing.T) {
 			"packets_received": 0, "bytes_received": 0, "packets_lost": 0, "jitter": 0, "rtt": 0, "send_rate": 0, "target_rate": 0, "frames": {}}}`,
 			"over udp, from a host candidate to a host one: sent 0 packets, 0 bytes; received 0 packets, 0 bytes, 0 lost; jitter 0 ms, round trip 0 ms; " +
 				"sending 0 kbit/s; no frames yet"},
-		// A sender the browser sent around its seal, which the page stopped
-		// (M18).
+		// A sender the browser sent around its seal, which the page stopped.
 		{`{"what": "unsealed", "track": "sound", "sent": 50}`, "its browser sent its share's sound unsealed, 50 packets, so it stopped the sound"},
 		{`{"what": "unsealed", "track": "screen", "sent": 31}`, "its browser sent its screen unsealed, 31 frames, so it ended the share"},
 		{`{"what": "unsealed", "track": "voice", "sent": -4}`, "its browser sent its voice unsealed, 0 packets, so it left the call"},

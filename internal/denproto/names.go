@@ -37,10 +37,10 @@ func NormalizeUsername(s string) (string, error) {
 // the text around it: control and format characters, which include the
 // bidi overrides and the zero-width ones, and the fillers that render as
 // blanks. It trims what's left, and checks it is 1 to max characters with
-// something visible among them, so a name can't pass for nobody's (M8).
+// something visible among them, so a name can't pass for nobody's.
 func CleanName(s string, max int) (string, error) { return cleanText(s, max, false, "name") }
 
-// cleanText cleans a name, or with emoji a poll's choice (M15.4), which
+// cleanText cleans a name, or with emoji a poll's choice, which
 // keeps each of Unicode's emoji whole, joiners and all; what is what the
 // errors call it.
 func cleanText(s string, max int, emoji bool, what string) (string, error) {

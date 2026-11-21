@@ -143,7 +143,7 @@ async function openAddDen(answers) {
 }
 
 // A den's address takes its https:// or leaves it off, and signs in at
-// the address with it (M22.6).
+// the address with it.
 test("Add a den's address signs in with or without its scheme", async () => {
     for (const typed of ['den.example.com', 'https://den.example.com', 'https://den.example.com/', 'Den.Example.com']) {
         let asked = null;
@@ -204,7 +204,7 @@ test('Add a den offers Scan only with a camera', async () => {
 // device's digits under their code beside a box for the new device's,
 // then Approved with them still shown, until the new device connects and
 // the request leaves the list. One closed before then waits in a line
-// that opens it again (M22.6).
+// that opens it again.
 test('a sign-in to approve opens as a dialog, and closes once its device connects', async () => {
     const posted = [];
     const den = { den_id: 'd1', name: 'Voice Den', state: 'connected', requests: [] };

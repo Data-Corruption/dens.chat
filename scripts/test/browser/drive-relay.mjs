@@ -1,11 +1,11 @@
-// The M20 check: bob in the browser named, in a call on his first
+// The relay check: bob in the browser named, in a call on his first
 // install, sending by push to talk, and alice in Chromium in the call too.
 // His laptop's install, with Keybind relay on in both, links to his first
 // through the den's introduction, and its helper, a stand-in, hears a call
 // is on. Its push to talk lights bob's ring on alice's page, its toggle
 // mute mutes him once, and the ring goes out within half a second of the
 // laptop's install stopping, and of it killed, which says nothing. Bob's
-// settings list the laptop as linked. From M20.2 the laptop, started
+// settings list the laptop as linked. Then the laptop, started
 // again with its own helper, the real one, shares the container's sound,
 // a tone, and bob's first page listens from his settings: the worklet's
 // own counts say the packets came, at the tone's level, and it never ran
@@ -13,10 +13,10 @@
 // shows the bar on its end; a second page of bob's first install takes
 // over, the first told; and the laptop's Stop ends it, the second told.
 // Then the den's database and both of bob's installs' logs hold none of
-// the container's addresses. From M20.3 the laptop's page, taken for a
+// the container's addresses. The laptop's page, taken for a
 // phone's by touch, shows the call's button for bob's call under the name
 // of the device holding it, and held, rings bob for alice until it's let
-// go. From M22.7 bob's Home holds his bar and his call in one box.
+// go. Bob's Home holds his bar and his call in one box.
 //
 //   run.sh relay chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
@@ -248,7 +248,7 @@ try {
     report(barB.includes('Listening to') && barB.includes('Stop'), `bob's bar says he listens, with Stop: ${barB}`);
 
     // On Home the bar and the call are one box, the bar first, as under the
-    // channel list (M22.7). The page moves there without loading again,
+    // channel list. The page moves there without loading again,
     // which would end its listening.
     const goIn = (path) => B.b.eval(`(history.pushState(null, '', ${JSON.stringify(path)}), dispatchEvent(new PopStateEvent('popstate')), true)`);
     await B.b.key('Escape');

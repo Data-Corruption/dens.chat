@@ -1,4 +1,4 @@
-// The phone check (M13): every screen the browser checks reach, at 390 by
+// The phone check: every screen the browser checks reach, at 390 by
 // 844 pixels, in Chromium as a phone (a mobile viewport, twice the pixels,
 // and a touch screen), in Firefox as a touch screen (its pointer prefs),
 // and in Firefox with a mouse, as a narrow desktop window; Firefox's
@@ -6,47 +6,47 @@
 // wide. Each screen's picture and its layout's audit land in
 // ~/shot-phone/<browser>, and the check fails on a control under 24
 // pixels, and on a touch screen on a list's row under 44 or a control only
-// a hover shows (M13.2). Then, as a member would, getting around (M13.1):
+// a hover shows. Then, as a member would, getting around:
 // swipes between the panes, by touch drags or a touchpad's sideways
 // scroll, taps, and the browser's Back, through the settings, the
-// members, the channel, the list and Home; and touch (M13.2): a message's
+// members, the channel, the list and Home; and touch: a message's
 // actions by a long press, or the ⋯ with a mouse, in a sheet closed by a
 // swipe down and by Back, three lines written and sent, by the send button
-// with a finger, and a tip opened and closed by taps; and pages (M13.3):
+// with a finger, and a tip opened and closed by taps; and pages:
 // the settings and Manage as lists of sections, each a page Back leaves,
 // the viewer swiped to a message's second photo, zoomed by a double tap,
 // and by two fingers or the wheel, and closed by Back, and a dialog as a
-// sheet, swiped down; and the call (M13.4): its bar across the top of the
+// sheet, swiped down; and the call: its bar across the top of the
 // channel's pane, the call's button held and tapped on a touch screen, as
 // its role in the settings says, and absent with a mouse, a member's
 // volume dragged in a sheet, a share docked above the channel, full
 // screen and back, and the call left from its bar; and staff's long press
 // on a channel's or a group's row for its menu and settings, on a touch
-// screen, and from M22.2 a channel and a group made from each menu a finger
+// screen, and a channel and a group made from each menu a finger
 // reaches; and
-// the soundboard (M14.3): the bar's mute and soundboard, its sheet, and
-// Manage opened from the den's name; and emoji (M15.2): the picker as a
+// the soundboard: the bar's mute and soundboard, its sheet, and
+// Manage opened from the den's name; and emoji: the picker as a
 // sheet, its search staying at its top, a group's button and a tap's
-// pick, and :par and @al completed above the box by taps; and reactions
-// (M15.3): a message's sheet with its quick reactions at its top, a tap
+// pick, and :par and @al completed above the box by taps; and reactions:
+// a message's sheet with its quick reactions at its top, a tap
 // reacting, the chip's tip by a long press, a tap taking it back, and the
-// sheet's + opening the picker as a sheet; and polls (M15.4): the
+// sheet's + opening the picker as a sheet; and polls: the
 // composer's + as a sheet, its Poll opening the editor above the box, a
 // poll written and sent, voted on by taps, and its count's tip by a tap;
-// and Compact (M17.2): picked in Appearance by a tap, a channel's messages
+// and Compact: picked in Appearance by a tap, a channel's messages
 // a line each, a long press opening a message's sheet, and a photo sent as
-// a spoiler, covered until a tap shows it; and notes (M17.3): their row at
+// a spoiler, covered until a tap shows it; and notes: their row at
 // the top of the Direct messages list opening them by a tap, a note sent
 // with nothing marked unread, and the member's own profile card's Notes;
-// and events (M17.4): the Events row atop the Den tab opening them by a
+// and events: the Events row atop the Den tab opening them by a
 // tap, Interested marked and taken back by taps, the header's way back to
 // the list, and the owner's pane, its form as a sheet and Cancel's dialog;
-// and the call timer (M21.2): Appearance's Call timer, and a call's length
-// at its row's right, the call's lock behind its block's arrow; and before
-// (M22.4), a new install's first run, its Link previews answered on
-// (M22.7), and a Steam link shown as a card after it; and Appearance as a
+// and the call timer: Appearance's Call timer, and a call's length
+// at its row's right, the call's lock behind its block's arrow; and before,
+// a new install's first run, its Link previews answered on,
+// and a Steam link shown as a card after it; and Appearance as a
 // page, its Themes, Editor and Preview along its foot, the editor's Theme,
-// Messages and Calls, each shot and audited (M22.8).
+// Messages and Calls, each shot and audited.
 //
 //   node drive-phone.mjs [chromium|firefox|firefox-mouse]... [-- PART...]
 //
@@ -401,8 +401,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
                 await h.snap('recovery-codes', { scroll: `document.querySelector('main')`, max: 4 });
             });
             await h.step('codes-saved', async () => {
-                // Saving them, as a file named for the den, lets Done through
-                // (M22.4).
+                // Saving them, as a file named for the den, lets Done through.
                 const done = h.byText('main button', 'Done');
                 const waited = await h.ev(`${done}?.disabled === true`);
                 await h.click(h.byText('main button', 'Save as a file'));

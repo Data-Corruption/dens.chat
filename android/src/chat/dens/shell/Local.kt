@@ -5,7 +5,7 @@ import android.content.pm.PackageManager
 import android.os.Build
 
 // Local is Android's word on the app reaching its own network, which Relay
-// links across (M20.3): Android 17 keeps an app off it unless the member
+// links across: Android 17 keeps an app off it unless the member
 // allows it, and earlier Androids ask nothing. The shell asks once, as the
 // member first wants Relay; after a refusal, Android's settings allow it.
 object Local {

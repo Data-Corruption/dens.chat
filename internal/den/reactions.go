@@ -10,7 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Reactions (M15.3): a member's emoji on a message. In a channel the den
+// Reactions: a member's emoji on a message. In a channel the den
 // keeps a row for each, checked against Unicode's list or the den's own
 // emoji, so a reaction carries no text, and tells those who see the
 // channel of each change, one member's one emoji at a time, which applies
@@ -132,12 +132,11 @@ func (d *Den) reactable(ctx context.Context, s *Session, messageID string) (denp
 	if err != nil {
 		return denproto.Channel{}, 0, 0, errMessageNotFound
 	}
-	// A group's member reacts to what they can read, from their joining
-	// (M16.3).
+	// A group's member reacts to what they can read, from their joining.
 	if since, err := groupSince(ctx, d.db, c, cid, s.MemberID); err != nil || mid <= since {
 		return denproto.Channel{}, 0, 0, errMessageNotFound
 	}
-	// Nobody else reads a member's notes, to react to them (M17.3).
+	// Nobody else reads a member's notes, to react to them.
 	if isNotes(c) {
 		return denproto.Channel{}, 0, 0, invalid("notes take no reactions")
 	}
@@ -410,7 +409,7 @@ func (d *Den) SetDMReactions(ctx context.Context, s *Session, messageID string, 
 		}
 		if current == nil {
 			// A group's message carries the sets of its members and of those
-			// who left it, as many as a message may (M16.3).
+			// who left it, as many as a message may.
 			var sets int
 			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_dm_reactions WHERE message_id = ?`, mid).Scan(&sets); err != nil {
 				return err

@@ -1,4 +1,4 @@
-// The M8 check of hostile text: a channel of 200 messages, each 4,000
+// The hostile check, of hostile text: a channel of 200 messages, each 4,000
 // characters of markdown made to be slow to parse, as any member could
 // send. Bob, in the browser named, scrolls up through it while alice, in
 // the other, types in it, and his page takes her typing notices without

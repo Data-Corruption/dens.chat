@@ -25,7 +25,7 @@ func installCommand(bi build.BuildInfo) *cli.Command {
 		Flags: []cli.Flag{
 			&cli.StringFlag{Name: "user", Usage: "the desktop account allowed to pair (default: the account that elevated)"},
 			// v1.0's den role, refused rather than dropped, so nobody
-			// takes it for one that did something (M9.1).
+			// takes it for one that did something.
 			&cli.BoolFlag{Name: "den", Hidden: true},
 			&cli.IntFlag{Name: "client-port", Usage: "loopback port of the chat page"},
 			&cli.IntFlag{Name: "den-port", Usage: "loopback port Caddy forwards the den to, while hosting is on"},
@@ -100,7 +100,7 @@ func uninstallCommand(bi build.BuildInfo) *cli.Command {
 	}
 }
 
-// deletePhrase is what an uninstall asks to be typed (M10): more than the
+// deletePhrase is what an uninstall asks to be typed: more than the
 // y a reflex gives.
 const deletePhrase = "perm delete data"
 
@@ -173,8 +173,8 @@ func restoreCommand(bi build.BuildInfo) *cli.Command {
 }
 
 // refusePackaged refuses a maintenance command in the Flatpak, which
-// Flatpak installs, updates and removes (M9.3), saying why, and in the
-// Android app, which Android does (M12).
+// Flatpak installs, updates and removes, saying why, and in the
+// Android app, which Android does.
 func refusePackaged(bi build.BuildInfo, flatpakWhy string) error {
 	switch app.FormOf(bi) {
 	case layout.Flatpak:

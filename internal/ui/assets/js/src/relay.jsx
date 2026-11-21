@@ -1,4 +1,4 @@
-// Relay's bar (M20.2), where the call's sits: in the block at the foot of
+// Relay's bar, where the call's sits: in the block at the foot of
 // a den's channel list, boxed with the call on the other pages, and
 // across the top of the channel's pane on the phone layout. It shows on
 // both ends of a computer's sound: on the page that listens to it, how

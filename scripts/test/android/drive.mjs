@@ -1,7 +1,7 @@
 // Drives the page in the Android app's WebView over adb, as the browser
 // checks drive Chromium: the DevTools protocol on the WebView's socket,
 // which adb forwards to a port here, through Node's own WebSocket. A
-// development build's WebView takes it (M12). Runs in the Android
+// development build's WebView takes it. Runs in the Android
 // container, beside adb.
 //
 // Usage: node drive.mjs [-s SERIAL] COMMAND [ARGS]

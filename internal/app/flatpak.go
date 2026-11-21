@@ -16,15 +16,14 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 )
 
-// Flatpak is what the Flatpak's service does in the member's session
-// (M9.3), which the page asks of it.
+// Flatpak is what the Flatpak's service does in the member's session,
+// which the page asks of it.
 type Flatpak interface {
 	// Update is what Flatpak's update monitor found, and CheckInstalled.
 	Update() FlatpakUpdate
 	// CheckInstalled asks the newest build installed which version it is,
 	// which the monitor learns of only at its next check, every 30
-	// minutes, where something else, as the software center, installed it
-	// (M9.4).
+	// minutes, where something else, as the software center, installed it.
 	CheckInstalled(ctx context.Context)
 	// InstallUpdate has the monitor install the update. Nothing to update
 	// means something else installed it first: either way the newest build
@@ -40,7 +39,7 @@ type Flatpak interface {
 	SetStartAtSignIn(ctx context.Context, on bool) error
 }
 
-// FlatpakUpdate is the Flatpak's update notice (M9.3): an update on its
+// FlatpakUpdate is the Flatpak's update notice: an update on its
 // remote, Available, or one installed and not yet running, Installed, with
 // its Version where CheckInstalled has it; and whether Dens may install it
 // itself, or the software center does, and why.
@@ -95,7 +94,7 @@ func inFlatpak() bool {
 // snapshot of the data an older version left before it migrates them. The
 // Android app waits for a Dens its shell started before, still stopping;
 // Android installs no older version over a newer one, so it keeps no
-// snapshot (M12).
+// snapshot.
 func (a *App) sessionOptions() maintenance.SessionOptions {
 	switch a.Layout.Form {
 	case layout.Flatpak:
@@ -107,7 +106,7 @@ func (a *App) sessionOptions() maintenance.SessionOptions {
 }
 
 // snapshot keeps a copy of the data an older version left, from before
-// this version migrates them (M9.3): a backup archive, which the restore
+// this version migrates them: a backup archive, which the restore
 // takes back should Flatpak roll Dens back. It leaves the cache out, as
 // every backup does, and only the last one stays. Nothing else runs on the
 // data meanwhile: the start holds the lifecycle lock.

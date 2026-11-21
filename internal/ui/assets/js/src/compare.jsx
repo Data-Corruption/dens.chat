@@ -1,11 +1,11 @@
-// Smaller copies (M5): the setting, the viewer's comparison of a photo's or
+// Smaller copies: the setting, the viewer's comparison of a photo's or
 // video's two versions before it's sent, and how far a video's copy is.
 //
 // A photo or video added to a message goes as a smaller copy unless the
 // member sends it full size. The local service makes both versions as the
 // file is added, uploads the one to send, and keeps both until the message
 // goes, so the comparison shows them from there, and switching uploads the
-// other. A video's copy takes a while, so the page follows it (M5.4).
+// other. A video's copy takes a while, so the page follows it.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './api.js';
@@ -114,7 +114,7 @@ export function usage(storage, limits) {
     return limits?.member_storage ? `You use ${used} of your ${formatSize(limits.member_storage)} on this den.` : `You use ${used} on this den.`;
 }
 
-// A video's copy (M5.4). The page names each upload with a key of its own,
+// A video's copy. The page names each upload with a key of its own,
 // and follows it by that key, over a socket of its own (copier.js), while
 // the copy is made and sent.
 
@@ -139,7 +139,7 @@ function formatTime(seconds) {
 }
 
 // How long a finger rests on the picture before it shows the other
-// version, until it's lifted, as Space held does (M13.2); a quicker tap
+// version, until it's lifted, as Space held does; a quicker tap
 // looks closer, as a click does.
 const HOLD = 250;
 
@@ -147,7 +147,7 @@ const HOLD = 250;
 // the member picks one: fitted to the window, as the viewer shows everyone,
 // or at 100%, where they drag to look around, with the smaller copy scaled
 // up to match, as someone who downloads it would see it; and as two
-// fingers or the wheel zoom it, between (M13.3). The switch flips between
+// fingers or the wheel zoom it, between. The switch flips between
 // them in place, and holding Space, or a finger on the picture, shows the
 // other one while it's held. A video's two play in place, kept at the
 // same moment, so a flip shows the same frame; a version the browser

@@ -5,7 +5,7 @@ import (
 	"fmt"
 )
 
-// The den's soundboard (M14.3): sounds staff add, which a member in a call
+// The den's soundboard: sounds staff add, which a member in a call
 // plays for everyone in it, on a track the den streams into the call.
 
 // Events for the den's sounds, which every member hears.

@@ -9,7 +9,7 @@ import (
 	"unicode/utf8"
 )
 
-// Polls (M15.4): a channel's message whose members vote on its choices.
+// Polls: a channel's message whose members vote on its choices.
 // The message's text is the question, so notifications, reply quotes and
 // older pages read it. As its author posts it they pick how long it runs,
 // whether a member may pick more than one choice, who voted for what shows
@@ -288,7 +288,7 @@ func (p Poll) ViewFor(votes [][]string, mine []int) Poll {
 }
 
 // Everyone is the name staff's @everyone mentions every member by who can
-// see the channel (M15.4). A den may have a member of that name from
+// see the channel. A den may have a member of that name from
 // before, whom anyone else's @everyone mentions, and new members can't
 // take it.
 const Everyone = "everyone"

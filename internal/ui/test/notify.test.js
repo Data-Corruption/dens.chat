@@ -1,4 +1,4 @@
-// The page's notifications (M12.3): what the browser lets it do, asking it
+// The page's notifications: what the browser lets it do, asking it
 // as a kind is turned on, showing what the service gives the page, a
 // click opening the message, taking them back, and what the settings say
 // of where they show.
@@ -72,7 +72,7 @@ test('a notification shows with its den, replaces its channel\'s, and a click op
     assert.equal(first.title, 'Alice · Den');
     assert.equal(first.body, 'hello');
     assert.equal(first.tag, 'd1/7');
-    assert.equal(first.silent, true, 'silent, since the page plays the message\'s sound (M14.2)');
+    assert.equal(first.silent, true, 'silent, since the page plays the message\'s sound');
     const newer = show({ ...DM, message: '11', text: 'again' }, open, b.win);
     assert.ok(first.closed, "a channel's newer notification replaces its last");
     let prevented = false;
@@ -96,7 +96,7 @@ test('the service takes notifications back, and a browser that blocks them shows
 test('mutes and kinds, as the service says them', () => {
     const st = { dms: false, mentions: true, muted: { d1: { den: true, channels: ['7'] } } };
     assert.ok(notifying(st));
-    assert.ok(notifying({ dms: false, mentions: false }), 'events notify unless turned off (M17.4)');
+    assert.ok(notifying({ dms: false, mentions: false }), 'events notify unless turned off');
     assert.ok(!notifying({ dms: false, mentions: false, eventsOff: true }));
     assert.ok(!notifying(null));
     const m = mutedIn(st, 'd1');

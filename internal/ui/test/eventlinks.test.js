@@ -1,4 +1,4 @@
-// Links to events (M17.5): reading one, what its chip reads, what its card
+// Links to events: reading one, what its chip reads, what its card
 // shows, and where a click leads, or why it can't.
 
 import './dom.js';

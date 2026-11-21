@@ -273,7 +273,7 @@ func send(t *testing.T, m *denclient.Manager, denID, channel, text string, files
 }
 
 // readyDM waits until both members' Dens have their DM and have kept each
-// other's identity, so either's first message makes its key (M16.1).
+// other's identity, so either's first message makes its key.
 func readyDM(t *testing.T, a, b *denclient.Manager, denID, dm string) {
 	t.Helper()
 	ids := []string{}
@@ -338,7 +338,7 @@ func files(t *testing.T, dir string) map[string]string {
 	return out
 }
 
-// A den moves from the computer it was made on to another (M10). The
+// A den moves from the computer it was made on to another. The
 // computer it's on keeps its copy until another serves the den: hosting
 // off, an export since hosting was last on, and the den answering at its
 // address as itself. The export holds the den and none of the owner's
@@ -588,7 +588,7 @@ func TestDenMovesToAnotherComputer(t *testing.T) {
 func connected(s denclient.Status) bool { return s.State == denclient.StateConnected }
 
 // An export that fails partway, as when its download stops, holds nothing
-// another computer could serve, so the record of it goes with it (M10).
+// another computer could serve, so the record of it goes with it.
 func TestAFailedExportIsForgotten(t *testing.T) {
 	pc := newComputer(t, hosting(t))
 	owner := pair(t, pc.a, pc.client)

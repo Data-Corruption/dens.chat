@@ -1,4 +1,4 @@
-// Disappearing messages (M16.4): what the page shows of a DM's or a
+// Disappearing messages: what the page shows of a DM's or a
 // group's time, beside it and in it. Any of its members sets how long its
 // messages stay after they're sent, for those sent from then on; the den
 // deletes each as its time comes, and every member's Dens what it holds.

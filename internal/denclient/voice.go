@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// A call (M2) is between the page that joined it and a den's SFU. This
+// A call is between the page that joined it and a den's SFU. This
 // install holds one call at a time, for one page, and relays its signaling
 // between the den's socket and that page's event stream. It also decides
 // where the page's browser sends media: where the install reaches the den,
@@ -25,11 +25,11 @@ const CallDisconnected = "disconnected"
 
 // CallEvent goes to the page that holds the install's call: an offer to
 // answer, carrying the den's candidates; that the den took the call back
-// after its connection dropped (M3); that it refused a share or a watch
-// (M4.2), or a sound (M14.3); who in the call holds push to talk (M11);
-// whose sound plays in it, "" for none (M14.3); the call's keys, whole,
-// as one changes (M16.2); the voice channel staff moved the member to,
-// which the page joins (M17.2); or the call's end and why.
+// after its connection dropped; that it refused a share or a watch,
+// or a sound; who in the call holds push to talk;
+// whose sound plays in it, "" for none; the call's keys, whole,
+// as one changes; the voice channel staff moved the member to,
+// which the page joins; or the call's end and why.
 type CallEvent struct {
 	DenID    string       `json:"den"`
 	Channel  string       `json:"channel"`
@@ -44,7 +44,7 @@ type CallEvent struct {
 }
 
 // CallRefusal is the den refusing the page's share, its watch of a
-// member's share, or a sound it asked for (M14.3), and why.
+// member's share, or a sound it asked for, and why.
 type CallRefusal struct {
 	What     string `json:"what"`
 	MemberID string `json:"member_id,omitempty"`
@@ -65,7 +65,7 @@ type activeCall struct {
 	page, den, channel string
 	deliver            func(CallEvent)
 	addrs              []netip.Addr // where the browser reaches the den's media ports
-	// For the log (M11): the den's ID as the page shows it; what the page
+	// For the log: the den's ID as the page shows it; what the page
 	// last asked of the den that an offer or a resume answers, a join, a
 	// resume or a restart, and when; and when the last offer went to the
 	// page.
@@ -73,22 +73,22 @@ type activeCall struct {
 	asked     string
 	askedAt   time.Time
 	offeredAt time.Time
-	// keys are the call's keys, where its page seals it (M16.2), nil
+	// keys are the call's keys, where its page seals it, nil
 	// where it doesn't.
 	keys *callKeys
 }
 
 // JoinOptions are how a page joins a call: its member's marks, muted and
-// deafened; whether it takes back the call the den holds for this device
-// (M3); and whether it seals what it sends, frame by frame, under keys
-// this service makes (M16.2), as a den that seals calls requires.
+// deafened; whether it takes back the call the den holds for this device;
+// and whether it seals what it sends, frame by frame, under keys
+// this service makes, as a den that seals calls requires.
 type JoinOptions struct {
 	Marks  denproto.VoiceMute
 	Resume bool
 	Sealed bool
 }
 
-// note logs a step of a call's signaling, at debug (M11).
+// note logs a step of a call's signaling, at debug.
 func (m *Manager) note(call *activeCall, format string, args ...any) {
 	m.log.Debugf("Den %s, call in channel %s: "+format, append([]any{call.fp, call.channel}, args...)...)
 }
@@ -100,10 +100,10 @@ func since(t time.Time) time.Duration { return time.Since(t).Round(time.Millisec
 // a page, which gets the call's offers and its end through deliver; it
 // mustn't block. A call another page held ends, as moved. With Resume, the
 // page asks the den for the call it holds for this device after the den's
-// connection dropped (M3), which the page's peer connection carries on.
+// connection dropped, which the page's peer connection carries on.
 // Either way, the den's addresses are looked up afresh, since the network
 // may have changed. A sealed call has this service make the member's keys
-// for it, from the start, or afresh as it's taken back (M16.2).
+// for it, from the start, or afresh as it's taken back.
 func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, opts JoinOptions, deliver func(CallEvent)) error {
 	if !validID(channel) {
 		return inputError(errors.New("no such channel"))
@@ -185,7 +185,7 @@ func (m *Manager) AnswerCall(page, denID string, version int, sdp string) {
 }
 
 // RestartCall has the den restart the ICE of the page's call, as when the
-// browser's connection to the media ports broke (M3). The den's address
+// browser's connection to the media ports broke. The den's address
 // may have changed with the network, so the offer that follows gets it
 // afresh.
 func (m *Manager) RestartCall(ctx context.Context, page, denID string) {
@@ -220,7 +220,7 @@ func (m *Manager) MuteCall(page, denID string, marks denproto.VoiceMute) {
 	}
 }
 
-// ShareCall starts or ends the share of the page's call (M4.2), with its
+// ShareCall starts or ends the share of the page's call, with its
 // sound if sound.
 func (m *Manager) ShareCall(page, denID string, on, sound bool) {
 	if m.currentCall(page, denID) == nil {
@@ -231,8 +231,7 @@ func (m *Manager) ShareCall(page, denID string, on, sound bool) {
 	}
 }
 
-// TalkCall tells the den whether the page's member holds push to talk
-// (M11).
+// TalkCall tells the den whether the page's member holds push to talk.
 func (m *Manager) TalkCall(page, denID string, on bool) {
 	if m.currentCall(page, denID) == nil {
 		return
@@ -242,7 +241,7 @@ func (m *Manager) TalkCall(page, denID string, on bool) {
 	}
 }
 
-// PlaySound plays one of the den's sounds in the page's call (M14.3).
+// PlaySound plays one of the den's sounds in the page's call.
 func (m *Manager) PlaySound(page, denID, sound string) {
 	if m.currentCall(page, denID) == nil || !validID(sound) {
 		return
@@ -252,8 +251,7 @@ func (m *Manager) PlaySound(page, denID, sound string) {
 	}
 }
 
-// WatchCall starts or stops the page's call watching a member's share
-// (M4.2).
+// WatchCall starts or stops the page's call watching a member's share.
 func (m *Manager) WatchCall(page, denID, member string, on bool) {
 	if m.currentCall(page, denID) == nil || !validID(member) {
 		return
@@ -276,7 +274,7 @@ func (m *Manager) LeaveCall(page, denID string) {
 }
 
 // DropPage ends the call a page held, once its stream has closed, which
-// goes to the log at info (M11): a page whose stream drops while its tab
+// goes to the log at info: a page whose stream drops while its tab
 // stays open loses its call this way.
 func (m *Manager) DropPage(page string) {
 	call := m.takeCall(func(x *activeCall) bool { return x.page == page })
@@ -299,7 +297,7 @@ func (m *Manager) currentCall(page, denID string) *activeCall {
 }
 
 // takeCall clears the install's call if it matches, and returns it. Its
-// keys go with it (M16.2).
+// keys go with it.
 func (m *Manager) takeCall(match func(*activeCall) bool) *activeCall {
 	m.callMu.Lock()
 	call := m.call
@@ -354,7 +352,7 @@ func (m *Manager) denDropped(denID string) {
 // page that holds the call once it checks out, with the den's candidates
 // written in; an offer that doesn't ends the call, since only it is at
 // stake. Another member's key for the call is checked and opened here
-// before the page gets it (M16.2).
+// before the page gets it.
 func (c *conn) callEvent(ctx context.Context, e denproto.Event) error {
 	m := c.m
 	denID := c.j.denID.String()
@@ -468,7 +466,7 @@ func (c *conn) callEvent(ctx context.Context, e denproto.Event) error {
 		c.takeKey(ctx, k)
 	case denproto.EventVoiceMove:
 		// Staff moved the member: the page joins the channel as if they'd
-		// picked it (M17.2).
+		// picked it.
 		var x denproto.VoiceMove
 		if json.Unmarshal(e.D, &x) != nil || !validID(x.To) {
 			return errMalformed

@@ -1,8 +1,8 @@
 // The browser and system the page runs in, as the browser describes
-// itself, so the settings describe only what applies to them (M8.3).
+// itself, so the settings describe only what applies to them.
 // Firefox's forks, Waterfox among them, describe themselves as Firefox.
-// What a browser can do comes from what it has, not what it says it is
-// (M9.1): Android's WebView says it's Linux.
+// What a browser can do comes from what it has, not what it says it is:
+// Android's WebView says it's Linux.
 
 // browserOf names a browser by its user agent: Firefox, or one built on
 // Chromium, which the page otherwise takes it for.
@@ -33,7 +33,7 @@ export function canCall(win = globalThis) {
 
 // canSeal says whether the browser can seal a call's frames end to end,
 // which takes WebRTC's Encoded Transform in a worker, as a den that seals
-// its calls requires (M16.2): Firefox from 117, and Chromium, Android's
+// its calls requires: Firefox from 117, and Chromium, Android's
 // WebView among them, from 141.
 export function canSeal(win = globalThis) {
     return canCall(win) && typeof win.RTCRtpScriptTransform === 'function';
@@ -46,21 +46,21 @@ export function canShare(win = globalThis) {
 }
 
 // autoplays says whether the page's audio may start without a click, as
-// the service says its form lets it: Android's app does (M12). doc is the
+// the service says its form lets it: Android's app does. doc is the
 // page's document, or a stand-in in the tests.
 export function autoplays(doc = globalThis.document) {
     return doc?.getElementById?.('app')?.dataset?.autoplay === 'true';
 }
 
 // hasKeys says whether the page has keys its shortcuts may take, as the
-// service says its form has them: Android's app has none (M13.3), and its
+// service says its form has them: Android's app has none, and its
 // settings leave the shortcuts out.
 export function hasKeys(doc = globalThis.document) {
     return doc?.getElementById?.('app')?.dataset?.keys !== 'false';
 }
 
 // inApp says whether the page shows in Dens's own app rather than a
-// browser, as the service says its form has it: Android's app (M13.3). The
+// browser, as the service says its form has it: Android's app. The
 // app holds the page's permissions, as for the microphone, which the
 // phone's settings allow, and pairs the page as it opens it.
 export function inApp(doc = globalThis.document) {
@@ -80,7 +80,7 @@ export function canSaveFile(doc = globalThis.document) {
 }
 
 // canPopOut says whether the browser opens a share in a window of its own
-// that the member can move to another monitor (M11). Phones' browsers and
+// that the member can move to another monitor. Phones' browsers and
 // Android's WebView open no such window, and capture no screen either,
 // which tells them apart.
 export function canPopOut(win = globalThis) {

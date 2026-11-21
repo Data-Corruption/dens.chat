@@ -1,7 +1,7 @@
-// Private DMs and device approval (M1.7) on the page: comparing codes
-// with a member (M16.1), approving a new device, as a dialog with a code
-// to scan (M22.6), and the DM seal, which the page calls the DM recovery
-// key (M8.3). The keys stay in the local
+// Private DMs and device approval on the page: comparing codes
+// with a member, approving a new device, as a dialog with a code
+// to scan, and the DM seal, which the page calls the DM recovery
+// key. The keys stay in the local
 // service; the page only shows digits, and passes on what the member types.
 
 import { useEffect, useState } from 'preact/hooks';
@@ -37,9 +37,9 @@ function DigitsInput({ value, onInput, label, placeholder = '0000 0000 0000 0000
 }
 
 // VerifiedMark is the circled check beside a member this member verified
-// by comparing codes (M16.1), which says so in its tip. Beside a name it
+// by comparing codes, which says so in its tip. Beside a name it
 // shows as Appearance's Verified marks says: always, while the pointer is
-// over its row, or never, and on a touch screen, shown or not (M16.4);
+// over its row, or never, and on a touch screen, shown or not;
 // always shows it regardless, as where comparing is the subject.
 export function VerifiedMark({ id, name, always = false }) {
     const marks = useVerifiedMarks();
@@ -66,7 +66,7 @@ function CheckIcon() {
     );
 }
 
-// CodesDialog compares codes with a member (M16.1). It doesn't name them,
+// CodesDialog compares codes with a member. It doesn't name them,
 // whose name could read as part of its words.
 export function CodesDialog({ denID, member, onClose }) {
     return (
@@ -130,8 +130,8 @@ export function Codes({ denID, member }) {
     );
 }
 
-// KeysChanged is the line in a DM where the other member's keys changed
-// (M16.1), with Compare.
+// KeysChanged is the line in a DM where the other member's keys changed,
+// with Compare.
 export function KeysChanged({ name, at, onCompare }) {
     return (
         <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs" data-keys-changed>
@@ -143,8 +143,8 @@ export function KeysChanged({ name, at, onCompare }) {
     );
 }
 
-// DMGate stands in a DM's composer's place while it can't take messages
-// (M16.1): this device lacks the member's DM recovery key; the den, or the
+// DMGate stands in a DM's composer's place while it can't take messages:
+// this device lacks the member's DM recovery key; the den, or the
 // other member's Dens, runs a version too old to seal the DM's new keys;
 // or the other's keys changed since this member verified them, which
 // holds the DM until they compare again or send anyway.
@@ -153,7 +153,7 @@ export function DMGate({ denID, gate, dm, notes = false, onCompare }) {
     const name = dm ? dm.display_name : 'the other member';
     let body;
     if (gate === 'no_seal') {
-        // The member's notes (M17.3) open with a key their recovery key makes.
+        // The member's notes open with a key their recovery key makes.
         body = (
             <div class="flex flex-wrap items-center gap-2">
                 <p class="min-w-0 flex-1">
@@ -186,7 +186,7 @@ export function DMGate({ denID, gate, dm, notes = false, onCompare }) {
 }
 
 // Requests the member closed before approving them, by ID, which wait in
-// a line above Home and their den's channel to open again (M22.6).
+// a line above Home and their den's channel to open again.
 const hidden = new Set();
 const hiddenWatchers = new Set();
 
@@ -225,7 +225,7 @@ function useDensView() {
 
 /** Approvals opens each sign-in on a new device that waits for this
     member's approval, in any den, as a dialog over whatever is on screen,
-    a sheet on a phone (M22.6), one at a time, oldest first. One closed
+    a sheet on a phone, one at a time, oldest first. One closed
     before it's approved waits in a line above Home and its den's channel,
     HiddenRequests, to open again; one approved closes as its new device
     connects, or as the member closes it, which ends its digits. */
@@ -247,7 +247,7 @@ export function Approvals() {
 
 /** HiddenRequests is a line above Home and a den's channel for each
     sign-in waiting on this member there whose dialog they closed, which
-    opens it again (M22.6). */
+    opens it again. */
 export function HiddenRequests({ den }) {
     const shut = useHidden();
     return (den.requests || []).filter((r) => shut.has(r.id)).map((r) => (
@@ -352,7 +352,7 @@ function ApprovalDialog({ den, r, onRefused }) {
 }
 
 // DigitsShown is the digits this device shows for a sign-in it answered,
-// under their code, for the new device to scan (M22.6).
+// under their code, for the new device to scan.
 function DigitsShown({ den, r }) {
     const [code, setCode] = useState(null);
     useEffect(() => {
@@ -393,9 +393,9 @@ const SIGN_IN_ENDED = {
     expired: 'None of your other devices approved this sign-in in time. Try again when one of them is at hand.',
 };
 
-// SignInSteps shows a sign-in on this device at the step it's at (M8.3):
+// SignInSteps shows a sign-in on this device at the step it's at:
 // waiting for another device to approve it, comparing digits with it,
-// each scanning or typing the other's (M22.6), then signed in, or why it
+// each scanning or typing the other's, then signed in, or why it
 // ended. The service holds the sign-in, so a reload comes back to its
 // step. title heads it where nothing else does: in Add a den, the
 // dialog's title is the den's. onRecover gives up waiting for another
@@ -747,7 +747,7 @@ export function DMKey({ den, onSeal }) {
 // keyDivider draws where a DM's keys changed.
 // DaisyUI's divider keeps its words on one line, which a key's change has
 // too many of for a phone, so they wrap, within most of the width, and the
-// lines beside them take the rest (M13.4).
+// lines beside them take the rest.
 export function KeyDivider({ text }) {
     return (
         <div class="divider divider-warning my-1 h-auto cursor-default select-none text-xs">

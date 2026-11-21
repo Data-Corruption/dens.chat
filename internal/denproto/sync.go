@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// What changed while away (M6): a den logs each change to a message, by ID
+// What changed while away: a den logs each change to a message, by ID
 // only, and a client that caches what the den sends asks, after a ready,
 // for the changes since the version it last synced at.
 
@@ -28,9 +28,9 @@ const CodeChangesGone = "changes_gone"
 // Sync is where a den's changes stand, in ready. A client keeps what it
 // cached only when it last synced in the same Epoch, at a version no older
 // than Floor and no newer than Version. Expired is the last message
-// retention deleted, once it has deleted any. MembersSince, from M6.2, is
-// set when ready's members are only those changed since that version, the
-// one the client named on the socket's upgrade.
+// retention deleted, once it has deleted any. MembersSince is set when
+// ready's members are only those changed since that version, the one the
+// client named on the socket's upgrade.
 type Sync struct {
 	Epoch        Bytes  `json:"epoch"`
 	Version      int64  `json:"version"`
@@ -58,7 +58,7 @@ func CheckSync(s Sync) error {
 	return nil
 }
 
-// MembersCursor is the socket upgrade's members parameter (M6.2): the
+// MembersCursor is the socket upgrade's members parameter: the
 // epoch and version a client's list of members is current as of, so the
 // den's ready sends only the members changed since.
 func MembersCursor(epoch Bytes, version int64) string {

@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Call keys (M16.2). On a den that seals its calls, this member's page
+// Call keys. On a den that seals its calls, this member's page
 // seals each frame it sends under a key of the member's own, and opens
 // each it receives under its sender's. This service makes the member's key
 // as they join, 16 random bytes, and a new one whenever anyone joins or

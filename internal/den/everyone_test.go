@@ -7,7 +7,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// TestEveryone checks staff's @everyone (M15.4): it marks the message and
+// TestEveryone checks staff's @everyone: it marks the message and
 // mentions each member who can see the channel but its author, a row each,
 // staff alone in a staff-only channel; anyone else's mentions a member of
 // that name, whom a den may have from before, and nobody new takes it.

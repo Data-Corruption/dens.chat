@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// End-to-end encrypted DMs (M1.7).
+// End-to-end encrypted DMs.
 //
 // A DM key comes from an exchange of one-time keys between the two
 // members' clients, which the den relays but can't take part in: X25519
@@ -482,7 +482,7 @@ type DMFile struct {
 	Animated bool     `json:"animated,omitempty"`
 	Duration int64    `json:"duration_ms,omitempty"`
 	Thumb    *DMThumb `json:"thumb,omitempty"`
-	// Spoiler marks a file its sender sent as a spoiler (M17.2), which
+	// Spoiler marks a file its sender sent as a spoiler, which
 	// only the DM's members learn.
 	Spoiler bool `json:"spoiler,omitempty"`
 }

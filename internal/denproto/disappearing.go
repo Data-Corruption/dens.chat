@@ -2,7 +2,7 @@ package denproto
 
 import "fmt"
 
-// Disappearing messages (M16.4): any member of a DM or a group sets its
+// Disappearing messages: any member of a DM or a group sets its
 // messages to disappear a while after they're sent, which its den does as
 // their author's delete would, and each member's Dens with what it holds
 // of them. A time counts from sending, which the den knows and every

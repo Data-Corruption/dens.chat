@@ -22,7 +22,7 @@ import (
 )
 
 // The Flatpak's data key has no copy that opens without the member, unless
-// they ask Dens to remember it (M9.3). The service starts locked, serving
+// they ask Dens to remember it. The service starts locked, serving
 // the page nothing but its unlock screen, and the local password, whose
 // copy of the key every install keeps, opens it. Remembered, a copy sealed
 // with the secret the member's keyring keeps for the app, through the
@@ -39,7 +39,7 @@ var ErrLocked = errors.New("Dens is locked; unlock it with the local password")
 const keyringWait = time.Minute
 
 // Remembering is the Flatpak's remembered copy of its key, as the settings
-// show it (M9.3). On is whether a copy opens Dens without the local
+// show it. On is whether a copy opens Dens without the local
 // password, and Where it is: "keyring" or "file". Asking is the keyring
 // answering a request to remember; Problem is why the last try kept the key
 // in a file rather than the keyring.
@@ -169,7 +169,7 @@ func writeKeyFile(path string, data []byte) error {
 }
 
 // UnlockWithPassword opens a locked Flatpak with the local password, which
-// opens the key's password copy, and finishes opening it (M9.3). With
+// opens the key's password copy, and finishes opening it. With
 // remember, a copy that opens Dens without the password is kept, where
 // there's none yet; without, the one there is goes. Unlocked already, it
 // does nothing.
@@ -232,7 +232,7 @@ func (a *App) unlockWith(key []byte, how string) error {
 }
 
 // TryKeyring opens a locked Flatpak with the copy it remembered in the
-// keyring, if it has one, while the page offers the local password (M9.3).
+// keyring, if it has one, while the page offers the local password.
 // It asks the Secret portal one request at a time, and never gives up on
 // one, which a prompt holds for as long as the member takes. A copy the
 // answer doesn't open stays, and Dens stays locked: the keyring was reset,
@@ -360,7 +360,7 @@ func (a *App) Remembering() Remembering {
 }
 
 // SetRemember turns remembering on, after the local password, or off,
-// deleting the remembered copy (M9.3).
+// deleting the remembered copy.
 func (a *App) SetRemember(ctx context.Context, password string, on bool) error {
 	if a.Layout.Form != layout.Flatpak {
 		return errors.New("only the Flatpak remembers its key; the others open it themselves")
@@ -496,7 +496,7 @@ func (a *App) removeCopies() (bool, error) {
 }
 
 // PasswordChosen does what the Flatpak does as the local password is first
-// set (M9.3): the key's file, where it waited for the password, goes unless
+// set: the key's file, where it waited for the password, goes unless
 // the member asks Dens to remember, which keeps a copy as Remember does.
 func (a *App) PasswordChosen(remember bool) error {
 	if a.Layout.Form != layout.Flatpak {

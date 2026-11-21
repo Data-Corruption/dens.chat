@@ -1,4 +1,4 @@
-// Reactions on the page (M15.3): under a message, after its files and
+// Reactions on the page: under a message, after its files and
 // covers, a row of chips, each emoji with how many reacted with it, marked
 // where the member did, which a click adds the member's to or takes it
 // back from, and whose tip says who: on hover, on focus, or a finger's long
@@ -77,7 +77,7 @@ function Chip({ chip, label, who, canReact, onToggle, children }) {
     const press = useRef(null);
     press.current ||= createPress({ onLong: () => tip.setPinned(true) });
     // A finger's press, whose long press takes the browser's own menu's
-    // place, as on a message (M13.2).
+    // place, as on a message.
     const finger = useRef(false);
     useEffect(() => () => press.current.cancel(), []);
     const said = `${who} reacted with ${label}`;

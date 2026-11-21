@@ -19,8 +19,8 @@ import (
 // downloadFor is how long the link to a backup's archive lasts.
 const downloadFor = time.Minute
 
-// backups are the links the page downloads backups from (M9.3), and the
-// den's export (M10): one for each local password the member typed, which
+// backups are the links the page downloads backups from, and the
+// den's export: one for each local password the member typed, which
 // works once, and soon goes. The archive is written as it downloads, so
 // the browser saves it as it does any download, rather than the page
 // holding it.
@@ -69,7 +69,7 @@ func (rt *router) mountBackups(r chi.Router) {
 }
 
 // handleBackupSize says at least how large a backup made now would be,
-// which the page shows before the member makes one (M10).
+// which the page shows before the member makes one.
 func (rt *router) handleBackupSize(w http.ResponseWriter, r *http.Request) {
 	size, err := rt.a.BackupSize()
 	if err != nil {
@@ -102,7 +102,7 @@ func (rt *router) handleBackup(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleDownloadBackup streams the archive dens backup writes, or the one
-// dens den export writes (M10), as a download.
+// dens den export writes, as a download.
 func (rt *router) handleDownloadBackup(w http.ResponseWriter, r *http.Request) {
 	link, ok := rt.backups.redeem(chi.URLParam(r, "token"))
 	if !ok {

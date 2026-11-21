@@ -17,8 +17,8 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/media"
 )
 
-// The client's cache (M6): another den's files come through it, kept as
-// they're read, and from M6.2 its messages, kept as pages and events bring
+// The client's cache: another den's files come through it, kept as
+// they're read, and its messages, kept as pages and events bring
 // them, with the den's state. What went leaves it as exactly that: a
 // deleted message and its files, a file taken off one, a deleted channel,
 // what retention reached and a replaced picture. After a ready, the den's
@@ -36,7 +36,7 @@ const (
 )
 
 // saveEvery is how often the cache keeps a den's state while it changes,
-// for the page to show while the den is away (M6.2).
+// for the page to show while the den is away.
 const saveEvery = 30 * time.Second
 
 // catchUpPages is how many pages after the newest message a channel's
@@ -50,7 +50,7 @@ const catchUpPages = 2
 const maxOwners = 50_000
 
 // ErrOffline answers a page of history the cache doesn't hold, while the
-// den can't be reached (M6.2).
+// den can't be reached.
 var ErrOffline = errors.New("This den is offline, and this computer hasn't kept these messages.")
 
 // fileOwner is the message a channel's file is on, as the page got it.
@@ -77,7 +77,7 @@ func (c *conn) noteLocked(m denproto.Message) {
 }
 
 // noteOwnFiles records what the member's own channel files are on, as the
-// Files section lists them (M5).
+// Files section lists them.
 func (c *conn) noteOwnFiles(files []denproto.OwnFile) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -90,8 +90,7 @@ func (c *conn) noteOwnFiles(files []denproto.OwnFile) {
 }
 
 // ownerOf says what a file is on, as far as this service knows: a message,
-// in a channel or a DM, a member's picture, or one of the den's emoji
-// (M15.2).
+// in a channel or a DM, a member's picture, or one of the den's emoji.
 func (c *conn) ownerOf(fileID string) cache.Owner {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -119,7 +118,7 @@ func (c *conn) ownerOf(fileID string) cache.Owner {
 }
 
 // openCached opens a file of another den through the cache. An emoji's
-// comes from the cache alone while emoji are on (M15.2): one it let go of
+// comes from the cache alone while emoji are on: one it let go of
 // brings every one it lacks, rather than the den hearing which showed.
 func (c *conn) openCached(ctx context.Context, fileID string, thumb bool) (*OpenedFile, error) {
 	id, err := denproto.ParseID(fileID)
@@ -205,7 +204,7 @@ func (c *conn) cacheEvent(e denproto.Event) {
 	}
 }
 
-// cacheMessageEvent keeps what an event says of a message (M6.2): a new
+// cacheMessageEvent keeps what an event says of a message: a new
 // one joins its channel's run, which reaches the newest while the
 // connection lasts; an edit replaces the cache's copy; a delete takes it.
 func (c *conn) cacheMessageEvent(e denproto.Event, m *denproto.Message) {
@@ -244,7 +243,7 @@ type pendingSync struct {
 	sync     denproto.Sync
 	channels []int64
 	pictures map[int64]bool
-	// emoji are the files of the den's emoji (M15.2), all of which a
+	// emoji are the files of the den's emoji, all of which a
 	// snapshot names.
 	emoji map[int64]bool
 	fresh bool
@@ -488,8 +487,7 @@ func (c *conn) applyChanges(ctx context.Context, synced cache.Synced) error {
 		}
 		// A message's tallies, its reactions and its poll's votes, change
 		// without its revision, so the cache takes each as the den sent it,
-		// with the events that came since it was asked for applied again
-		// (M15.3, M15.4).
+		// with the events that came since it was asked for applied again.
 		c.replayTallies(mark, page.Messages)
 		for _, m := range page.Messages {
 			id, _ := denproto.ParseID(m.ID)
@@ -559,7 +557,7 @@ func (c *conn) filesOf(m denproto.Message) ([]int64, bool) {
 }
 
 // saveKept keeps the den's state, and its members when they changed, in
-// the cache, for the page to show while the den is away (M6.2).
+// the cache, for the page to show while the den is away.
 func (c *conn) saveKept() {
 	if !c.cached() {
 		return
@@ -642,8 +640,8 @@ func (c *conn) restoreKept() {
 }
 
 // cachedHistory answers a page of history from the cache where it holds
-// the messages, and otherwise from the den, keeping what the den sends
-// (M6.2). A channel whose newest messages came while the client was away
+// the messages, and otherwise from the den, keeping what the den sends.
+// A channel whose newest messages came while the client was away
 // asks for those after the newest it holds, a page or two, rather than
 // the whole newest page. Without the den, the cache answers what it can.
 func (c *conn) cachedHistory(ctx context.Context, channelID string, q HistoryQuery) (denproto.History, error) {
@@ -737,8 +735,7 @@ func (c *conn) catchUp(ctx context.Context, channelID string, channel, gen int64
 // the channel's start when nothing comes before it. A page that reaches
 // the newest does so in the connection it was fetched in, if that's still
 // the one. The events that changed messages' tallies since mark, while it
-// was out, apply to it again, since the den may have read it before them
-// (M15.3, M15.4).
+// was out, apply to it again, since the den may have read it before them.
 func (c *conn) keepPage(channel int64, q HistoryQuery, h denproto.History, gen int64, mark uint64) {
 	ms := h.Messages
 	c.replayTallies(mark, ms)

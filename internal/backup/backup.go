@@ -40,7 +40,7 @@ type Manifest struct {
 	Instance      string    `json:"instance"`
 	CreatedAt     time.Time `json:"createdAt"`
 	Platform      string    `json:"platform"`
-	// DenExport marks a den's export (M10), whose database holds the den
+	// DenExport marks a den's export, whose database holds the den
 	// named Den and none of the client of the install it left. Older
 	// releases ignore it, and restore one as any backup.
 	DenExport bool   `json:"denExport,omitempty"`
@@ -55,7 +55,7 @@ type Manifest struct {
 func Write(w io.Writer, m Manifest, dbPath, uploadsDir string) (skipped int, err error) {
 	m.Format = FormatVersion
 	// The uploads are sealed, so they don't compress, and gzip's default
-	// level takes them at an eighth of the fastest's speed (M10): about 116
+	// level takes them at an eighth of the fastest's speed: about 116
 	// MiB/s against 950 with Go 1.26. Any level reads the same.
 	gz, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
 	if err != nil {

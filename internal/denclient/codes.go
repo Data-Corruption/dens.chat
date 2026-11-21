@@ -8,7 +8,7 @@ import (
 	"rsc.io/qr/coding"
 )
 
-// Sign-in codes (M22.6), made here and drawn by the page: Add device's,
+// Sign-in codes, made here and drawn by the page: Add device's,
 // for a new device to scan the den's address and the member's username
 // from, and the digits a device shows as it approves one.
 

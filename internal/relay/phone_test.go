@@ -49,7 +49,7 @@ func statusOf(t *testing.T, what string, ch <-chan Status, ok func(Status) bool)
 	}
 }
 
-// The Android app (M20.3), with Keybind relay on, asks the system to let it
+// The Android app, with Keybind relay on, asks the system to let it
 // reach its network, and links with nothing until it may: it says who it
 // is through the den, but sends no hello. Allowed, it links to the desk
 // holding the member's call, and its page hears which device that is, and
@@ -107,7 +107,7 @@ func TestThePhoneLinksOnceAllowed(t *testing.T) {
 	statusOf(t, "no call held", status, func(st Status) bool { return st.Call == nil })
 }
 
-// A phone listens to a computer's sound without sharing its own (M20.3).
+// A phone listens to a computer's sound without sharing its own.
 // Listening, it asks the system to play while it does; the member refusing
 // it its network ends the listening, saying so, and allowed, the next one
 // plays.

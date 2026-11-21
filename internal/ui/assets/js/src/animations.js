@@ -1,4 +1,4 @@
-// Appearance's Animations (M15.1): animated pictures play always, or on
+// Appearance's Animations: animated pictures play always, or on
 // hover, while the pointer is over their row: a message, a member in the
 // list or a call, a DM in the list. A profile plays them while it shows,
 // since the member opened it, and on a touch screen, which has no hover,
@@ -115,7 +115,7 @@ export function HoverRow({ as = 'div', children, ...props }) {
 
 /** useOver says whether the pointer is over the row something shows in, a
     profile counting as one, since the member opened it: verified marks
-    shown on hover follow it (M16.4) */
+    shown on hover follow it */
 export function useOver() {
     const scope = useContext(Play);
     const [over, setOver] = useState(() => !!scope?.over);

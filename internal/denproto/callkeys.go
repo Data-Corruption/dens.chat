@@ -10,7 +10,7 @@ import (
 	"slices"
 )
 
-// Call keys (M16.2).
+// Call keys.
 //
 // Each member of a call seals what their page sends, frame by frame, with
 // SFrame (RFC 9605) in its AES-128-GCM suite, under a key of their own for
@@ -52,7 +52,7 @@ const (
 const EventVoiceKey = "voice.key"
 
 // VoiceUpdateNeeded is a join the den refuses since it doesn't say it
-// seals, as from a Dens older than M16.2, whose page would send in the
+// seals, as from a Dens older than v1.9.0, whose page would send in the
 // clear what every other page drops.
 const VoiceUpdateNeeded = "update_needed"
 

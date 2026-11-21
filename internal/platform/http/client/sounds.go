@@ -17,7 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// mountSounds mounts the member's own sounds (M14.2): files of theirs in
+// mountSounds mounts the member's own sounds: files of theirs in
 // place of the page's sounds, which stay on this install, so only this
 // router serves them, and writes pass the Origin check every write does.
 func (rt *router) mountSounds(r chi.Router) {

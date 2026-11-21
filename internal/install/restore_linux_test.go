@@ -18,7 +18,7 @@ import (
 // The Flatpak restores as the member, over data whatever version left
 // them, as after a rollback, once its service has stopped. The restored
 // instance forgets the key it remembered and the cache it kept, and its
-// next start resumes the restore (M9.3).
+// next start resumes the restore.
 func TestFlatpakRestoresAsTheMember(t *testing.T) {
 	app := filepath.Join(t.TempDir(), "app")
 	t.Setenv("XDG_DATA_HOME", filepath.Join(app, "data"))
@@ -95,7 +95,7 @@ func TestFlatpakRestoresAsTheMember(t *testing.T) {
 }
 
 // The Flatpak hosts no den, so it refuses a den's export before any upload
-// is written, changing nothing (M10).
+// is written, changing nothing.
 func TestFlatpakRefusesAnExport(t *testing.T) {
 	app := filepath.Join(t.TempDir(), "app")
 	t.Setenv("XDG_DATA_HOME", filepath.Join(app, "data"))

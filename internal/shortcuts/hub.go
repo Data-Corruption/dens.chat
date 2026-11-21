@@ -35,19 +35,19 @@ import (
 // starts at the desktop user's login.
 const Command = "shortcuts"
 
-// AppID names Dens to the desktop, whose global shortcuts portal (M7.2)
+// AppID names Dens to the desktop, whose global shortcuts portal
 // needs an installed .desktop file of this name to tell the helper apart.
 const AppID = layout.DesktopID
 
 // Lines on the stream, besides pings. The service sends hello first, then
 // state whenever the keys, its call or the member's use of the desktop's
 // keys change, desktop for what the member asks of the desktop, replaced
-// when a newer helper takes over, and from M12.3 notify for a notification
+// when a newer helper takes over, and notify for a notification
 // to show, which replaces its channel's, and unnotify for those to take
 // back. The helper sends source, what it can watch and whether it shows
 // notifications, after each state and whenever that changes, press for
 // each press and release of a bound key, bound once the desktop took
-// the keys the member asked it to, and from M20.2 sound, what keeps it
+// the keys the member asked it to, and sound, what keeps it
 // from reading the computer's sound while the state asks it to.
 const (
 	msgHello    = "hello"
@@ -62,7 +62,7 @@ const (
 	msgSound    = "sound"
 )
 
-// What the member asks of a desktop that owns the keys (M7.2): to bind the
+// What the member asks of a desktop that owns the keys: to bind the
 // actions, which shows its dialog, to show its settings for them, or to
 // stop using them.
 const (
@@ -76,7 +76,7 @@ type desktopRequest struct {
 	Do string `json:"do"`
 }
 
-// hello is the service's version, and from M12.3 its page's origin, which a
+// hello is the service's version and its page's origin, which a
 // notification's click opens.
 type hello struct {
 	Version string `json:"version"`
@@ -90,9 +90,9 @@ type unnotify struct {
 
 // state is what the helper watches: the keys, by action, while the
 // instance holds a call or Relay takes them for another of the member's
-// devices' (M20), and whether the member uses the desktop's keys, which
+// devices', and whether the member uses the desktop's keys, which
 // the helper then binds as it starts, without a dialog where the desktop
-// remembers them; and from M20.2 whether it reads the computer's sound.
+// remembers them; and whether it reads the computer's sound.
 type state struct {
 	Keys    map[string]types.VoiceKey `json:"keys"`
 	Call    bool                      `json:"call"`
@@ -107,12 +107,12 @@ type soundNote struct {
 }
 
 // Source is what the helper can do, which pages learn: the actions it
-// watches and, where the desktop owns the keys (M7.2), that it confirms
+// watches and, where the desktop owns the keys, that it confirms
 // them, whether they can be bound, whether its dialog is up, its names for
 // the keys, and whether it can show its settings for them. Note says what
 // the system keeps from the helper or where the keys change, for the
 // settings to show, and Problem why it can't watch any. Notifies is
-// whether it shows notifications as the desktop's own (M12.3).
+// whether it shows notifications as the desktop's own.
 type Source struct {
 	Covers       []string          `json:"covers"`
 	Confirms     bool              `json:"confirms,omitempty"`
@@ -130,7 +130,7 @@ type Source struct {
 var actionNames = map[string]string{"ptt": "Push to talk", "toggleMute": "Toggle mute", "pushMute": "Push to mute", "toggleDeafen": "Toggle deafen"}
 
 // Press is an action's key going down or up. Relayed marks one from
-// another of the member's devices (M20), which the page takes whatever its
+// another of the member's devices, which the page takes whatever its
 // own helper covers.
 type Press struct {
 	Action  string `json:"action"`
@@ -177,14 +177,14 @@ type Hub struct {
 	source  Source
 	pages   map[chan Event]struct{}
 	// relay takes what the helper reads while the install holds no call,
-	// as another of the member's devices does (M20), nil while none does.
+	// as another of the member's devices does, nil while none does.
 	relay func(Press)
 	// holds are who holds each hold action: "" the helper, or another of
-	// the member's devices by the name Relay gives it (M20).
+	// the member's devices by the name Relay gives it.
 	holds map[string]map[string]bool
 	// sound takes each piece of the computer's sound the helper reads
 	// while Relay shares it, nil while it doesn't, and soundProblem hears
-	// why none comes (M20.2); soundSaid is what the helper last said of
+	// why none comes; soundSaid is what the helper last said of
 	// it, and soundStream the request that carries it.
 	sound        func(piece []byte)
 	soundProblem func(string)
@@ -206,7 +206,7 @@ func NewHub(version, page string, keys map[string]types.VoiceKey, log *xlog.Logg
 }
 
 // Show has the helper show a notification, where one is connected that
-// shows them (M12.3): the Hub is the helper's place among notify's.
+// shows them: the Hub is the helper's place among notify's.
 func (h *Hub) Show(n notify.Notification) bool {
 	h.mu.Lock()
 	l, can := h.helper, h.source.Notifies
@@ -322,7 +322,7 @@ func (h *Hub) SetCall(active bool) {
 
 // SetRelay has Relay take what the helper reads while the install holds
 // no call, which it sends to the call another of the member's devices
-// holds (M20); the helper reads keys then as for a call. nil stops it.
+// holds; the helper reads keys then as for a call. nil stops it.
 func (h *Hub) SetRelay(take func(Press)) {
 	h.mu.Lock()
 	if (h.relay != nil) != (take != nil) {
@@ -353,7 +353,7 @@ func (h *Hub) PagePress(p Press) {
 }
 
 // RelayHolds takes what another of the member's devices holds, as its
-// latest word says, as a second helper's (M20): a hold lasts while any
+// latest word says, as a second helper's: a hold lasts while any
 // device holds it, and nil lets go of everything it held. The pages hear
 // of it during a call this install holds.
 func (h *Hub) RelayHolds(device string, held []string) {
@@ -368,7 +368,7 @@ func (h *Hub) RelayHolds(device string, held []string) {
 }
 
 // RelayToggle passes a toggle another of the member's devices pressed to
-// the pages, during a call this install holds (M20).
+// the pages, during a call this install holds.
 func (h *Hub) RelayToggle(device, action string) {
 	if device == "" || !slices.Contains(types.VoiceActions, action) || slices.Contains(holdActions, action) {
 		return
@@ -382,7 +382,7 @@ func (h *Hub) RelayToggle(device, action string) {
 }
 
 // SetSound has the helper read the computer's sound and the hub hand Relay
-// each piece, which it sends to another of the member's devices (M20.2);
+// each piece, which it sends to another of the member's devices;
 // problem hears why none comes, and "" once the helper reads it. nil stops
 // it.
 func (h *Hub) SetSound(take func(piece []byte), problem func(string)) {
@@ -547,7 +547,7 @@ func (h *Hub) setSource(l *link, src Source) {
 }
 
 // press passes a press to the pages while the install holds a call, and
-// to Relay while another of the member's devices does (M20). The helper
+// to Relay while another of the member's devices does. The helper
 // watches only then, so a press outside both is late, and dropped.
 func (h *Hub) press(l *link, p Press) {
 	p.Relayed = false
@@ -581,7 +581,7 @@ func (h *Hub) drop(l *link) {
 	h.helper, h.source, h.soundSaid = nil, Source{}, ""
 	h.broadcastLocked(Event{Status: h.statusLocked()})
 	// The pages let go of what the helper covered as it goes; what another
-	// device still holds, they hold again (M20).
+	// device still holds, they hold again.
 	for _, action := range holdActions {
 		delete(h.holds[action], "")
 		if h.call && len(h.holds[action]) > 0 {

@@ -1,30 +1,30 @@
-// The M19.1 check of the settings, as alice, the den's owner, in the
+// The settings check, as alice, the den's owner, in the
 // browser named at a desktop's width: every section of the settings and
 // of Manage opened from the list down the side, each with the layout
 // audit, and every hint in it read as one line, a hint that wrapped
-// failing it, Voice with push to talk's release delay too (M19.3), and
-// Relay (M20.1), its Audio relay card among it (M20.2); then
+// failing it, Voice with push to talk's release delay too, and
+// Relay, its Audio relay card among it; then
 // Appearance's sizes: a photo at Medium until she chooses, at Large and
 // Largest the photo itself drawn over the den's preview, and at Small its
 // preview again; a YouTube player at Small, then Large with the larger
-// cover; neither moving the other, nor running past the pane. From M19.4
+// cover; neither moving the other, nor running past the pane. Then
 // a theme's code copied and pasted into bob's browser, which then wears
 // the same, a stranger's codes refused there with nothing reaching a
 // style; and a picture behind the chat: a PNG set, found behind
 // general's list under the dim, by the screen's own pixels, in a second
 // browser paired with her Dens too, dimmed further, a GIF refused, and
-// removed from both. From M21.1 Staff marks, off until she turns them on,
+// removed from both. Staff marks, off until she turns them on,
 // the crown then on her messages and always in the member list; the bars
 // on a green theme of her own, their hue the page's; and Hover, how far a
-// message under the pointer covers the picture, in both browsers. From
-// M22.3, each section held to the one frame the settings and Manage
+// message under the pointer covers the picture, in both browsers.
+// Each section held to the one frame the settings and Manage
 // share: its groups cards, one toggle size and regular labels, every
 // button one of the page's kinds by the layout audit; Manage holding what
 // staff manage, the owner's Events among it; and her own sections of the
-// den, from the cog on its page, as its group above the app's. From M22.5
+// den, from the cog on its page, as its group above the app's. Then
 // the code a block in the generator's shape; a stranger's blocks read for
-// what the page reads alone; and a v1.13.0 code read as it was. From
-// M22.8 Appearance as a page that takes the window, Back going to the
+// what the page reads alone; and a v1.13.0 code read as it was.
+// Appearance as a page that takes the window, Back going to the
 // section open before; its preview following a theme chosen, a name
 // style, Density, the call timer, the sizes and file names on hover, and
 // holding its place as the middle column scrolls; and at a desktop's
@@ -72,7 +72,7 @@ const WRAPPED = `(() => {
     }
     return out;
 })()`;
-// FRAME reads a section as the one frame shows it (M22.3): what stands in
+// FRAME reads a section as the one frame shows it: what stands in
 // its panel outside a card, the toggles' heights and the labels' weights.
 const FRAME = `JSON.stringify((() => {
     const panel = document.querySelector('[role=dialog] [data-panel]');
@@ -165,7 +165,7 @@ const WEARS = `JSON.stringify((() => {
         set: document.documentElement.style.length, styled: document.documentElement.getAttribute('style') || '' };
 })())`;
 const wears = async (on) => JSON.parse(await on.eval(WEARS));
-// Appearance's columns (M22.8): the list of themes, the editor of the one
+// Appearance's columns: the list of themes, the editor of the one
 // shown, the bar of its unsaved edits, the middle column's panel, and the
 // preview; and what the preview wears: its box's background and text, its
 // variables, its channel list's background, and its primary button's
@@ -498,7 +498,7 @@ try {
         c.report(pttWrapped.length === 0, `Voice with push to talk: every hint reads in a line${pttWrapped.length ? `; wrapped: ${pttWrapped.join('; ')}` : ''}`);
         await b.eval(`document.querySelector('[role=radiogroup][aria-label="Sending your voice"] input[aria-label="Voice activity"]').click(), true`);
 
-        step('Appearance, a page that takes the window, from Voice and back (M22.8)');
+        step('Appearance, a page that takes the window, from Voice and back');
         await b.eval(`${SETTINGS}.querySelector('[data-section=appearance]').click(), true`);
         await waitFor(() => b.eval(`!!${APPEARANCE}`), 'Appearance');
         const page = JSON.parse(await b.eval(`JSON.stringify((() => { const d = ${SETTINGS}; const r = d.getBoundingClientRect(); return {
@@ -544,7 +544,7 @@ try {
         await b.key('Escape');
         await waitFor(async () => !(await b.eval(`!!${MANAGE}`)), 'Manage closing');
 
-        step("her own sections of the den, from the cog on its page (M22.3)");
+        step("her own sections of the den, from the cog on its page");
         await b.go(`http://localhost:${ALICE.port}/den/${den}/${general}`);
         await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Settings"]')`), "the den's cog");
         await b.eval(`document.querySelector('button[aria-label="Settings"]').click(), true`);

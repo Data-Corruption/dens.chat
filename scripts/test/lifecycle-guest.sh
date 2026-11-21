@@ -111,10 +111,10 @@ expect_uninstalled() {
 # den option did, with a member on a second instance, whose DM with the
 # owner both check by typing each other's digits, as that release has
 # them; and updates to this one, which still hosts it: the switch takes
-# the den role it had (M9.1); and which migrated its database, as a
-# member's own sound shows (M14.2), the den's soundboard (M14.3), M15's
+# the den role it had; and which migrated its database, as a
+# member's own sound shows, the den's soundboard, its
 # emoji, a reaction and a poll, and the DM, which reads and sends under
-# the key they checked (M16.1). Then it uninstalls, for the fresh install
+# the key they checked. Then it uninstalls, for the fresh install
 # after it.
 first_release() {
     first=$(cat /release/first/version)
@@ -145,7 +145,7 @@ first_release() {
     api GET /api/hosting | grep -q '"enabled":true,"serving":true' || fail "hosting after the update: $(api GET /api/hosting)"
     api GET /api/dens | grep -q '"name":"First Den"' || fail "the den is gone after the update: $(api GET /api/dens)"
     # The update migrated the first release's database: a sound replaced
-    # with a file of the member's own keeps it, in the table M14.2's
+    # with a file of the member's own keeps it, in the table v1.7.0's
     # migration, the first since v1.0.0, made. The file is a WAV's header.
     own=/root/own-sound.wav
     printf 'RIFF\044\000\000\000WAVEfmt \020\000\000\000\001\000\001\000\100\037\000\000\200\076\000\000\002\000\020\000data\000\000\000\000' >"$own"
@@ -154,7 +154,7 @@ first_release() {
     [ "$(curl -sS --fail -b "$JAR" "$CLIENT/api/sounds/joined" | sha256sum)" = "$(sha256sum <"$own")" ] ||
         fail "the member's own sound didn't come back as it went after the update"
     wait_own_connected
-    # And M14.3's: the den has its soundboard's limits, its new columns'
+    # And the soundboard: the den has its soundboard's limits, its new columns'
     # defaults, and takes a sound, in the den's named files' table. The
     # sound is Opus's silence in Ogg, a packet of it, as a page writes one.
     den_id=$(api GET /api/dens | sed -n 's/.*"den_id":"\([^"]*\)".*/\1/p')
@@ -170,9 +170,9 @@ first_release() {
     api POST "/api/dens/$den_id/soundboard" "{\"name\":\"First\",\"upload\":\"$upload\"}" | grep -q '"name":"First"' ||
         fail "the den took no sound after the update"
     api GET "/api/dens/$den_id/state" | grep -q '"sounds":\[{"id":"[0-9]*","name":"First"' || fail "the den's soundboard doesn't hold the sound"
-    # And M15's: the den has its limit for emoji and takes one, an image of
-    # 8 by 8 pixels (M15.2); a message takes a reaction of it (M15.3); and a
-    # poll goes, takes a vote and shows it (M15.4), in the tables their
+    # And v1.8.0's: the den has its limit for emoji and takes one, an image of
+    # 8 by 8 pixels; a message takes a reaction of it; and a
+    # poll goes, takes a vote and shows it, in the tables their
     # migrations made.
     api GET "/api/dens/$den_id/state" | grep -q '"emoji_limits":{"emojis":50}' ||
         fail "the den has no limit for emoji after the update: $(api GET "/api/dens/$den_id/state" | head -c 300)"
@@ -282,7 +282,7 @@ first_dm() {
 # first_dm_after checks the DM checked with the first release reads and
 # sends as it did after the update: both members read what was sealed
 # before it, and write under the key they checked, which no new key took
-# the place of (M16.1).
+# the place of.
 first_dm_after() {
     step "the DM checked with $first reads and sends after the update"
     expect_state second "$V1"
@@ -471,7 +471,7 @@ phase_after_reboot() {
     expect_state main "$version"
     url=$(as_alice dens open --print --instance second)
     second_api POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
-    # The local password from the command line, as a server sets it (M10).
+    # The local password from the command line, as a server sets it.
     printf '%s\n' "$PASSWORD" | as_alice dens password --password-stdin --instance second >/dev/null ||
         fail "dens password didn't set the second instance's password"
     printf '%s\n' "$PASSWORD" | as_alice dens den hosting on --password-stdin --instance second >/dev/null ||
@@ -496,12 +496,12 @@ phase_after_reboot() {
     if curl -sS --fail -b /root/cookies-second "$SECOND/api/status" >/dev/null 2>&1; then
         fail "a browser paired before the restore is still paired"
     fi
-    # Hosting is the machine's choice, not the backup's (M9.1).
+    # Hosting is the machine's choice, not the backup's.
     as_alice dens status --instance second | grep -q "den:       not hosting a den" || fail "the restored instance hosts a den"
     ! den_answers 8485 || fail "the den listener answers after the restore"
 
     step "uninstall both instances"
-    # Uninstall asks for its phrase, which a y doesn't give (M10).
+    # Uninstall asks for its phrase, which a y doesn't give.
     if printf 'y\n' | dens uninstall --instance second >/root/uninstall.out 2>&1; then
         fail "a y uninstalled the second instance"
     fi

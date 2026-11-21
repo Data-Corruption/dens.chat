@@ -58,7 +58,7 @@ func (m *Manager) Upload(ctx context.Context, denID, channelID, name string, siz
 }
 
 // Replace uploads a file, as Upload does, made to take the place of one of
-// this member's files in use (M5). The den counts it against the space
+// this member's files in use. The den counts it against the space
 // that file frees, so a member at their limit can swap a file for another,
 // and it can take only that file's place, which SwapFile puts it in.
 func (m *Manager) Replace(ctx context.Context, denID, channelID, fileID, name string, size int64, body io.Reader) (Uploaded, error) {
@@ -83,7 +83,7 @@ func (m *Manager) uploadTo(ctx context.Context, c *conn, channelID, name string,
 
 // uploadReady uploads what the media module made of a file already, as
 // uploadTo does once it has: a video's version, kept while it waits to be
-// sent (M5.4). The caller keeps the file.
+// sent. The caller keeps the file.
 func (m *Manager) uploadReady(ctx context.Context, c *conn, channelID string, p *prepared, replaces string) (Uploaded, error) {
 	return m.uploadFile(ctx, c, channelID, p.name, p.out.Size(), nil, replaces, p)
 }
@@ -208,7 +208,7 @@ func (m *Manager) uploadFile(ctx context.Context, c *conn, channelID, name strin
 		// only its pixels and colors.
 		up.Stripped, up.Converted = true, p.converted
 		// A video's copy, in AV1, which the den can't make a preview of,
-		// takes the one made from its full size (M5.4).
+		// takes the one made from its full size.
 		if p.poster != nil && up.Thumb == nil {
 			up = c.giveThumb(ctx, up, *p.poster)
 		}
@@ -235,7 +235,7 @@ func (c *conn) giveThumb(ctx context.Context, up Uploaded, th media.Thumb) Uploa
 }
 
 // counted reports how much of a body of total bytes was read, as an upload
-// goes (M5.4).
+// goes.
 type counted struct {
 	r      io.Reader
 	n      int64
@@ -322,7 +322,7 @@ func inMemory(data []byte, kind media.Kind) *OpenedFile {
 
 // OpenFile opens a file, or its preview, from a den, or from the cache. A
 // DM's file opens with the key its message sealed, chunk by chunk as it's
-// read. Another den's files come through the cache on disk (M6); the
+// read. Another den's files come through the cache on disk; the
 // install's own den, on the same disk, keeps a small one in memory.
 func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool) (*OpenedFile, error) {
 	c, err := m.find(denID)

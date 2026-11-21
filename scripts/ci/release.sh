@@ -4,7 +4,7 @@
 # release policy, immutable objects, installer publication, promotion, tagging,
 # and retention. Keep durable remote writes in protocol order.
 
-# The first release with the Android app's APK (M12.4): an older one has
+# The first release with the Android app's APK: an older one has
 # none to check.
 ANDROID_FIRST_RELEASE=v1.5.0
 
@@ -226,7 +226,7 @@ upload_remote_file() {
   local source="$1"
   local path="$2"
   # An APK is served as one, which a phone's browser hands to Android's
-  # installer (M12.4).
+  # installer.
   local type=()
   [[ "$path" != *.apk ]] || type=(--header-upload "Content-Type: application/vnd.android.package-archive")
   run_step "Uploaded $path" "Failed to upload $path" \
@@ -693,7 +693,7 @@ promote_release() {
 
 # publish_root_apk keeps a copy of the promoted release's APK at the
 # release host's root, dens.apk, which the install guide links to, since a
-# release's own paths name its version (M12.4). It's replaced as each
+# release's own paths name its version. It's replaced as each
 # release is promoted, by the APK this run verified with the release, which
 # its checksums and their signature cover, and read back.
 publish_root_apk() {
@@ -889,7 +889,7 @@ cleanup_old_releases() {
   for ((i=2; i<${#records[@]}; i++)); do
     read -r promoted_ns version <<< "${records[$i]}"
     # Installed copies hold what the first release wrote, and the lifecycle
-    # harnesses update from it, so it stays (M9.1).
+    # harnesses update from it, so it stays.
     if [[ "$version" == "$DENS_FIRST_RELEASE" ]]; then
       printf "🟢 Retaining %s, the first release, which the lifecycle e2e updates from\n" "$version"
       continue
@@ -924,7 +924,7 @@ sign_application_release() {
 
 # check_signature_as_the_app checks the new release's signed checksums as
 # the Android app's updater will, which reads the bundle itself, where no
-# cosign runs, against the trusted root its build embeds (M12.4): a change
+# cosign runs, against the trusted root its build embeds: a change
 # in what cosign writes, or in Sigstore's root, stops the release before
 # anything is published, rather than every app's next update.
 check_signature_as_the_app() {
@@ -933,7 +933,7 @@ check_signature_as_the_app() {
       go test ./internal/platform/release -run '^TestReleaseChecksOutForTheApp$' -count=1 -v
 }
 
-# package_android builds the release's APK into its directory (M12.4).
+# package_android builds the release's APK into its directory.
 package_android() {
   if [[ "$(semver_compare "$VERSION" "$ANDROID_FIRST_RELEASE")" == -1 ]]; then
     return

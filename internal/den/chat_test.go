@@ -347,7 +347,7 @@ func TestMentionsAndReadState(t *testing.T) {
 }
 
 // TestSnapshotLastMessages checks that each read state's last message, found
-// a channel at a time from the index (M8), is what the scan of every message
+// a channel at a time from the index, is what the scan of every message
 // it replaced found, on a den with staff-only channels, an empty channel, a
 // voice channel and DMs, for staff and for a member.
 func TestSnapshotLastMessages(t *testing.T) {

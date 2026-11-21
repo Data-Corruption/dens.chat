@@ -1,7 +1,7 @@
-// A den's emoji in text (M15.2): a name the den has, written :name:, shows
+// A den's emoji in text: a name the den has, written :name:, shows
 // its image in a square box of the line's height, which the image fills as
 // it loads, so the list never moves; large in a message of emoji alone. An
-// animated one plays as Appearance's Animations says (M15.1): always, or
+// animated one plays as Appearance's Animations says: always, or
 // while the pointer is over its row.
 
 import { createContext } from 'preact';

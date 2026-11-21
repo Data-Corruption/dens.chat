@@ -88,7 +88,7 @@ func runFlatpak(t *testing.T, bi build.BuildInfo, port int) (*app.App, control.C
 // The Flatpak updated to a new build starts locked: the page gets its
 // unlock screen and nothing else until the local password opens Dens, and
 // the update, migrated after a snapshot, is done once it has. It hosts no
-// den (M9.3).
+// den.
 func TestFlatpakServiceStartsLockedAfterAnUpdate(t *testing.T) {
 	flatpakHome(t)
 	port := freePort(t)

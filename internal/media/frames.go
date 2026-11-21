@@ -11,7 +11,7 @@ import (
 	"golang.org/x/image/webp"
 )
 
-// The frames of an animated GIF or WebP, for an animated picture (M15.1).
+// The frames of an animated GIF or WebP, for an animated picture.
 // An animation is read twice: first its frames' places, timing and count,
 // without decoding any, so one past the budget is refused before it costs
 // anything; then each frame's pixels in turn, as it's drawn.

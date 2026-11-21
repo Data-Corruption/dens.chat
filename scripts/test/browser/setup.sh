@@ -1,18 +1,18 @@
 #!/usr/bin/env bash
 # Sets up the browser checks' Incus container, or brings an existing one up
 # to date: Debian 13 with Chromium, Firefox ESR, Xvfb, PulseAudio, and dunst
-# for the desktop's notifications (M12.3), a user tester, and in tester's
+# for the desktop's notifications, a user tester, and in tester's
 # home this branch's development binary, the voice probe, the pinned
 # Node.js, the media the checks send, this directory, and the public site's
-# build (M17.1). Then run a check with run.sh.
+# build. Then run a check with run.sh.
 #
-# The checks drive real browsers through every milestone's page features,
-# from M2's calls on. CI doesn't run them: they're the check before each
+# The checks drive real browsers through the page's features, calls
+# among them. CI doesn't run them: they're the check before each
 # manual test, run by hand, and they take minutes each. A check measures
 # what a feature delivers, as the other page receives it, such as the
 # samples it decodes and the frames its worker opens, rather than what a
 # page set up: a share's sound once had its transform and its track in
-# place while it reached nobody (M18).
+# place while it reached nobody.
 #
 # Usage: scripts/test/browser/setup.sh [--no-build]
 #   --no-build  push the binaries already built instead of building them,
@@ -104,7 +104,7 @@ push internal/media/ffmpeg/testdata/with-gps.mp4 clip.mp4
 push internal/media/ffmpeg/testdata/tone.mp3 sounds/tone.mp3
 for file in scripts/test/browser/*; do push "$file" "browser/$(basename "$file")" 0755; done
 
-# The public site, for the site check (M17.1): built as the Docs workflow
+# The public site, for the site check: built as the Docs workflow
 # builds it, but for the address site-prep.sh serves it at. It's quick, so
 # it's built each time, --no-build or not.
 hugo=$(./scripts/vendor.sh hugo | sed -n 's/^hugo=//p')

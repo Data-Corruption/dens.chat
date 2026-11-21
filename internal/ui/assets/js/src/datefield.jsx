@@ -1,4 +1,4 @@
-// A day and a time as fields of the page's own (M22.3), the same in every
+// A day and a time as fields of the page's own, the same in every
 // browser, where a browser's date and time inputs each look their own: the
 // day a field that opens a month under it, the time a list of quarter
 // hours. Their values are the form's: YYYY-MM-DD and HH:MM.

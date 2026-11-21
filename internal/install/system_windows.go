@@ -342,8 +342,8 @@ func (windowsSystem) WrapHostKey(l layout.Layout, key []byte) error {
 	return host.WrapHostKey(l.HostKey, key)
 }
 
-// ConfigureFirewall adds the media ports' inbound rules at every install
-// (M9), scoped to the installed binary and those ports, so turning hosting
+// ConfigureFirewall adds the media ports' inbound rules at every install,
+// scoped to the installed binary and those ports, so turning hosting
 // on in the page needs nothing elevated; nothing listens there while it's
 // off, so they let nothing in.
 func (windowsSystem) ConfigureFirewall(l layout.Layout, cfg *instance.Config) error {
@@ -379,7 +379,7 @@ func (windowsSystem) RegisterExtras(l layout.Layout) error {
 }
 
 // helperTask names the scheduled task that starts the shortcut helper at
-// user's login (M7). Each desktop user has one, at the library's root and
+// user's login. Each desktop user has one, at the library's root and
 // named for their SID, as OneDrive's are.
 func helperTask(l layout.Layout, user host.Identity) string {
 	return helperTaskPrefix(l) + user.ID
@@ -393,7 +393,7 @@ func helperTaskPrefix(l layout.Layout) string {
 // with their interactive token, at normal priority, since a task's default
 // of below normal could fall behind a game, and with no time limit. It
 // makes the Start menu's Dens too, which opens the page and carries the app
-// ID Windows shows the helper's notifications under (M12.3).
+// ID Windows shows the helper's notifications under.
 func (windowsSystem) RegisterHelper(l layout.Layout, user host.Identity) (func() error, error) {
 	if _, err := windows.StringToSid(user.ID); err != nil {
 		return nil, fmt.Errorf("desktop user %q is not a SID: %w", user.ID, err)

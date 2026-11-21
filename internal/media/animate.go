@@ -13,7 +13,7 @@ import (
 	xdraw "golang.org/x/image/draw"
 )
 
-// Animated pictures (M15.1): an animated GIF or WebP made into a member's
+// Animated pictures: an animated GIF or WebP made into a member's
 // picture or banner, by their own service, as a GIF. Cropping or scaling an
 // animation means making each of its frames again, which a page's canvas
 // can't do, so the page sends the file as it is, with the part of it the

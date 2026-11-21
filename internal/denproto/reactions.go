@@ -10,7 +10,7 @@ import (
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
-// Reactions (M15.3): a member's emoji on a message, one of Unicode's, from
+// Reactions: a member's emoji on a message, one of Unicode's, from
 // the list the page's picker shows (IsEmoji), or one of the den's. In a
 // channel the den keeps each reaction, checks it against the list or its
 // own emoji, by ID, so a reaction carries no text, and sends each change
@@ -277,7 +277,7 @@ func readSet(plain []byte) (ReactionSet, error) {
 // checkReactions checks a message's reactions as a den sends them: a
 // channel's, each emoji once, at most MaxReactionEmoji and MaxReactions in
 // all, each member once an emoji; and a DM's or a group's sealed sets, one
-// a member, at most MaxReactionSets (M16.3).
+// a member, at most MaxReactionSets.
 func checkReactions(m Message) error {
 	if m.Sealed != nil {
 		if len(m.Reactions) > 0 || len(m.DMReactions) > MaxReactionSets {

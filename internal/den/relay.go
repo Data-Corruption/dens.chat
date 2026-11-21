@@ -7,7 +7,7 @@ import (
 )
 
 // relaySignal passes a box from one of a member's devices to their others,
-// or to the one it names (M20), on their sockets alone, and keeps nothing
+// or to the one it names, on their sockets alone, and keeps nothing
 // of it: not in the ring, the database or the log. A box of the wrong
 // shape, or past the member's limit, goes nowhere; the den can't open one.
 func (d *Den) relaySignal(s *Session, sock *socket, req denproto.RelaySignal) {

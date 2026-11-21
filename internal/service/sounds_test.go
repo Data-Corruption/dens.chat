@@ -67,7 +67,7 @@ func (p *pageStream) lastStatus(holds func(notify.Status) bool) notify.Status {
 	}
 }
 
-// A member's own sounds (M14.2): a file of audio, of at most 1 MiB, in
+// A member's own sounds: a file of audio, of at most 1 MiB, in
 // place of one of the page's sounds, kept by the service and served to the
 // page alone, sandboxed and never cached; the sounds' switches and volumes
 // kept with the notifications' settings; Reset bringing the default back;
@@ -159,7 +159,7 @@ func TestOwnSounds(t *testing.T) {
 		t.Fatalf("after Reset the database opens it with %v", err)
 	}
 
-	// With every kind off, a DM makes no sound (M14's manual pass); with
+	// With every kind off, a DM makes no sound; with
 	// DMs on, and nothing to show its notification, as the browser won't
 	// let the page notify and no helper runs, its sound plays alone, on the
 	// page on screen.

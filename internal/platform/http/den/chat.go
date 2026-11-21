@@ -48,7 +48,7 @@ func (h *handler) history(w http.ResponseWriter, r *http.Request) {
 }
 
 // changes answers what changed since a version, for a client checking what
-// it cached (M6). since is required; upto, the newest message the client
+// it cached. since is required; upto, the newest message the client
 // holds, is optional.
 func (h *handler) changes(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
@@ -99,7 +99,7 @@ func (h *handler) send(w http.ResponseWriter, r *http.Request) {
 	if !h.decode(w, r, &req) {
 		return
 	}
-	// A poll's choices count with its question (M15.4).
+	// A poll's choices count with its question.
 	size := len(req.Text) + len(req.Sealed)
 	if req.Poll != nil {
 		for _, c := range req.Poll.Choices {
@@ -222,7 +222,7 @@ func (h *handler) updateChannel(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusOK, c)
 }
 
-// callRecord reads a voice channel's longest call, for staff (M21.2).
+// callRecord reads a voice channel's longest call, for staff.
 func (h *handler) callRecord(w http.ResponseWriter, r *http.Request) {
 	rec, err := h.d.CallRecord(r.Context(), session(r), chi.URLParam(r, "id"))
 	if err != nil {

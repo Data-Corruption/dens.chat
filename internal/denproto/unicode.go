@@ -5,8 +5,8 @@ import (
 	"sync"
 )
 
-// Unicode's emoji (M15.2), from the list scripts/emoji.sh writes, as the
-// page's picker has them: the den checks reactions against it (M15.3).
+// Unicode's emoji, from the list scripts/emoji.sh writes, as the
+// page's picker has them: the den checks reactions against it.
 
 // unicodeEmoji is the list of Unicode's emoji as a set.
 var unicodeEmoji = sync.OnceValue(func() map[string]bool {

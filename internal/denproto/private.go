@@ -5,7 +5,7 @@ import (
 	"slices"
 )
 
-// Private DMs and device approval (M1.7): what the den relays and keeps.
+// Private DMs and device approval: what the den relays and keeps.
 // The cryptography is in e2e.go; the den never holds a key that opens any
 // of it.
 
@@ -23,7 +23,7 @@ const (
 	EventDeviceRequestEnded = "device.request_ended"
 )
 
-// Error codes for M1.7.
+// Error codes for DM keys and device approval.
 const (
 	// CodeKeyExists (409): the DM has a key both members checked, or an
 	// exchange under way, so another can't start.
@@ -56,7 +56,7 @@ const (
 	PendingCancelled = "cancelled" // the member's password or seal changed meanwhile
 )
 
-// Sizes for M1.7.
+// Sizes for DM keys and device approval.
 const (
 	// SealCheckSize is a seal check's length: an HMAC-SHA-256.
 	SealCheckSize = 32

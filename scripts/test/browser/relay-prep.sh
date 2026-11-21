@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# The M20 check's den: alice's install hosts it, with Lounge, and bob
+# The relay check's den: alice's install hosts it, with Lounge, and bob
 # joins; bob's laptop, m2e, signs in as him through his first device's
 # approval, so both hold his seal, which the boxes between them are sealed
 # with. Keybind relay is on in both of bob's installs, and the laptop
-# shares its computer's sound (M20.2). Firefox's microphone plays speech.
+# shares its computer's sound. Firefox's microphone plays speech.
 # The container's sound is a tone, played into a null sink of its own,
 # "tone", which is the default output the laptop's helper reads; the
 # browsers play into "speakers", so nothing they play is read again.

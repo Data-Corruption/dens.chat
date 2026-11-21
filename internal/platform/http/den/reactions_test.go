@@ -10,7 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// TestReactionsOverHTTP checks the reactions' routes (M15.3): a member adds
+// TestReactionsOverHTTP checks the reactions' routes: a member adds
 // one to a channel's message and takes it back, staff take an emoji's off,
 // a member can't, a DM's set goes in sealed against its revision, a stale
 // one meeting a conflict that carries the set as it is, and each counts
@@ -52,7 +52,7 @@ func TestReactionsOverHTTP(t *testing.T) {
 		t.Fatalf("history after the clearing: %+v", h)
 	}
 
-	// A DM's key, sealed to both members' identities, for her set (M16.1).
+	// A DM's key, sealed to both members' identities, for her set.
 	b := f.session(bob)
 	var dm denproto.Channel
 	if f.call(http.MethodPost, "/api/dms", alice, denproto.DMRequest{MemberID: denproto.FormatID(b.MemberID)}, &dm) != http.StatusOK {

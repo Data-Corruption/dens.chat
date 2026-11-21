@@ -122,7 +122,7 @@ func (m *member) waitOffers(n int) []offer {
 	return nil
 }
 
-// withoutBoard is an SDP without the call's soundboard (M14.3), whose
+// withoutBoard is an SDP without the call's soundboard, whose
 // section every offer carries, for checks of the sections that come and go
 // with members and shares.
 func withoutBoard(sdp string) string {

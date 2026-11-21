@@ -1,4 +1,4 @@
-// The call's lock (M16.2): beside how a call stands, it says whether the
+// The call's lock: beside how a call stands, it says whether the
 // den seals its calls end to end, and opens the member's code to read out,
 // with each other member of the call, their mark where the member compared
 // codes with them, or Compare, which compares from there; a comparison

@@ -8,7 +8,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// A retention pass (M5) clears the unread marks of channels it emptied,
+// A retention pass clears the unread marks of channels it emptied,
 // and leaves the rest, and the den's period checks like its limits.
 func TestMessagesExpired(t *testing.T) {
 	s := newState()

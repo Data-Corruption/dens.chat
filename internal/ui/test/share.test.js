@@ -112,7 +112,7 @@ test('each refusal says why', () => {
 test("the limits' cost at most", () => {
     const cost = shareCost(limits, 96000);
     assert.equal(Math.round(cost.video), 16_800_000);
-    // Two talking to the call's 14 others, each sealed (M16.2).
+    // Two talking to the call's 14 others, each sealed.
     assert.equal(Math.round(cost.voice), Math.round(2 * 14 * (96000 * 1.2 + SEALING)));
     assert.equal(mbps(cost.video), '17 Mbps');
     assert.equal(mbps(cost.voice), '3.5 Mbps');
@@ -139,7 +139,7 @@ test('the upload calls need at full load is their video and voice together', () 
     assert.equal(uploadNeeded({ ...limits, shares: 0 }, 96000), shareCost(limits, 96000).voice);
 });
 
-// The soundboard streams a sound to everyone in a call at 64 kbps (M14.3).
+// The soundboard streams a sound to everyone in a call at 64 kbps.
 test("with a soundboard, the upload counts a sound to everyone in a full call", () => {
     assert.equal(shareCost(limits, 96000).sounds, 0);
     assert.equal(Math.round(shareCost(limits, 96000, true).sounds), Math.round(15 * 64000 * 1.2));

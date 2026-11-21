@@ -1,4 +1,4 @@
-// Makes an image for the den's emoji (M15.2), as staff would add one: a
+// Makes an image for the den's emoji, as staff would add one: a
 // PNG of a face, a yellow circle on a transparent ground, of any size,
 // which the page draws at an emoji's; or, named .gif, an animated GIF of
 // a dot crossing a square, over six frames, looping forever.

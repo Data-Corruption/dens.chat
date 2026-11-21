@@ -344,7 +344,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M14.2: the member's own sounds, each a file of theirs in place of one
+	// The member's own sounds, each a file of theirs in place of one
 	// of the page's sounds, by the sound's name, sealed with the data key,
 	// and when it was set, which names the file's version for the page.
 	m.Add("Own sounds", func(ctx context.Context, tx *sql.Tx) error {
@@ -360,7 +360,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M14.3: the den's named files, each a file of the den's with a name
+	// The den's named files, each a file of the den's with a name
 	// unique among those of its kind, sounds for its soundboard first; and
 	// the den's limits for them: how many sounds it keeps, 0 turning the
 	// soundboard off, the longest a sound may be, and how long a member
@@ -387,7 +387,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M15.2: the den's limit for its emoji, which are named files of kind
+	// The den's limit for its emoji, which are named files of kind
 	// emoji: how many it keeps, 0 turning them off and keeping them.
 	m.Add("Emoji", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `ALTER TABLE den ADD COLUMN emojis INTEGER NOT NULL DEFAULT 50`); err != nil {
@@ -396,7 +396,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M15.3: reactions. A channel's are a row each: a member's emoji on a
+	// Reactions. A channel's are a row each: a member's emoji on a
 	// message, one of Unicode's or one of the den's, which goes with its
 	// message, and with the den's emoji as staff delete it. A DM's are a
 	// sealed set for each message and member, which their client sealed
@@ -433,7 +433,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M15.4: polls, and staff's @everyone. A poll is a row beside its
+	// Polls, and staff's @everyone. A poll is a row beside its
 	// channel's message, with its choices, sealed with the data key as the
 	// text is, its rules and its end, which an early end moves; a vote is
 	// a row for each choice a member picked, and goes with its poll. A
@@ -466,11 +466,11 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M16.1: identities and codes. A member's identity is the hash of the
+	// Identities and codes. A member's identity is the hash of the
 	// two public keys their Dens published, which are kept beside the
 	// member; a DM key sealed to its members' identities keeps the
 	// statement its maker signed, with the maker's keys, and the
-	// signature, and each member's copy where M1.7's keys keep theirs; and
+	// signature, and each member's copy where legacy keys keep theirs; and
 	// a member's record is what their devices write every hour, sealed
 	// with their seal. On the client, each joined den keeps the record of
 	// the identities this member kept there, sealed with the data key.
@@ -514,13 +514,13 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M16.3: group DMs, a fourth kind of channel. SQLite changes a table's
+	// Group DMs, a fourth kind of channel. SQLite changes a table's
 	// checks only by making it again, so den_channels is made again with
 	// group_dm among its kinds, by SQLite's procedure, which this step's run
 	// takes foreign keys off for: dropping the old table with them on would
 	// take every message, key and read position with it. Its counter stays
 	// where it was, since a channel's ID is never given out twice, even past
-	// the channels a restore moved it beyond (M11). A group DM keeps its
+	// the channels a restore moved it beyond. A group DM keeps its
 	// maker and its name, sealed under one of its keys, by that key's ID;
 	// its members, in the order they joined, each with the change that took
 	// them in, from which they get its changes, and the group's last message
@@ -603,7 +603,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M16.4: disappearing messages. A DM or a group keeps how long its
+	// Disappearing messages. A DM or a group keeps how long its
 	// messages stay after they're sent, in seconds, 0 while they stay, and
 	// who last set it and when; a message sent under a time keeps when it
 	// goes, which the den's timer finds by the index, and which an edit
@@ -622,7 +622,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M17.2: spoilers. A channel's file keeps whether its sender sent it
+	// Spoilers. A channel's file keeps whether its sender sent it
 	// as a spoiler; a DM's keeps it inside its seal, where the den can't
 	// read it.
 	m.Add("Spoilers", func(ctx context.Context, tx *sql.Tx) error {
@@ -634,9 +634,10 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M17.3: notes to self, a fifth kind of channel, which names the one
+	// Notes to self, a fifth kind of channel, which names the one
 	// member whose notes it holds; a member has one in the den at most.
-	// den_channels is made again to take the kind, as M16.3's step made it,
+	// den_channels is made again to take the kind, as the Group DMs step
+	// made it,
 	// its counter staying where it was.
 	m.AddRemaking("Notes", func(ctx context.Context, tx *sql.Tx) error {
 		var seq sql.NullInt64
@@ -680,7 +681,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return keepChannelCounter(ctx, tx, seq)
 	})
 
-	// M17.4: events. An event keeps its name, description and place's line
+	// Events. An event keeps its name, description and place's line
 	// of text as JSON, sealed with the data key as a message's text is; its
 	// banner, an upload of its maker's; its place's voice channel, which an
 	// event that ended keeps as none once the channel goes; its maker, its
@@ -722,7 +723,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M17.5: badges and their awards. A badge is an event's, one at most:
+	// Badges and their awards. A badge is an event's, one at most:
 	// its picture one of the den's named files, of kind badge, named by its
 	// file's ID, since titles repeat, and its title, sealed with the data
 	// key as the event's own text is. An award is a badge, the member who
@@ -752,9 +753,9 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
-	// M17.6: an award keeps whether its member hid it from their profile
-	// card, where badges start shown. It's a step of its own, since test
-	// builds of M17.5 ran the one before.
+	// An award keeps whether its member hid it from their profile card,
+	// where badges start shown. It's a step of its own, since a manual
+	// test's builds had run the Badges step already.
 	m.Add("Hidden badges", func(ctx context.Context, tx *sql.Tx) error {
 		if _, err := tx.ExecContext(ctx, `
 			ALTER TABLE den_badge_awards ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0 CHECK (hidden IN (0, 1));
@@ -805,7 +806,7 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 
 // keepChannelCounter puts back the channels' counter as it was before
 // den_channels was made again, since a channel's ID is never given out
-// twice, even past the channels a restore moved it beyond (M11).
+// twice, even past the channels a restore moved it beyond.
 func keepChannelCounter(ctx context.Context, tx *sql.Tx, seq sql.NullInt64) error {
 	if !seq.Valid {
 		return nil

@@ -1,6 +1,6 @@
 """Checks the Android app's shell for framework calls newer than the oldest
-Android it runs on, as Android Lint's NewApi check would in a Gradle build
-(M12): such a call throws NoSuchMethodError there unless a check of
+Android it runs on, as Android Lint's NewApi check would in a Gradle build:
+such a call throws NoSuchMethodError there unless a check of
 Build.VERSION.SDK_INT guards it.
 
 It lists every reference in the shell's classes to a framework member that

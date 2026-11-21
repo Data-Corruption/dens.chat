@@ -1,4 +1,4 @@
-// Stands in for Caddy and the router's forward in the move check (M10):
+// Stands in for Caddy and the router's forward in the move check:
 // the den's address, which reaches the den listener on the port FILE
 // names, read again for each connection, so moving the forward to another
 // computer's den is writing its port there.

@@ -12,7 +12,7 @@ import (
 
 // fakeHub records what Relay hands the shortcut hub: each device's holds
 // as they change, the toggles fired, and the hand-over of this install's
-// own presses; and from M20.2 what takes the computer's sound while the
+// own presses; and what takes the computer's sound while the
 // helper reads it.
 type fakeHub struct {
 	mu      sync.Mutex

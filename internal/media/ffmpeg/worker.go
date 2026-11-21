@@ -23,7 +23,7 @@ type Job struct {
 	// doesn't read: 1 to 8, or 0 for the turn the file itself states.
 	Orientation int `json:"orientation,omitempty"`
 	// A chunk of a video's copy: the frames shown from StartUS up to EndUS,
-	// at most FPS a second, at KBPS (M5.4).
+	// at most FPS a second, at KBPS.
 	StartUS int64 `json:"start_us,omitempty"`
 	EndUS   int64 `json:"end_us,omitempty"`
 	FPS     int   `json:"fps,omitempty"`

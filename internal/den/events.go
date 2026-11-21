@@ -14,7 +14,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Events (M17.4): the den's events, which staff make, and members too as
+// Events: the den's events, which staff make, and members too as
 // far as the owner's limit allows. An event's name, description and
 // place's line of text are what its maker wrote, so the den seals them
 // with the data key, as a message's text; its banner is an upload of the
@@ -26,7 +26,7 @@ import (
 // interested in it with event.started, an audience fixed as it's made,
 // since the ring replays it, and the rest with event.updated; and ends it
 // at its end, forgetting who was interested. An ended event stays, out of
-// the list, for its link's card and its badge (M17.5), and keeps whether
+// the list, for its link's card and its badge, and keeps whether
 // its voice channel was staff's alone once the channel goes.
 //
 // d.calendar keeps each event's changes, and their events, in order, the
@@ -56,7 +56,7 @@ type eventDetails struct {
 
 // eventRow is an event as the den keeps it, with its banner's size, its
 // channel's visibility, its maker's role, how many of those who see it are
-// interested, and its badge, if it has one (M17.5).
+// interested, and its badge, if it has one.
 type eventRow struct {
 	id         int64
 	details    eventDetails
@@ -110,7 +110,7 @@ func (e *eventRow) audience() Audience {
 
 // eventStaffOnly says, of an event aliased e and its voice channel aliased
 // c, whether it's staff's alone: as its channel is, or once the channel
-// went, as it was then (M17.5).
+// went, as it was then.
 const eventStaffOnly = `coalesce(c.staff_only, e.staff_only)`
 
 // eventColumns read an event, its banner's size, its channel's visibility,
@@ -601,8 +601,7 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 	} else if err := d.Hub.Publish(denproto.EventEventUpdated, after.view(nil), after.audience()); err != nil {
 		return none, err
 	}
-	// A badge attached, or the event moved, may bring an award sooner
-	// (M17.5).
+	// A badge attached, or the event moved, may bring an award sooner.
 	if after.startsAt != before.startsAt || after.endsAt != before.endsAt || badge.asked || after.channel != before.channel {
 		d.planTimer()
 	}
@@ -614,7 +613,7 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 }
 
 // Event reads one of the den's events that the session sees, to come,
-// live or ended, with the member's own mark, for a link's card (M17.5).
+// live or ended, with the member's own mark, for a link's card.
 func (d *Den) Event(ctx context.Context, s *Session, id string) (denproto.DenEvent, error) {
 	eid, err := denproto.ParseID(id)
 	if err != nil {
@@ -946,8 +945,7 @@ func (d *Den) departEvents(ctx context.Context, tx *sql.Tx, member int64) (event
 
 // channelEvents takes a voice channel's events out of the den within tx,
 // as it's deleted: those to come go, with their banners, and the live one
-// ends. Those that stay, ended, keep whether the channel was staff's alone
-// (M17.5).
+// ends. Those that stay, ended, keep whether the channel was staff's alone.
 func (d *Den) channelEvents(ctx context.Context, tx *sql.Tx, channel int64) (eventsGone, [][]byte, error) {
 	var gone eventsGone
 	if _, err := tx.ExecContext(ctx, `UPDATE den_events SET staff_only = (SELECT staff_only FROM den_channels WHERE id = ?1)

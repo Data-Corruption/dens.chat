@@ -349,7 +349,7 @@ EOF
   [[ ! -s "$outputs" ]] || fail "failed planning emitted scheduling outputs"
 )
 
-# A PR's plan picks its test jobs by the files it changes (M17.1): none for
+# A PR's plan picks its test jobs by the files it changes: none for
 # docs alone, every job for the media module's inputs or CI's own files,
 # and every job but the media module's two for anything else.
 (
@@ -446,7 +446,7 @@ if (installer_needs_update install.sh >/dev/null 2>&1); then
 fi
 
 # The Flatpak's committed key is one the publisher signs with: Ed25519, with
-# no expiry (M9.4).
+# no expiry.
 flatpak_keys=$(GNUPGHOME=$(mktemp -d "$tmp/gnupg.XXXXXX") committed_flatpak_keys) ||
   fail "scripts/flatpak/dens.asc holds no key the Flatpak can be signed with"
 [[ "$flatpak_keys" == *:22::ed25519 ]] || fail "unexpected Flatpak keys: $flatpak_keys"
@@ -456,7 +456,7 @@ if FLATPAK_PUBLIC_KEY="$tmp/not-a-key.asc" GNUPGHOME=$(mktemp -d "$tmp/gnupg.XXX
 fi
 
 # From ANDROID_FIRST_RELEASE a release holds the Android app's APK, at a
-# version code that grows with each release (M12.4); one before it has
+# version code that grows with each release; one before it has
 # none, and still verifies.
 [[ "$(release_checksum_objects v1.4.0)" != *android* ]] || fail "a release before the APK needs one"
 [[ "$(release_checksum_objects "$ANDROID_FIRST_RELEASE")" == *android-arm64.apk* ]] ||

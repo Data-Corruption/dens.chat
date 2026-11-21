@@ -28,10 +28,10 @@ const maxInstallerSize = 16 << 20
 // installer in the foreground. The installer downloads and verifies the
 // release binary and runs its install command, which updates every instance.
 // It reads the release host's version pointer first, and stops if it names
-// an older release than this one (M8), as the install would.
+// an older release than this one, as the install would.
 //
 // Only its flags change where it fetches from or whether it verifies, never
-// the environment, which an elevated shell inherits from its user (M8). A
+// the environment, which an elevated shell inherits from its user. A
 // release refuses opts.SkipVerify: only test releases, built without the
 // signing identity, skip verifying.
 func Update(ctx context.Context, sys System, bi build.BuildInfo, opts Options) error {

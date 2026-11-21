@@ -1,4 +1,4 @@
-// The M16.3 check of group DMs: alice, who owns the den, in Chromium, and
+// The groups check, of group DMs: alice, who owns the den, in Chromium, and
 // bob in the browser named; carol and dave through their pages' API. Alice
 // makes a group of bob, carol and herself from the DM tab's +,
 // naming it, and each change shows in it as a line: bob writes and sends a
@@ -128,7 +128,7 @@ try {
         'dave reads what carol wrote after he joined');
     await B.b.shot(`${HOME}/shot-groups-members-bob-${which}.png`);
     // A member's row is their picture and name, the one who made the group
-    // marked under theirs; comparing codes is each row's ⋯ (M22.4).
+    // marked under theirs; comparing codes is each row's ⋯.
     const rows = JSON.parse(await B.b.eval(`JSON.stringify([...${PANEL}.querySelectorAll('[data-member]')].map((li) => ({
         name: li.querySelector('[data-member-name]')?.textContent.trim(), under: li.querySelector('[data-remover]')?.textContent.trim() || '',
         buttons: [...li.querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || 'row'),

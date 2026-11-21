@@ -1,15 +1,14 @@
 // A call's controls, which follow the call from den to den: in a block at
 // the foot of a den's channel list, and boxed on the other pages; and who
 // is in each voice channel's call, with who is speaking, how loud each
-// plays here, and staff's controls (M3). From M4.2 the call's block has a
+// plays here, and staff's controls. The call's block has a
 // row for sharing the member's screen, and the list marks who shares,
-// which a click watches. From M13.4 the phone layout shows the call in a
+// which a click watches. The phone layout shows the call in a
 // bar across the top of the channel's pane, and a touch screen holds the
-// microphone on the call's button, by the thumb. From M14.3 the block,
-// the bar and the box open the den's soundboard, and the channel's row in
-// the list shows how the call stands, where the block's speaker did. From
-// M16.2 the call's lock stands beside how it stands, and the list marks
-// each member verified, and one whose keys changed. From M20.3 the call's
+// microphone on the call's button, by the thumb. The block, the bar and
+// the box open the den's soundboard, and the channel's row in the list
+// shows how the call stands. The call's lock stands beside how it stands, and the list marks
+// each member verified, and one whose keys changed. The call's
 // button presses for a call another of the member's devices holds.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -39,8 +38,8 @@ import {
 } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
-// it, how loud each member plays here, and from M4.2 its share, the shares
-// it watches, and what it knows of the call's den; and from M14.3 whose
+// it, how loud each member plays here, its share, the shares it
+// watches, and what it knows of the call's den; and whose
 // sound plays in it, and the member's soundboard.
 export function useCall() {
     const [state, setState] = useState({
@@ -51,7 +50,7 @@ export function useCall() {
     return state;
 }
 
-// useCallButton says whether the call's button shows (M13.4): in a call,
+// useCallButton says whether the call's button shows: in a call,
 // where the page has the button, or while another of the member's devices
 // holds their call and takes this one's presses. It changes only as those
 // do, so what leaves room for the button doesn't render as the call's
@@ -74,7 +73,7 @@ function useHeldElsewhere() {
 }
 
 // foot is the height of what stands at the foot of the channel's pane,
-// the composer among it, which the call's button floats above (M13.4): the
+// the composer among it, which the call's button floats above: the
 // channel's pane says it as it changes, and 0 once it's gone.
 let foot = 0;
 const footListeners = new Set();
@@ -104,20 +103,20 @@ const STATUS = {
 };
 
 // callState is how a call stands in a word, for the channel's row, which
-// shows it on its speaker (M14.3).
+// shows it on its speaker.
 export function callState(status) {
     return { joining: 'joining', connecting: 'connecting', connected: 'connected', reconnecting: 'reconnecting' }[status] || '';
 }
 
 // WEBVIEW is Android System WebView's page in the store, which a call's
-// notice links where the app's WebView can't seal calls (M16.2).
+// notice links where the app's WebView can't seal calls.
 const WEBVIEW = 'https://play.google.com/store/apps/details?id=com.google.android.webview';
 
 // notices are what the member should know of their call: why the last one
-// ended, or didn't start, with what to do about it where there's something
-// (M16.2); that it waits for the microphone, that staff muted them in this
+// ended, or didn't start, with what to do about it where there's something;
+// that it waits for the microphone, that staff muted them in this
 // den's, or that push to talk has no key yet, where the call's button
-// isn't there to hold (M13.4).
+// isn't there to hold.
 function notices(call, notice, denID, staffMuted, shareNotice, holds) {
     const ptt = voiceSettings();
     const lines = [];
@@ -158,7 +157,7 @@ function notices(call, notice, denID, staffMuted, shareNotice, holds) {
     }
     if (call?.waitingForMic) lines.push(<p key="mic">Waiting for the microphone. If your browser asks for it, allow it.</p>);
     if (call && staffMuted && call.den === denID) lines.push(<p key="staff" class="flex items-start gap-1.5">{warn()}Muted by staff: nobody hears you</p>);
-    // A key the desktop runs counts as much as one the page knows (M7.2).
+    // A key the desktop runs counts as much as one the page knows.
     if (call && ptt.mode === 'ptt' && !holds && !ptt.keys.ptt && !keysElsewhere().covers.includes('ptt')) {
         lines.push(
             <p key="ptt" class="flex items-start gap-1.5">
@@ -172,9 +171,9 @@ function notices(call, notice, denID, staffMuted, shareNotice, holds) {
 
 // CallBlock holds the page's call at the foot of a den's channel list,
 // above the member's panel and in the message box's shade: its notices,
-// then, while the member shares their screen, the share's row (M4.2), then
+// then, while the member shares their screen, the share's row, then
 // its controls in a row. On the phone layout it keeps clear of the call's
-// button in the screen's corner, as roomy says (M13.4).
+// button in the screen's corner, as roomy says.
 export function CallBlock({ denID, staffMuted, roomy }) {
     const { call, notice, share, shareNotice, den, sounding, board } = useCall();
     const holds = useHoldsButton();
@@ -192,7 +191,7 @@ export function CallBlock({ denID, staffMuted, roomy }) {
 
 // StatusLine says how the call stands, in the list's block, only while it
 // isn't connected, or while it's in another den, which it names, a tap on
-// it going there (M14.3); the channel's row shows the rest.
+// it going there; the channel's row shows the rest.
 function StatusLine({ denID, call }) {
     const elsewhere = call.den !== denID;
     if (call.status === 'connected' && !elsewhere) return null;
@@ -229,10 +228,10 @@ export function CallBox() {
 }
 
 // CallBar is the call across the top of the channel's pane on the phone
-// layout (M13.4), under its header, for 40 pixels while in a call, as a
+// layout, under its header, for 40 pixels while in a call, as a
 // wider window shows its block beside the channel: where it is and how it
 // stands, the soundboard, mute, since a narrow window with a mouse has no
-// call's button (M14.3), deafen and leave. A tap on the rest goes to the
+// call's button, deafen and leave. A tap on the rest goes to the
 // list of the call's den, where its members and its other controls are.
 export function CallBar({ denID }) {
     const { call, den, sounding, board } = useCall();
@@ -263,7 +262,7 @@ export function CallBar({ denID }) {
     );
 }
 
-// CallButton is the call's button (M13.4): where the page has it, in a
+// CallButton is the call's button: where the page has it, in a
 // call, a round button of 64 pixels at the screen's foot on the right,
 // over every pane and above the composer, where a thumb rests. It holds
 // the microphone as the member's role for it says: a tap toggles mute, or
@@ -348,7 +347,7 @@ function HeldButton({ role, muted, talking, bottom, name, onPress, onRelease }) 
     );
 }
 
-// ShareRow is the member's share's row, while they share (M4.2): while it
+// ShareRow is the member's share's row, while they share: while it
 // starts, what it waits for; and while it's live, who watches, whether it
 // has sound, a button that shows their own screen in the player or hides
 // it, and a button to stop.
@@ -427,13 +426,13 @@ function ShareButton({ call, share, den }) {
 }
 
 // CallControls are the call, in this den or another, in a row: the arrow
-// that opens the rest of them (M21.2), and the buttons to share, mute,
+// that opens the rest of them, and the buttons to share, mute,
 // deafen, open the voice settings and leave, spread evenly, with how the
 // call stands for a screen reader, which the block's line and the
 // channel's row show. labeled spells out where and how it stands, before
 // the buttons, for pages with room for it, Home's box, which holds the
-// lock and the soundboard (M14.3), where the den has one, in the row. They
-// show only what the browser can do: a share where it can share (M13.4).
+// lock and the soundboard, where the den has one, in the row. They
+// show only what the browser can do: a share where it can share.
 export function CallControls({ denID, call, share, den, sounding, board, labeled }) {
     const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
     const said = STATUS[call.status](where);
@@ -626,20 +625,20 @@ function LeaveIcon() {
 
 // CallMembers lists who is in a voice channel's call, under the channel.
 // In the page's own call, a ring marks whoever is speaking or holds push to
-// talk (M11): speaking holds member IDs, and "self" for this page's member,
-// me; and whoever's sound plays, sounding (M14.3). A member's name opens
+// talk: speaking holds member IDs, and "self" for this page's member,
+// me; and whoever's sound plays, sounding. A member's name opens
 // their profile through onProfile. Everyone else's row has a menu that sets
 // how loud they play here, from volumes, up to twice as loud as they send,
 // and gives staff a way to mute or disconnect those they rank above. A
-// member who shares their screen has a LIVE mark (M4.2), which watches or
+// member who shares their screen has a LIVE mark, which watches or
 // stops watching in the page's own call, inCall, and elsewhere joins the
 // call as label names it and watches; watched holds the members whose
-// shares the page watches. From M16.2 the identities this member's Dens
+// shares the page watches. The identities this member's Dens
 // kept mark those they verified, and those whose keys changed since, or
 // since the page's call began, since. Where the den moves members, moving
 // gives staff Move to in the menu of anyone but the owner, with the voice
 // channels it lists, and with a mouse lets them drag their row onto
-// another (M17.2), but for a row whose menu is open, whose slider would
+// another, but for a row whose menu is open, whose slider would
 // drag the row along. With a mouse, a right click on a row opens its menu
 // at the pointer.
 export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since, moving }) {
@@ -651,7 +650,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
     const touch = useCoarse();
     const marks = useStaffMarks();
     // An open menu closes on a click anywhere else, or on Escape; on the
-    // phone layout it's a sheet, which closes itself (M13.2).
+    // phone layout it's a sheet, which closes itself.
     useEffect(() => {
         if (!menu || narrow) return undefined;
         const away = (e) => {
@@ -680,7 +679,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
     // menuItems are what the menu of a member other than this one holds
     // under their volume, in order: muting them for the member here alone;
     // for staff who outrank them, muting them for everyone; for staff,
-    // moving anyone but the owner to another call (M17.2), its channels
+    // moving anyone but the owner to another call, its channels
     // opening beside it; and for staff who outrank them, disconnecting
     // them.
     function menuItems(m, moderate, movable, muted) {
@@ -698,7 +697,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
         ].filter(Boolean);
     }
     // volume is how loud a member plays here, on the phone layout's sheet a
-    // slider a finger can hold (M13.4).
+    // slider a finger can hold.
     function volume(m, name, pct) {
         return (
             <label class={`flex items-center ${narrow ? 'h-14 gap-3 px-4 text-sm' : 'min-h-8 gap-2 px-3 text-xs'}`} title="How loud they play for you">
@@ -759,8 +758,8 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                 <KeysChangedMark id={`call-changed-${m.id}`} name={name} kept={identities[m.id]} />
                             )}
                             {talking && <span class="sr-only">speaking</span>}
-                            {/* Deafening mutes too, so it shows both (M11). Each mark's
-                                tip says what it means (M13.2). */}
+                            {/* Deafening mutes too, so it shows both. Each mark's
+                                tip says what it means. */}
                             {(m.muted || m.deafened) && (
                                 <Tip id={`muted-${m.id}`} label="muted" trigger={<MicIcon off size="h-3.5 w-3.5" />}>Muted</Tip>
                             )}

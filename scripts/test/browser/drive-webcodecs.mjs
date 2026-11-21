@@ -1,4 +1,4 @@
-// The M5.5 check: Bob, in the browser named, adds videos. In Chromium, the
+// The webcodecs check: Bob, in the browser named, adds videos. In Chromium, the
 // page makes an H.264 video's copy itself, up to 1080p, where the module
 // goes to 720p; declines an iPhone's HEVC, which it can't decode without
 // graphics for it, so the module makes that copy; and makes a WebM's VP9

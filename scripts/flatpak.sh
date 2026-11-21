@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Makes Dens's Flatpak (M9.3) from a release's binary, and commits it to a
+# Makes Dens's Flatpak from a release's binary, and commits it to a
 # repository: for the release pipeline (scripts/ci/flatpak.sh), and so for
 # the Flatpak e2e and the VMs' builds. It runs where flatpak, ostree, gnupg,
 # AppStream's compose tool and gdk-pixbuf's SVG loader are, as a Debian 13
@@ -79,7 +79,7 @@ commit() {
     "$build/files" >/dev/null
   # With Wayland granted, fallback-x11 gives the app X11 only in an X11
   # session, where push to talk needs it. PulseAudio's socket, which
-  # PipeWire serves too, gives Relay the computer's sound to share (M20.2).
+  # PipeWire serves too, gives Relay the computer's sound to share.
   flatpak build-finish "$build" --command=dens --share=network --socket=wayland --socket=fallback-x11 \
     --socket=pulseaudio >/dev/null
   # The subject names the version, which the publisher reads back. The

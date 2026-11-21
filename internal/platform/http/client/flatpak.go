@@ -12,11 +12,11 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// mountFlatpak serves what only the Flatpak's page asks of its service
-// (M9.3): installing an update through Flatpak, restarting into the newest
+// mountFlatpak serves what only the Flatpak's page asks of its service:
+// installing an update through Flatpak, restarting into the newest
 // build installed, quitting, and starting at sign-in. The Android app's
-// page installs its update at the same address (M12.4), and checks for one
-// beside it (M17.2).
+// page installs its update at the same address, and checks for one
+// beside it.
 func (rt *router) mountFlatpak(r chi.Router) {
 	r.Post("/api/update", rt.handleUpdate)
 	r.Post("/api/update/check", rt.handleCheckUpdate)
@@ -47,7 +47,7 @@ func (rt *router) stopAfter(w http.ResponseWriter, why string) {
 // restarts into it; where it won't, the page says to update in the
 // software center. In the Android app, the shell hands the update the
 // updater checked to Android's installer, which asks the member to confirm
-// over the page (M12.4).
+// over the page.
 func (rt *router) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if rt.a.Layout.Form == layout.Android {
 		if err := rt.a.InstallUpdate(); err != nil {
@@ -76,7 +76,7 @@ func (rt *router) handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleCheckUpdate checks for an update at once, as the member asks from
-// the Android app's settings (M17.2), and answers once a newer one is
+// the Android app's settings, and answers once a newer one is
 // downloaded and checked, ready to install, or that there's none.
 func (rt *router) handleCheckUpdate(w http.ResponseWriter, r *http.Request) {
 	if rt.a.Layout.Form != layout.Android || !rt.a.ChecksForUpdates() {

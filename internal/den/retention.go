@@ -11,7 +11,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Retention (M5): with a period set, the den deletes every message older
+// Retention: with a period set, the den deletes every message older
 // than it, with its files, in channels and DMs alike. It deletes the
 // oldest first, in the order they were sent, so after a pass every message
 // up to the last one it deleted is gone, in every channel, and one event
@@ -43,7 +43,7 @@ func retentionPeriod(days int) time.Duration { return time.Duration(days) * 24 *
 // StartRetention starts deleting the messages that pass the den's
 // retention period, beginning with those that passed it while the den was
 // stopped. Without it, as in tests, passes run only when called. It starts
-// again after StopRetention, as hosting does (M9.1).
+// again after StopRetention, as hosting does.
 func (d *Den) StartRetention() {
 	d.expiry.mu.Lock()
 	d.expiry.started, d.expiry.closed = true, false
@@ -196,7 +196,7 @@ func (d *Den) expireBatch(ctx context.Context, cutoff int64) (through, n int64, 
 			return err
 		}
 		// Clients that were away learn how far retention reached from
-		// ready, rather than from a change for every message (M6).
+		// ready, rather than from a change for every message.
 		_, err = tx.ExecContext(ctx, `UPDATE den SET expired_through = max(expired_through, ?) WHERE id = 1`, through)
 		return err
 	})

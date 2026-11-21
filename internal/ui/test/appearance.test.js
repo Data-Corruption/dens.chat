@@ -1,4 +1,4 @@
-// Appearance as a page (M22.8), checked without a browser on a wide
+// Appearance as a page, checked without a browser on a wide
 // window: a theme chosen in the list shows in the editor and the preview
 // and isn't worn until Use, which the list then marks; Customize copies a
 // built-in theme into the member's own; a theme's edits wait for Save, and

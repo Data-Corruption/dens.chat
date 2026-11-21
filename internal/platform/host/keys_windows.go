@@ -8,7 +8,7 @@ var (
 	procMapVirtualKeyW   = moduser32.NewProc("MapVirtualKeyW")
 )
 
-// Key is a key the shortcut helper reads (M7): a virtual key on Windows.
+// Key is a key the shortcut helper reads: a virtual key on Windows.
 type Key uint32
 
 // KeyState reads whether keys are down, for the shortcut helper. On Windows

@@ -51,7 +51,7 @@ const (
 )
 
 // What an install offers, and what a link is for: keys, as Keybind relay
-// carries them, and from M20.2 sound, the computer's, which it shares.
+// carries them, and sound, the computer's, which it shares.
 const (
 	offerKeys  = "keys"
 	offerSound = "sound"

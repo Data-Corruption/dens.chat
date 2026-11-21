@@ -13,13 +13,13 @@ import (
 type Configuration struct {
 	LogLevel string `json:"logLevel"`
 
-	// Hosting is whether this instance serves its den (M9.1), which the
+	// Hosting is whether this instance serves its den, which the
 	// desktop user turns on and off in the settings. It's nil until the
 	// first start of a version that has it, which takes it from the den
 	// role v1.0's installer gave the instance.
 	Hosting *bool `json:"hosting,omitempty"`
 	// DenExported is when the den was last exported to move it to another
-	// computer (M10), and zero when it hasn't been since hosting was last
+	// computer, and zero when it hasn't been since hosting was last
 	// on: what reached the den since, the export doesn't hold.
 	DenExported time.Time `json:"denExported,omitzero"`
 
@@ -34,21 +34,21 @@ type Configuration struct {
 	LastShutdownVersion string `json:"lastShutdownVersion"`
 
 	// CacheLimit is the size of the client's cache in bytes, which the
-	// member chooses (M6); 0 until they do, for the default.
+	// member chooses; 0 until they do, for the default.
 	CacheLimit int64 `json:"cacheLimit,omitempty"`
 
 	// VoiceKeys are the member's keys for the voice actions, by action. The
 	// service keeps them, not the browser, so the shortcut helper can watch
-	// them in other programs (M7).
+	// them in other programs.
 	VoiceKeys map[string]VoiceKey `json:"voiceKeys,omitempty"`
 	// DesktopKeys is whether the member had the desktop take the voice
-	// keys, where it owns them (M7.2), so the helper binds them with it as
+	// keys, where it owns them, so the helper binds them with it as
 	// it starts.
 	DesktopKeys bool `json:"desktopKeys,omitempty"`
 	// StartAtSignIn is whether the Flatpak starts at the member's sign-in
-	// once its key is remembered (M9.3): nil until they choose, which is on.
+	// once its key is remembered: nil until they choose, which is on.
 	StartAtSignIn *bool `json:"startAtSignIn,omitempty"`
-	// Notifications are what the service notifies the member of (M12.3).
+	// Notifications are what the service notifies the member of.
 	// The service keeps them, so every browser paired with the instance
 	// shares them, as it shares the voice keys.
 	Notifications Notifications `json:"notifications,omitzero"`
@@ -61,8 +61,8 @@ type Configuration struct {
 	// menu open, covers the picture behind the chat, in percent, nil until
 	// the member sets it. It's kept with the dim.
 	BackgroundHover *int `json:"backgroundHover,omitempty"`
-	// RelayID names this install to the member's others it links with
-	// (M20): 16 random bytes in hex, made as a start finds none. A restore
+	// RelayID names this install to the member's others it links with:
+	// 16 random bytes in hex, made as a start finds none. A restore
 	// makes another, since it names the computer, not the data.
 	RelayID string `json:"relayID,omitempty"`
 	// RelayKeys is Keybind relay: this install's voice keys reaching a
@@ -70,11 +70,11 @@ type Configuration struct {
 	// off until the member turns it on.
 	RelayKeys bool `json:"relayKeys,omitempty"`
 	// RelaySound is Share this computer's sound: the member's other
-	// devices may listen to it (M20.2), off until the member turns it on.
+	// devices may listen to it, off until the member turns it on.
 	RelaySound bool `json:"relaySound,omitempty"`
 }
 
-// Notifications are the member's choices for what notifies them (M12.3):
+// Notifications are the member's choices for what notifies them:
 // each kind of message stays off until they turn it on, a notification
 // carries the start of its message unless they hide it, and a den or
 // channel they muted notifies nothing.
@@ -82,15 +82,15 @@ type Notifications struct {
 	DMs      bool `json:"dms,omitempty"`
 	Mentions bool `json:"mentions,omitempty"`
 	HideText bool `json:"hideText,omitempty"`
-	// EveryoneOff silences staff's @everyone (M15.4), which notifies as a
+	// EveryoneOff silences staff's @everyone, which notifies as a
 	// mention does unless the member turns it off.
 	EveryoneOff bool `json:"everyoneOff,omitempty"`
 	// EventsOff silences the events the member is interested in as they
-	// start (M17.4), which notify unless the member turns them off.
+	// start, which notify unless the member turns them off.
 	EventsOff bool `json:"eventsOff,omitempty"`
 	// Muted holds what the member muted, by den ID.
 	Muted map[string]Muted `json:"muted,omitempty"`
-	// Sounds are the member's choices for the page's sounds (M14.2), by
+	// Sounds are the member's choices for the page's sounds, by
 	// name: each plays at its default volume, which the page holds, until
 	// they turn it off or set its volume. They're kept beside what
 	// notifies the member, as one tab of the settings holds both.
@@ -108,7 +108,7 @@ const (
 	BackgroundDefaultHover = 100
 )
 
-// SoundNames are the page's sounds (M14.2): a message, a member joining and
+// SoundNames are the page's sounds: a message, a member joining and
 // leaving the call, a share starting and ending, and the member's
 // microphone opening and closing.
 var SoundNames = []string{"message", "joined", "left", "shareStarted", "shareEnded", "micOn", "micOff"}
@@ -128,7 +128,7 @@ type Muted struct {
 }
 
 // SetHosting turns the hosting switch. Turning it on forgets an export of
-// the den (M10), which can't hold what reaches the den from then on.
+// the den, which can't hold what reaches the den from then on.
 func (c *Configuration) SetHosting(on bool) {
 	c.Hosting = &on
 	if on {

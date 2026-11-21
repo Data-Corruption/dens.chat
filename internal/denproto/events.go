@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// Events (M17.4): a den's events, each a name, a description in the
+// Events: a den's events, each a name, a description in the
 // markdown subset, an optional banner cut three times as wide as it's
 // high, a start, an end, and a place: one of the den's voice channels, or
 // a line of text. Staff make them, and members too as far as the owner's
@@ -22,7 +22,7 @@ import (
 // the list and forgets who was interested. One to come can be canceled,
 // which deletes it; one live can only be ended.
 //
-// From M17.5 an event's link shows as a card where it's posted, which asks
+// An event's link shows as a card where it's posted, which asks
 // the den for an event not among those to come, an ended one included; and
 // staff attach a badge to an event in a voice channel, a picture of an
 // emoji's size and a title, which a member earns by a minute at a stretch
@@ -74,7 +74,7 @@ const (
 	MaxMemberEvents = 10
 
 	// A badge's title is 1 to MaxBadgeTitleRunes characters, cleaned as an
-	// event's name is (M17.5).
+	// event's name is.
 	MaxBadgeTitleRunes = 40
 	// BadgeStretch is how long a member stays in a live event's call, at a
 	// stretch, to earn its badge.
@@ -110,7 +110,7 @@ func CheckEventLimits(l EventLimits) error {
 // live; and how many members are interested. Mine is whether the member is
 // one of them, which only ready and the events to their own sessions
 // carry: elsewhere it's absent, and the member's mark stays as it was.
-// Badge is its badge, if staff attached one (M17.5). Ended says it ended,
+// Badge is its badge, if staff attached one. Ended says it ended,
 // which only an event the den sends by its ID can, for a link's card; an
 // ended event has nobody interested any more.
 type DenEvent struct {
@@ -130,7 +130,7 @@ type DenEvent struct {
 	Ended       bool        `json:"ended,omitempty"`
 }
 
-// EventBadge is an event's badge (M17.5): its title, and its picture, of
+// EventBadge is an event's badge: its title, and its picture, of
 // an emoji's size, which every member who sees the event opens.
 type EventBadge struct {
 	Title string `json:"title"`
@@ -145,7 +145,7 @@ type EventBadge struct {
 // place. A live event's start stays where it was.
 //
 // Badge and BadgeTitle, which staff alone give, attach a badge to an event
-// in a voice channel or change it (M17.5): Badge names an upload of the
+// in a voice channel or change it: Badge names an upload of the
 // staff member's, waiting to be used, as its picture, checked as an
 // emoji's is, or "" to take the badge off; BadgeTitle is its title.
 // Attaching one takes both.
@@ -161,11 +161,11 @@ type EventRequest struct {
 	BadgeTitle  *string `json:"badge_title,omitempty"`
 }
 
-// MemberBadge is a badge a member earned, as their profile carries it
-// (M17.5): its event's ID, its title and picture, its event's name and
+// MemberBadge is a badge a member earned, as their profile carries it:
+// its event's ID, its title and picture, its event's name and
 // start, which say what it was for once the event left the list, and when
 // the member earned it. Hidden, on the member's own profile alone, says
-// they hid it from their card (M17.6); everyone else's copy of their
+// they hid it from their card; everyone else's copy of their
 // profile leaves it out.
 type MemberBadge struct {
 	EventID  string `json:"event_id"`
@@ -178,7 +178,7 @@ type MemberBadge struct {
 }
 
 // BadgeHiddenRequest hides a badge the member earned from their profile
-// card, or shows it again (M17.6).
+// card, or shows it again.
 type BadgeHiddenRequest struct {
 	Hidden bool `json:"hidden"`
 }

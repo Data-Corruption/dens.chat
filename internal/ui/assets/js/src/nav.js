@@ -1,4 +1,4 @@
-// The page's history (M13.1): Back, a phone's or a browser's, closes what's
+// The page's history: Back, a phone's or a browser's, closes what's
 // on top, and otherwise goes up a level. Each entry the page makes holds its
 // trail, the screens from Home to the one it shows: Home, the history's
 // root; a den's list; one of its channels; the members beside it; and the
@@ -23,8 +23,8 @@ export const HOME = { k: 'home' };
 const WIDE = '(min-width: 48rem)';
 
 // chatRoute reads /den/<den>[/<channel>] from a path, where the channel
-// may be dms, the Direct messages tab with no DM open (M11), or events, the
-// den's events (M17.4).
+// may be dms, the Direct messages tab with no DM open, or events, the
+// den's events.
 export function chatRoute(path) {
     const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+|dms|events))?\/?$/);
     return m ? { denID: m[1], channelID: m[2] || '' } : null;
@@ -272,7 +272,7 @@ export function createNav(win) {
         },
         // closeLayer takes back the entry of a dialog the page closed,
         // leaving a dialog over it open, as a sign-in's request opening
-        // as Add device closes for it (M22.6).
+        // as Add device closes for it.
         closeLayer(id) {
             layers.delete(id);
             move((c) => {
@@ -317,7 +317,7 @@ export function useLayer(onBack) {
 }
 
 // The layout holds while something of the page's plays full screen, from
-// the moment it asks (M13.4): the window takes the screen's size, as a
+// the moment it asks: the window takes the screen's size, as a
 // phone turned sideways does, and the layout changing under what plays
 // would take it away, the share docked on the phone layout among them.
 // The window may take its new size before the browser says what's full

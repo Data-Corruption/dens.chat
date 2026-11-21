@@ -8,9 +8,9 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Events (M17.4): members make events, as the den's limits allow, change,
+// Events: members make events, as the den's limits allow, change,
 // cancel and end them, and mark Interested or take it back. Each counts
-// toward the member's writes. A link's card reads one by its ID (M17.5).
+// toward the member's writes. A link's card reads one by its ID.
 
 func (h *handler) event(w http.ResponseWriter, r *http.Request) {
 	e, err := h.d.Event(r.Context(), session(r), chi.URLParam(r, "id"))

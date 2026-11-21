@@ -9,7 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// A call's log (M11): what this install logs of the calls it relays,
+// A call's log: what this install logs of the calls it relays,
 // naming dens, channels and pages by ID, never by address. The signaling
 // goes at debug as it passes, and so do the notes the page that holds a
 // call sends of it: what its browser's connection to the den's media
@@ -22,10 +22,10 @@ type CallNote struct {
 	// What is what happened: "state", the connection changed; "restart",
 	// the page asks for an ICE restart; "rejoin", it joins the call again;
 	// "ended", it gave the call up; "hidden", its tab was hidden or shown;
-	// "frozen" and "resumed", its browser froze the page and thawed it
-	// (M12); "stats", a summary of the connection's statistics; or
+	// "frozen" and "resumed", its browser froze the page and thawed it;
+	// "stats", a summary of the connection's statistics; or
 	// "unsealed", its browser sent one of its senders around its seal, and
-	// the page stopped it (M18).
+	// the page stopped it.
 	What string `json:"what"`
 	// State and ICE are the connection's state and ICE's, and Why why the
 	// page restarts, joins again or gave up.
@@ -47,7 +47,7 @@ type CallNote struct {
 // CallStats sums a call's statistics up, from the page's getStats: the
 // path's protocol and its candidates' types, packets and bytes each way,
 // packets lost on the way in, and jitter and round-trip time in
-// milliseconds. From M12, what the page sent a second since its last
+// milliseconds; what the page sent a second since its last
 // summary and what its encoder aims at, in kbit/s, the aim 0 where the
 // browser doesn't say, and how far its voice processor runs behind the
 // clock, in milliseconds, where one runs: together they tell a renderer
@@ -67,13 +67,13 @@ type CallStats struct {
 	SendRate        int64  `json:"send_rate"`
 	TargetRate      int64  `json:"target_rate"`
 	Behind          *int64 `json:"behind,omitempty"`
-	// Frames counts what a sealed call's page did with its frames
-	// (M16.2), by count alone, and from M18 on each track.
+	// Frames counts what a sealed call's page did with its frames,
+	// by count alone, on each track.
 	Frames *FrameCounts `json:"frames,omitempty"`
 }
 
 // FrameCounts are a sealed call's frames since its page joined it, on each
-// track (M18): the members' voices, their shares' screens, and the shares'
+// track: the members' voices, their shares' screens, and the shares'
 // sound; and those that reached a receiver the page hadn't named yet,
 // which it dropped.
 type FrameCounts struct {
@@ -130,7 +130,7 @@ var (
 	// Why a page dropped a track's frames, as DroppedFrames lists them.
 	dropReasons = []string{"in the clear", "under a key it lacks", "on another track", "at a counter it had", "that didn't open"}
 	// What a page stopped as its browser sent it around its seal, and how,
-	// by the track the sender carried (M18).
+	// by the track the sender carried.
 	unsealedTracks = map[string]string{
 		"voice":  "its voice unsealed, %d packets, so it left the call",
 		"screen": "its screen unsealed, %d frames, so it ended the share",
@@ -268,7 +268,7 @@ func (m *Manager) NoteCall(page, denID, channel string, n CallNote) {
 		return
 	}
 	// A sender its browser sent around its seal sent part of the call in
-	// the clear, which the log keeps at warn (M18).
+	// the clear, which the log keeps at warn.
 	logf := m.log.Debugf
 	if n.What == "unsealed" {
 		logf = m.log.Warnf

@@ -1,4 +1,4 @@
-// What the settings say of hosting (M9.1).
+// What the settings say of hosting.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -26,7 +26,7 @@ test('a form that hosts no den, as the Flatpak, says what hosting needs, whateve
     assert.equal(hostingNote({ can_host: true, enabled: false, serving: false, ...ports }), null);
 });
 
-// A den this computer holds, in its settings (M10).
+// A den this computer holds, in its settings.
 const den = { can_host: true, den: 'Home Den', url: 'https://den.example.com', ...ports };
 const exported = Date.UTC(2026, 9, 23, 15, 4);
 

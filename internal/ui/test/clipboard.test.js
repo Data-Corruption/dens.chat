@@ -47,7 +47,7 @@ test('the Clipboard API copies where the browser allows it', async () => {
 });
 
 // Android's WebView refuses the Clipboard API even after a tap, and copies
-// what's selected (M12).
+// what's selected.
 test('where the Clipboard API is refused, or missing, the old way copies', async () => {
     for (const api of [false, undefined]) {
         const p = page({ api, command: true });

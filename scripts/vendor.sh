@@ -68,7 +68,7 @@ DEFAULT_AOM_VERSION="3.15.2"
 DEFAULT_CMAKE_VERSION="4.4.4"
 
 # Dens's first release, which the lifecycle harnesses install and update
-# from (M9.1): installed copies hold what it wrote, so every later release
+# from: installed copies hold what it wrote, so every later release
 # must update it. The release host keeps it past the retention rule.
 DENS_FIRST_RELEASE="v1.0.0"
 
@@ -82,7 +82,7 @@ BROWSER_MEDIA=(
   "iphone-12-pro-hevc.mov 41cc5f00b7318627f83a67ef8be08aca65a26e6d39d265a6079717e520d6e096 https://raw.githubusercontent.com/immich-app/test-assets/ec56cc6c1d76c45bc9615dc6ea232470a2b0a3a1/videos/train.mov"
 )
 
-# Unicode's emoji (M15.2), which scripts/emoji.sh makes the page's and the
+# Unicode's emoji, which scripts/emoji.sh makes the page's and the
 # den's list of from Emoji 18.0's test file and CLDR 49's English
 # annotations, names and keywords, of single emoji and of sequences. The
 # list stops at an older Emoji version, the newest the systems draw, which
@@ -109,7 +109,7 @@ NAME_FONTS=(
   "cinzel 5.3.0 700 b80629f715b4603fd099c0ceaa94cc7a15308a75a9cf52f0613a312ee6d53c28 Cinzel"
 )
 
-# The Android app (M12): the NDK, which builds Dens for Android with cgo;
+# The Android app: the NDK, which builds Dens for Android with cgo;
 # the SDK's build tools and platform, Kotlin and a JDK, which build the APK
 # around it without Gradle; and the platform tools (adb), the emulator and
 # its system images, which the Android e2e runs in its container: Android
@@ -796,7 +796,7 @@ vendor_browser_media() {
 }
 
 # vendor_emoji_data resolves to a directory of the inputs of the list of
-# Unicode's emoji (M15.2), which scripts/emoji.sh writes.
+# Unicode's emoji, which scripts/emoji.sh writes.
 vendor_emoji_data() {
   VENDOR_EMOJI_DATA="$TOOLS_DIR/emoji-data"
   mkdir -p "$VENDOR_EMOJI_DATA"

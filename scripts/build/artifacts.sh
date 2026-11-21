@@ -102,7 +102,7 @@ make_ldflags() {
   ldflags+=" -X '${pkg}.certIdentity=$CERT_IDENTITY'"
   ldflags+=" -X '${pkg}.oidcIssuer=$OIDC_ISSUER'"
   # Only a test release, whose signatures a Sigstore of its own makes,
-  # names its root (M12.4).
+  # names its root.
   [[ -z "${SIGSTORE_ROOT:-}" ]] || ldflags+=" -X '${pkg}.sigstoreRoot=$SIGSTORE_ROOT'"
   ldflags+=" -X '${pkg}.devMode=$1'"
   ldflags+=" -X '${pkg}.pageRequired=$PAGE_REQUIRED'"
@@ -166,7 +166,7 @@ verify_build() {
   if [[ "$MODE" == "ci" ]]; then
     check_var "certIdentity" "$CERT_IDENTITY"
     check_var "oidcIssuer" "$OIDC_ISSUER"
-    # A release checks updates against Sigstore's own root (M12.4).
+    # A release checks updates against Sigstore's own root.
     check_var "sigstoreRoot" ""
   fi
 
@@ -241,7 +241,7 @@ package_ffmpeg_source() {
 }
 
 # One file listing the sha256 of every release artifact (gzipped binaries,
-# FFmpeg's source, the version marker, and from M12.4 the APK for phones).
+# FFmpeg's source, the version marker, and the APK for phones).
 # Each installer verifies its cosign signature once, then plain
 # sha256-matches the selected artifact against it, as the Android app's
 # updater does its APK.

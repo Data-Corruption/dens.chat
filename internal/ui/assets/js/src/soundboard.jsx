@@ -1,6 +1,6 @@
-// The den's soundboard (M14.3): its button among the call's controls,
+// The den's soundboard: its button among the call's controls,
 // which opens it, up from the list's block, where it's among the rest of
-// the controls (M21.2), and down from Home's box, and on the phone layout
+// the controls, and down from Home's box, and on the phone layout
 // as a sheet from the screen's foot; and its section in Manage, where
 // staff add sounds, and hear, rename or delete each.
 

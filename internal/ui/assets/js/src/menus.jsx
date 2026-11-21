@@ -16,7 +16,7 @@ import { BackIcon, MenuIcon, OnwardIcon } from './icons.jsx';
 import { useNarrow } from './nav.js';
 import { Sheet, SheetRow } from './sheet.jsx';
 
-// MENU is every menu's surface (M22.4): a step off the page's color, with
+// MENU is every menu's surface: a step off the page's color, with
 // an edge and a shadow, so it reads as a layer over a list or a message
 // on every theme.
 export const MENU = 'menu flex-nowrap rounded-box border border-base-content/10 bg-base-200 p-1 shadow-lg';

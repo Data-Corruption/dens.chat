@@ -360,7 +360,7 @@ func TestHiddenText(t *testing.T) {
 	h.SetKinds(Kinds{HideText: ptr(false)})
 	h.Message(Message{Den: "d1", Channel: "9", DM: true, ID: "13", Author: "Dan", Files: 2})
 	h.Message(Message{Den: "d1", Channel: "10", DM: true, ID: "14", Author: "Eve"})
-	// A group's notifies as a DM's, naming the group (M16.3).
+	// A group's notifies as a DM's, naming the group.
 	h.Message(Message{Den: "d1", Channel: "11", DM: true, Group: "Weekend", ID: "15", Author: "Fay", Text: "who's in?"})
 	h.SetKinds(Kinds{HideText: ptr(true)})
 	h.Message(Message{Den: "d1", Channel: "12", DM: true, Group: "Bob, Carol", ID: "16", Author: "Gus", Text: "later"})
@@ -444,7 +444,7 @@ func sounds(ch <-chan Event) (alone, shown []string) {
 	return alone, shown
 }
 
-// A message makes one sound (M14.2): with the page's notification, which
+// A message makes one sound: with the page's notification, which
 // plays it; with the helper's, the desktop's own, so no page plays one;
 // and where nothing can show it, alone, to the page on screen most lately.
 // A kind turned off makes none.
@@ -568,7 +568,7 @@ func TestAndroidsPageSoundsInFront(t *testing.T) {
 
 // The member's choices for the page's sounds are kept with the
 // notifications', and every page hears them, with the sounds they
-// replaced with files of their own (M14.2).
+// replaced with files of their own.
 func TestSoundSettings(t *testing.T) {
 	h, kept := newHub(t, types.Notifications{}, &place{}, false)
 	p, stop := h.Watch("a")
@@ -618,7 +618,7 @@ func everyone(id string) Message {
 	return Message{Den: "d1", DenName: "Den", Channel: "5", ChannelName: "general", ID: id, Author: "Dave", Everyone: true, Text: "@everyone lunch"}
 }
 
-// TestEveryone checks staff's @everyone (M15.4): it notifies as a mention
+// TestEveryone checks staff's @everyone: it notifies as a mention
 // does, on by default with mentions on; the member's switch silences it,
 // notification and sound, and takes back what it showed, while a mention
 // by name in the same message still notifies; and a mute or mentions off
@@ -696,7 +696,7 @@ func start(event string) Start {
 	return Start{Den: "d1", DenName: "Voice Den", Event: event, Name: "Game night", Channel: "Lounge"}
 }
 
-// TestEventsStart checks an event's start (M17.4): it notifies by default,
+// TestEventsStart checks an event's start: it notifies by default,
 // with nothing turned on, where a message would show, once though the den
 // says it again, naming the event, that it's live and where, and opening
 // the events at it; it's taken back as the event ends, and neither reading

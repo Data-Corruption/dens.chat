@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The emulator's den (M12): a development den in the browser checks'
+# The emulator's den: a development den in the browser checks'
 # container (dens-browsers), behind the pinned Caddy with its internal
 # certificate authority, at that container's address on Incus's bridge, as
 # a den on a LAN would be. Its owner, desk, is the desktop: an instance on
@@ -19,12 +19,12 @@
 #        scripts/test/android/den.sh dm MEMBER                desk's DM with a member by ID, which opens at once
 #        scripts/test/android/den.sh sound NAME               a sound on the den's soundboard, added if it isn't there
 #        scripts/test/android/den.sh third                    print the ID of third, a member on another instance
-#                                                             beside desk's, which joins once (M16.3)
-#        scripts/test/android/den.sh group MEMBER...          a group DM desk makes with members by ID (M16.3)
+#                                                             beside desk's, which joins once
+#        scripts/test/android/den.sh group MEMBER...          a group DM desk makes with members by ID
 #        scripts/test/android/den.sh url                      print the den's address
 #        scripts/test/android/den.sh twin up|api|sound|quiet|down
-#                                                             an install of the phone's member's own beside desk's
-#                                                             (M20.3): made afresh, paired and its local password
+#                                                             an install of the phone's member's own beside desk's:
+#                                                             made afresh, paired and its local password
 #                                                             set; its page API; a tone played into the container's
 #                                                             sound, which the shortcut helper reads, or stopped;
 #                                                             and stopped
@@ -158,7 +158,7 @@ case $1 in
     ;;
   third)
     # A member beside desk on an instance of its own, which a group needs
-    # for a third (M16.3), joined once through Caddy, as the phone joins.
+    # for a third, joined once through Caddy, as the phone joins.
     TJAR=$HOME/android-den/jar-tden
     TPORT=18586
     tapi() {
@@ -203,7 +203,7 @@ case $1 in
     ;;
   url) echo "$URL" ;;
   twin)
-    # An install of the phone's member's own (M20.3), which signs in to the
+    # An install of the phone's member's own, which signs in to the
     # den through the phone's approval, so both hold the member's seal, and
     # shares this container's sound, a tone, which the phone's Relay plays.
     # Each run's member is new, so its install is too.

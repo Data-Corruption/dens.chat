@@ -9,7 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Disappearing messages (M16.4). Any member of a DM or a group sets how
+// Disappearing messages. Any member of a DM or a group sets how
 // long its messages stay after they're sent, which applies to those sent
 // after: each keeps when it goes (expires_at), which an edit leaves as it
 // was. The den's timer deletes each as its time comes, as its author's

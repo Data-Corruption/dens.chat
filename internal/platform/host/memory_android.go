@@ -14,7 +14,7 @@ import (
 // copies this memory.
 //
 // Since Android 14 an app may lock only 64 KiB, 16 pages of 4 KB or 4 of
-// 16 KB, where a member of two dens needs five (M12). Android swaps to
+// 16 KB, where a member of two dens needs five. Android swaps to
 // compressed memory rather than storage, so the keys past the limit stay
 // in RAM, if compressed; Samsung lets an app lock 64 MiB.
 func AllocLocked(n int) (buf []byte, free func(), err error) {

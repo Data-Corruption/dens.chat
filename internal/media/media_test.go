@@ -720,7 +720,7 @@ func TestThumbnailBudget(t *testing.T) {
 
 // Smaller copies are made of JPEGs, photos the module converts, and PNGs
 // larger than a copy, which are only scaled; never of anything animated,
-// a WebP or a GIF (M5).
+// a WebP or a GIF.
 func TestCopyable(t *testing.T) {
 	for _, c := range []struct {
 		k    Kind

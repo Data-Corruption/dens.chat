@@ -7,7 +7,7 @@ import (
 	"unicode/utf8"
 )
 
-// Limits for M1.4.
+// Limits for files.
 const (
 	MaxAttachments   = 10  // files on one message
 	MaxFilenameBytes = 255 // a file's name, cut without splitting a character
@@ -49,7 +49,7 @@ const (
 
 // Profile images: a square avatar, and a banner three times as wide as it
 // is high. Clients crop them to these shapes before uploading. An animated
-// one is a GIF (M15.1), at most half a still's sides, since each of its
+// one is a GIF, at most half a still's sides, since each of its
 // frames costs all of them, and of a size of its own.
 const (
 	MinAvatarSide = 64
@@ -70,21 +70,21 @@ const HeaderFilename = "Dens-Filename"
 // SealedType is the type a den gives a sealed upload, which it can't open.
 const SealedType = "application/octet-stream"
 
-// HeaderReplaces names the file an upload is made to take the place of
-// (M5). The den counts the upload against the space that file frees, and
+// HeaderReplaces names the file an upload is made to take the place of.
+// The den counts the upload against the space that file frees, and
 // it can take only that file's place.
 const HeaderReplaces = "Dens-Replaces"
 
-// What a picture on a profile is, in a member's list of their files (M5).
+// What a picture on a profile is, in a member's list of their files.
 const (
 	ProfileAvatar = "avatar"
 	ProfileBanner = "banner"
 )
 
-// OwnFile is one of a member's files on a den, as they manage them (M5):
+// OwnFile is one of a member's files on a den, as they manage them:
 // the file and what uses it. That's a message, with its channel and, in a
 // channel, the start of its text; a picture on their profile; an event's
-// banner, by the event's ID (M17.4), which a Dens older than events takes
+// banner, by the event's ID, which a Dens older than events takes
 // for a file waiting to be used; or nothing while it waits to be used. A
 // DM's file is a sealed blob, whose message comes in the page's Messages
 // for the member's client to open.
@@ -180,11 +180,11 @@ type File struct {
 	Animated bool   `json:"animated,omitempty"`
 	Duration int64  `json:"duration_ms,omitempty"`
 	Thumb    *Thumb `json:"thumb,omitempty"`
-	// Sealed marks an upload sealed by the member's client for a DM
-	// (M1.7), which the den can't open: it has no name or type of its own.
+	// Sealed marks an upload sealed by the member's client for a DM,
+	// which the den can't open: it has no name or type of its own.
 	Sealed bool `json:"sealed,omitempty"`
 	// Spoiler marks a channel's file its sender sent as a spoiler, which
-	// clients show covered until it's clicked (M17.2). A DM's carries it
+	// clients show covered until it's clicked. A DM's carries it
 	// inside the seal instead.
 	Spoiler bool `json:"spoiler,omitempty"`
 }
@@ -196,7 +196,7 @@ type Thumb struct {
 }
 
 // Image is a picture on a profile: an uploaded image, its size, and
-// whether it's animated (M15.1).
+// whether it's animated.
 type Image struct {
 	ID       string `json:"id"`
 	Width    int    `json:"width"`

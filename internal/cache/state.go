@@ -6,7 +6,7 @@ import (
 	"errors"
 )
 
-// A den's state as the client last had it (M6.2): what the page shows of
+// A den's state as the client last had it: what the page shows of
 // the den while the client can't reach it, and its members, which a
 // snapshot then sends only the changes to. Both are the client's JSON,
 // sealed here.

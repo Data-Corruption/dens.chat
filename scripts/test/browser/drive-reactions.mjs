@@ -1,4 +1,4 @@
-// The M15.3 check of reactions: alice, who owns the den, in Chromium, and
+// The reactions check: alice, who owns the den, in Chromium, and
 // bob in the browser named. Bob reacts to alice's message from the smiley
 // beside its ⋯, which shows as the ⋯ does, under the pointer, and alice
 // from its menu's Add reaction, each through the picker, one of Unicode's

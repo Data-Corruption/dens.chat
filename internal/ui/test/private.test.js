@@ -9,7 +9,7 @@ import { keysChanged } from '../assets/js/src/calllock.jsx';
 const names = (id) => ({ 1: 'Alice', 2: 'Bob' })[id] || 'Unknown member';
 const day = Date.UTC(2026, 8, 1);
 
-test('a divider marks where a DM moves to a newer key from before M16.1, and says why', () => {
+test('a divider marks where a DM moves to a newer legacy key, and says why', () => {
     const keys = [
         { id: '10', retired: 'started_over', retired_by: '2', retired_at: day },
         { id: '11', retired: 'restarted', retired_by: '1', retired_at: day, checks: [{ member_id: '1', at: day }] },
@@ -29,7 +29,7 @@ test('a divider marks where a DM moves to a newer key from before M16.1, and say
     assert.equal(dividerText(undefined, { id: '9' }, names, '1'), 'The keys changed.');
 });
 
-test("from M16.1 a key's change has a divider only where this member started over", () => {
+test("a signed key's change has a divider only where this member started over", () => {
     const legacy = { id: '10', retired: 'restarted', retired_by: '1', retired_at: day };
     const signed = { id: '11', signed: true, retired: 'restarted', retired_by: '2', retired_at: day };
     const mine = { id: '12', signed: true, retired: 'started_over', retired_by: '1', retired_at: day };
@@ -74,7 +74,7 @@ test('a DM takes messages at once, unless something stands in its composer', () 
     assert.equal(dmGate({ ...view, identities: { 2: { held: true } } }, channel), 'held');
     assert.equal(dmGate({ ...view, members: [{ id: '1', identity: 'a' }, { id: '2' }] }, channel), 'update');
     assert.equal(dmGate({ ...view, keeps_identities: false }, channel), 'den');
-    // A key both checked before M16.1 goes on as it did, on any den.
+    // A key both checked before v1.9.0 goes on as it did, on any den.
     const checked = [{ id: '9', channel_id: '5', checks: [{ member_id: '1' }, { member_id: '2' }] }];
     assert.equal(dmGate({ ...view, keeps_identities: false, dm_keys: checked }, channel), '');
     assert.equal(dmGate({ ...view, members: [{ id: '1' }, { id: '2' }], dm_keys: checked }, channel), '');
@@ -227,7 +227,7 @@ test('a DM held since the other\'s keys changed offers Compare and Send anyway',
 });
 
 // A call's list marks a member whose keys changed since this member
-// compared codes with them, or since the call began (M16.2).
+// compared codes with them, or since the call began.
 test("a call shows a member's keys changed since they were verified, or in the call", () => {
     const began = day;
     assert.equal(keysChanged(undefined, began), false);

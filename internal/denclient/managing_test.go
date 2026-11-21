@@ -29,8 +29,8 @@ func messageIn(t *testing.T, m *denclient.Manager, denID, channel, id string) (d
 	return denclient.PageMessage{}, false
 }
 
-// A member at their limit frees space by swapping and deleting files
-// (M5): the list shows what uses each, and the others see the change.
+// A member at their limit frees space by swapping and deleting files:
+// the list shows what uses each, and the others see the change.
 func TestManagingFiles(t *testing.T) {
 	_, owner, member, denID, channelID := chatDen(t)
 	ctx := context.Background()
@@ -106,7 +106,7 @@ func TestManagingFiles(t *testing.T) {
 }
 
 // A DM's files are listed opened, and swap and delete as a channel's do,
-// with the message sealed again (M5).
+// with the message sealed again.
 func TestManagingDMFiles(t *testing.T) {
 	_, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
@@ -158,7 +158,7 @@ func TestManagingDMFiles(t *testing.T) {
 // A photo sent as a spoiler shows as one to the other member, in a channel
 // from the den's word on the file and in a DM from inside the seal, where
 // the den keeps nothing of it; a file swapped into its place is one too,
-// and a spoiler names one of the message's files (M17.2).
+// and a spoiler names one of the message's files.
 func TestSpoilersReachTheOtherMember(t *testing.T) {
 	h, owner, member, denID, channelID := chatDen(t)
 	ctx := context.Background()

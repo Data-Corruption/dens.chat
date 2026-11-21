@@ -1,4 +1,4 @@
-// The rest of the call's controls (M21.2): the block's row holds what a
+// The rest of the call's controls: the block's row holds what a
 // call needs at hand, and an arrow at its start opens the others as a grid
 // over it: the soundboard, where the den has one, and the call's lock.
 // What one of them opens stands by the arrow, which closes it again.

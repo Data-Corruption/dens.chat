@@ -11,7 +11,7 @@ import (
 	"github.com/pion/webrtc/v4"
 )
 
-// A call's soundboard (M14.3): one more audio track in the call, which
+// A call's soundboard: one more audio track in the call, which
 // every member's connection gets as they join, and which the den plays its
 // sounds on, one at a time. The den sends a sound's Opus packets as its
 // file holds them, at their pace, so everyone hears it at once, and a

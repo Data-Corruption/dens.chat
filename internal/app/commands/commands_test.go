@@ -19,7 +19,7 @@ import (
 )
 
 // v1.0's den option is refused before anything runs, however it's given:
-// hosting is the settings' (M9.1).
+// hosting is the settings'.
 func TestInstallRefusesTheDenOption(t *testing.T) {
 	for _, flag := range []string{"--den", "--den=true", "--den=false"} {
 		root := &cli.Command{Name: "dens", Flags: []cli.Flag{InstanceFlag}, Writer: io.Discard, ErrWriter: io.Discard,

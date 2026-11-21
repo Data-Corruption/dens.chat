@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-// A call's audio as the page makes it (M12), with stand-ins for what the
+// A call's audio as the page makes it, with stand-ins for what the
 // browser gives it: its audio contexts, the microphone, the peer
 // connection, media elements and the stream to the service. In a browser
 // the page makes its call's contexts in the click that joins, before the
@@ -325,7 +325,7 @@ test('a microphone that opens once its call has ended closes again', async () =>
 
 // Chromium keeps the stream that played a call's members a few seconds
 // after the call, and hands it to the next call's, which the S24 can't
-// start again: every other quick rejoin there was silent (M12). A call
+// start again: every other quick rejoin there was silent. A call
 // joined soon after the last plays its members afresh a moment in; one
 // joined once that stream has gone needn't.
 test("where audio may start without a click, a call joined soon after the last plays its members afresh a moment in", async () => {
@@ -371,7 +371,7 @@ test("where audio may start without a click, a call joined soon after the last p
 // The den's soundboard comes on a track of the call's own, named so, which
 // the page plays as it plays a member, at the member's soundboard volume,
 // 0 muting it, kept by the browser as a member's volume is, and silent
-// while they're deafened; its level rings for nobody (M14.3).
+// while they're deafened; its level rings for nobody.
 for (const autoplay of [false, true]) {
     test(`the soundboard plays at its own volume, ${autoplay ? "through the call's context" : 'in its element'}`, async () => {
         await joined(autoplay);

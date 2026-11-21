@@ -147,7 +147,7 @@ func TestServerRefusesOtherAccounts(t *testing.T) {
 
 // TestServerRefusesOtherAccountsBeforeReading checks that where the system
 // names a connection's account as it connects, another account is refused
-// before it has sent anything (M8).
+// before it has sent anything.
 func TestServerRefusesOtherAccountsBeforeReading(t *testing.T) {
 	if !host.PeerBeforeRequest {
 		t.Skip("a Windows pipe names its client only from what it read")
@@ -185,7 +185,7 @@ func (l *failingOnce) Accept() (net.Conn, error) {
 }
 
 // TestServerAcceptsAgainAfterAFailure checks that a failed accept doesn't
-// end the server, which would end the service (M8).
+// end the server, which would end the service.
 func TestServerAcceptsAgainAfterAFailure(t *testing.T) {
 	me, _ := host.CurrentUser()
 	ln := &failingOnce{}

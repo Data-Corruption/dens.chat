@@ -1,4 +1,4 @@
-// The M11.1 check of the small fixes, as alice in the browser named: a
+// The fixes check, of the small fixes, as alice in the browser named: a
 // dialog that stays open when a selection ends outside it; a key's capture
 // that a click elsewhere cancels; the Den tab leaving a DM for the den's
 // last text channel, and the Direct messages tab opening the DM last open,
@@ -6,17 +6,17 @@
 // what was unread when a channel opened; the message box's focus; Enter in
 // a code block; the composer's + bordered as its box is; folding a channel
 // group; a video whose sound starts late playing it in time; a thin video
-// keeping its full screen button as the rest give way (M14.3); and from
-// M15, an unread channel told from a read one at a glance, and a video's
-// seek bar drawn thin; and from M19.2, the crown and the shield at one
+// keeping its full screen button as the rest give way; an unread
+// channel told from a read one at a glance, and a video's
+// seek bar drawn thin; the crown and the shield at one
 // height beside their names in the member list, a card and a message, the
-// last with Staff marks on (M21.1), a
+// last with Staff marks on, a
 // long name scrolling to its end under the pointer and back, and a right
 // click opening a message's menu and a member's at the pointer, and a
-// link's the browser's own; and from M19.5, the den's name with no arrow
-// beside it, under a pointing hand; and from M22.4 the composer's + inside
+// link's the browser's own; the den's name with no arrow
+// beside it, under a pointing hand; the composer's + inside
 // its box, and a profile card opening beside the name clicked, with
-// nothing dimmed; and from M22.7 the message box as an island, its edge
+// nothing dimmed; and the message box as an island, its edge
 // taking the focus, the box growing with wrapped lines to half its pane,
 // a reaction's chip in the theme's corners, square on a square theme, and
 // a photo's and a video's name on hover, on and off.
@@ -143,7 +143,7 @@ try {
     await send(general, "Bob's message 5");
     await send(general, "Bob's message 6");
     await sleep(1000);
-    // A channel waiting to be read stands out at a glance (M15): its name
+    // A channel waiting to be read stands out at a glance: its name
     // bold, at full strength, and a pill at its row's left; one read is a
     // little fainter, but the one open, which is as the rest of the text.
     const marks = JSON.parse(await b.eval(`(() => {
@@ -311,7 +311,7 @@ try {
 
     step("the seek bar's track and its played part are thin, and its thumb small");
     // Measured in the bar's box, 24 pixels tall for a finger, at a width
-    // with room for it (M15).
+    // with room for it.
     await controls(300);
     const bar = JSON.parse(await b.eval(`(() => {
         const seek = (${clip}).parentElement.querySelector('input[aria-label=Seek]');

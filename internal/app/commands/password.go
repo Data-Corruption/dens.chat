@@ -11,8 +11,8 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// passwordCommand sets the local password, or changes it, as the page does
-// (M10), so a server never needs the page.
+// passwordCommand sets the local password, or changes it, as the page does,
+// so a server never needs the page.
 func passwordCommand(bi build.BuildInfo) *cli.Command {
 	return &cli.Command{
 		Name:  "password",

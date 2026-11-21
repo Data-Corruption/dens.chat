@@ -13,16 +13,16 @@ import { Handle, useDragDown } from './sheet.jsx';
 const WIDTHS = { false: 'md:max-w-md', true: 'md:max-w-3xl' };
 
 // Dialog frames a dialog over the page, which Back closes, as do its ✕ and
-// a click outside it (M13.1). On the phone layout it's a sheet from the
+// a click outside it. On the phone layout it's a sheet from the
 // screen's foot, as tall as it needs up to the screen's, its title and ✕
 // staying at its top as the rest scrolls, and a swipe down from there
-// closes it too (M13.3). A bare one, a profile card (M17.6), shows no
+// closes it too. A bare one, a profile card, shows no
 // title, which still names it for screen readers: what it shows runs to
 // its edges, the ✕ standing over its top right, and on the phone layout
 // the handle over its top, both staying there as it scrolls; a swipe down
 // closes it from the handle, or from what it shows marked as its top. One
 // with a foot keeps it at its bottom as the rest scrolls, as Edit
-// profile's Save (M22.3); a wide one takes room for two columns.
+// profile's Save; a wide one takes room for two columns.
 export function Dialog({ title, onClose, bare = false, wide = false, foot, children }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);
@@ -73,7 +73,7 @@ export function Dialog({ title, onClose, bare = false, wide = false, foot, child
     );
 }
 
-// Voice channels' bitrates, in bits a second (M4.2).
+// Voice channels' bitrates, in bits a second.
 const BITRATE = { min: 16000, max: 128000, step: 8000, default: 96000 };
 
 // ChannelDialog creates a channel, in the group inGroup if given, or
@@ -177,7 +177,7 @@ export function ChannelDialog({ denID, view, channel, group: inGroup, onClose })
     );
 }
 
-// CallRecord shows staff a voice channel's longest call (M21.2), with
+// CallRecord shows staff a voice channel's longest call, with
 // Reset, which asks first, since every member's timer counts against it.
 function CallRecord({ denID, channel }) {
     const path = `/api/dens/${denID}/channels/${channel.id}/record`;

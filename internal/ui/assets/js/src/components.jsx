@@ -42,7 +42,7 @@ export function Card({ title, children, class: extra = '', ...rest }) {
     );
 }
 
-// The page's four kinds of button (M22.3), each with one job, so a look
+// The page's four kinds of button, each with one job, so a look
 // means the same wherever it shows. Spelled out so Tailwind keeps every
 // class.
 const KINDS = { primary: 'btn-primary', secondary: 'btn-soft', quiet: 'btn-ghost', danger: 'btn-ghost text-error' };
@@ -120,11 +120,11 @@ export function clipOf(el) {
 }
 
 // useTip opens a tip on hover by a mouse, on keyboard focus, and on a tap,
-// which a touch screen has instead of hover (M13.2): a tap's tip stays
+// which a touch screen has instead of hover: a tap's tip stays
 // until the next tap, on it or anywhere else, or Escape. side is where it
 // opens if there's room; its place moves to stay within the window, and
 // within a list around it that would clip it, which it wraps to fit. A
-// reaction's chip opens its own on a long press (M15.3).
+// reaction's chip opens its own on a long press.
 export function useTip(side) {
     const wrap = useRef(null);
     const content = useRef(null);
@@ -200,7 +200,7 @@ export const TIP = 'tooltip-content max-w-72 rounded-lg px-3 py-2 text-left text
 const TRIGGER = 'relative inline-flex min-h-6 min-w-6 items-center justify-center rounded p-1 text-base-content/60 hover:text-base-content touch-room';
 
 // Tip is an i beside a label that says more: the detail a one-line hint
-// leaves out (M8.3), on hover or focus, or a tap (M13.2). trigger stands in
+// leaves out, on hover or focus, or a tap. trigger stands in
 // the i's place, as a mark whose meaning a title held, and label names it.
 // wrap is how its box sits in a line of text, or in a row of flex boxes.
 export function Tip({ id, side = 'bottom', label = 'More about this', trigger, wrap = 'align-middle', children }) {
@@ -218,7 +218,7 @@ export function Tip({ id, side = 'bottom', label = 'More about this', trigger, w
     );
 }
 
-// HoverTip is a mark whose tip shows while a mouse is over it (M17.6), for
+// HoverTip is a mark whose tip shows while a mouse is over it, for
 // a mark inside a row or a tile that is itself a button, which a second
 // button can't sit in, and where a tap belongs to what it's in: a role's
 // mark in the member list, whose card says the same at a tap. label, if
@@ -376,7 +376,7 @@ export const DOCS = 'https://dens.chat/docs/';
 // DocsTip is a Tip whose i opens the guide to its subject, in a new tab:
 // the gist on hover, the whole story a click away. It stands where those
 // things come up (v1's onboarding), and opens where a Tip would. A tap's
-// first opens the tip, and a second the guide (M13.2).
+// first opens the tip, and a second the guide.
 export function DocsTip({ id, page, side = 'bottom', children }) {
     const tip = useTip(side);
     const touched = useRef(false);
@@ -418,8 +418,8 @@ export function DocsLink({ page, label, icon = false }) {
     return <a {...props} class="link link-primary" data-docs-link>{label}</a>;
 }
 
-// Field is a control under its label, in the one style a label takes
-// (M22.3): regular weight, in the text's color, above its control, and a
+// Field is a control under its label, in the one style a label takes:
+// regular weight, in the text's color, above its control, and a
 // hint under it if it needs one.
 export function Field({ label, hint, children }) {
     return (
@@ -431,8 +431,8 @@ export function Field({ label, hint, children }) {
     );
 }
 
-// Toggle is a setting that's on or off, one size wherever it shows
-// (M22.3): its switch, its label beside it, a line on what it does if it
+// Toggle is a setting that's on or off, one size wherever it shows:
+// its switch, its label beside it, a line on what it does if it
 // needs one, and a tip for the rest.
 export function Toggle({ id, label, hint, tip, checked, disabled, onChange, ...rest }) {
     return (
@@ -448,7 +448,7 @@ export function Toggle({ id, label, hint, tip, checked, disabled, onChange, ...r
     );
 }
 
-/** Slider is the page's one slider (M22.3): a thin track filled in the
+/** Slider is the page's one slider: a thin track filled in the
     theme's primary color up to its value, a small thumb, and a box tall
     enough for a finger. Chromium draws the fill from --fill alone, which
     runs to the thumb's middle. */
@@ -461,7 +461,7 @@ export function Slider({ value, min = 0, max = 100, class: extra = '', style, ..
     );
 }
 
-/** FilePick takes a file through the page's own button (M22.3), the same
+/** FilePick takes a file through the page's own button, the same
     in every browser, the chosen one's name beside it; inputProps reach
     the browser's input, hidden behind it. */
 export function FilePick({ label, accept, file, onPick, disabled, inputProps = {} }) {
@@ -479,7 +479,7 @@ export function FilePick({ label, accept, file, onPick, disabled, inputProps = {
     );
 }
 
-// What a phone's keyboard offers a field (M13.2): a username, an invite, a
+// What a phone's keyboard offers a field: a username, an invite, a
 // code or a key takes no capitals or corrections, PLAIN, and an address
 // asks for the keyboard for addresses too, ADDRESS.
 export const PLAIN = { autocapitalize: 'none', autocorrect: 'off', spellcheck: false };
@@ -502,7 +502,7 @@ export function useLater(active, ms) {
     return active && later;
 }
 
-// Dates take one form everywhere (M8.3), the medium one in the reader's
+// Dates take one form everywhere, the medium one in the reader's
 // locale, as Oct 12, 2026; locale is for the tests.
 
 // day shows a time as a date.
@@ -542,7 +542,7 @@ const NOTICE_LOOKS = {
     error: ['border-error', 'text-error'],
 };
 
-/** Notice is status in words (M22.3): what happened, or what waits, in the
+/** Notice is status in words: what happened, or what waits, in the
     text's color, its state an icon and an edge in the state's color. role
     is the status's own unless given, an alert for an error. */
 export function Notice({ kind = 'info', role, class: extra = '', children, ...rest }) {
@@ -582,7 +582,7 @@ export function SubmitButton({ busy, kind = 'primary', children, ...rest }) {
 // useBackdrop gives a dialog's backdrop what closes the dialog on a click
 // outside it. A press that starts inside the dialog, as when selecting
 // text, and is let go outside it ends in a click on the backdrop too, so a
-// click counts only when its press didn't start inside (M11).
+// click counts only when its press didn't start inside.
 export function useBackdrop(onClose) {
     const inside = useRef(false);
     return {
@@ -660,7 +660,7 @@ export function checkPasswords(password, confirm) {
     return '';
 }
 
-// useNotifications is the service's status of notifications (M12.3): the
+// useNotifications is the service's status of notifications: the
 // member's settings, by kind, with what they muted, and on Android, the
 // shell's word; null until it comes.
 export function useNotifications() {

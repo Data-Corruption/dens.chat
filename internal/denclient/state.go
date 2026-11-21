@@ -22,8 +22,8 @@ type denState struct {
 	reads    map[string]denproto.ReadState
 	online   map[string]bool
 	limits   denproto.Limits
-	// callLimits are the den's limits for calls and shares (M4.2), and
-	// retention the days it keeps a message, 0 for ever (M5).
+	// callLimits are the den's limits for calls and shares, and
+	// retention the days it keeps a message, 0 for ever.
 	callLimits denproto.CallLimits
 	retention  int
 	// touched holds the channels whose read state changed since the page
@@ -34,50 +34,48 @@ type denState struct {
 	gone []string
 	// keys are this member's DM keys by ID, with their own sealed copies
 	// and without exchanges; requests are sign-ins waiting for their
-	// approval by ID; sealCheck identifies their DM seal (M1.7).
+	// approval by ID; sealCheck identifies their DM seal.
 	keys      map[string]denproto.DMKey
 	requests  map[string]denproto.DeviceRequest
 	sealCheck denproto.Bytes
 	// signed are this member's DM keys sealed to identities, by ID, with
 	// their own copies; identities says the den keeps identities at all,
-	// which one older than M16.1 doesn't.
+	// which one older than v1.9.0 doesn't.
 	signed     map[string]denproto.SignedKey
 	identities bool
-	// calls are who is in each voice channel's call (M2), and starts when
+	// calls are who is in each voice channel's call, and starts when
 	// each began on this computer's clock, as Unix milliseconds, for a den
-	// that gives calls' lengths (M21.2).
+	// that gives calls' lengths.
 	calls  map[string]denproto.Call
 	starts map[string]int64
 	// sounds are the den's soundboard's, by ID, and soundLimits its limits
-	// for them, none from a den older than the soundboard (M14.3).
+	// for them, none from a den older than the soundboard.
 	sounds      map[string]denproto.Sound
 	soundLimits denproto.SoundLimits
 	// emoji are the den's emoji, by ID, and emojiLimits its limit for
-	// them, nil from a den older than emoji (M15.2).
+	// them, nil from a den older than emoji.
 	emoji       map[string]denproto.Emoji
 	emojiLimits *denproto.EmojiLimits
 	// sealedCalls says the den seals every call end to end, and takes no
-	// join that doesn't (M16.2).
+	// join that doesn't.
 	sealedCalls bool
 	// disappearing says the den deletes a DM's and a group's messages at
-	// the time their members set (M16.4).
+	// the time their members set.
 	disappearing bool
 	// spoilers says the den keeps which of a channel's files went as
-	// spoilers, and moveMembers that staff move members between calls
-	// (M17.2).
+	// spoilers, and moveMembers that staff move members between calls.
 	spoilers, moveMembers bool
 	// nameStyles says the den keeps a style for each member's name.
 	nameStyles bool
-	// relay says the den passes boxes between the member's devices (M20).
+	// relay says the den passes boxes between the member's devices.
 	// The cache doesn't keep it: it matters only while connected.
 	relay bool
 	// groupDMs says the snapshot came on a socket speaking the protocol's
-	// version with group DMs (M16.3), and notes the one with notes to self
-	// (M17.3).
+	// version with group DMs, and notes the one with notes to self.
 	groupDMs, notes bool
 	// events are the den's events to come and live that the member sees,
 	// by ID, each with their own mark, and eventLimits its limits for them,
-	// nil from a den older than events (M17.4).
+	// nil from a den older than events.
 	events      map[string]denproto.DenEvent
 	eventLimits *denproto.EventLimits
 }
@@ -94,57 +92,56 @@ type View struct {
 	Limits     denproto.Limits      `json:"limits"`
 	CallLimits denproto.CallLimits  `json:"call_limits"`
 	Retention  int                  `json:"retention"`
-	// DMKeys are the keys of this member's DMs, M1.7's and those sealed to
-	// identities (M16.1), without anything secret.
+	// DMKeys are the keys of this member's DMs, legacy ones and those
+	// sealed to identities, without anything secret.
 	DMKeys []PageKey `json:"dm_keys"`
 	// Identities are the identities this member's Dens kept here, by
-	// member, and KeepsIdentities whether the den keeps identities at all
-	// (M16.1).
+	// member, and KeepsIdentities whether the den keeps identities at all.
 	Identities      map[string]PageIdentity `json:"identities"`
 	KeepsIdentities bool                    `json:"keeps_identities"`
 	// Calls are the calls with someone in them.
 	Calls []PageCall `json:"calls"`
 	// Sounds are the den's soundboard's, by name, and SoundLimits its
-	// limits for them (M14.3).
+	// limits for them.
 	Sounds      []denproto.Sound     `json:"sounds"`
 	SoundLimits denproto.SoundLimits `json:"sound_limits"`
 	// Emoji are the den's emoji, by name, and EmojiLimits its limit for
-	// them, null from a den older than emoji (M15.2).
+	// them, null from a den older than emoji.
 	Emoji       []denproto.Emoji      `json:"emoji"`
 	EmojiLimits *denproto.EmojiLimits `json:"emoji_limits"`
 	// SealedCalls says the den seals its calls end to end, so the page
-	// joins one only sealing what it sends (M16.2).
+	// joins one only sealing what it sends.
 	SealedCalls bool `json:"sealed_calls"`
 	// Disappearing says the den deletes a DM's and a group's messages at
-	// the time their members set, which the page offers only then (M16.4).
+	// the time their members set, which the page offers only then.
 	Disappearing bool `json:"disappearing"`
 	// Spoilers says the den keeps which of a channel's files went as
 	// spoilers, and MoveMembers that staff move members between calls,
-	// which the page offers only then (M17.2).
+	// which the page offers only then.
 	Spoilers    bool `json:"spoilers"`
 	MoveMembers bool `json:"move_members"`
 	// NameStyles says the den keeps a style for each member's name, which
 	// the page offers only then.
 	NameStyles bool `json:"name_styles"`
 	// HasGroupDMs says the den has group DMs for this Dens, and GroupDMs
-	// are this member's, as their changes make them (M16.3).
+	// are this member's, as their changes make them.
 	HasGroupDMs bool                 `json:"has_group_dms"`
 	GroupDMs    map[string]PageGroup `json:"group_dms"`
 	// HasNotes says the den has notes to self for this Dens, which the page
-	// offers only then (M17.3).
+	// offers only then.
 	HasNotes bool `json:"has_notes"`
 	// Events are the den's events to come and live that the member sees,
 	// live first and then by their start, each with their own mark, and
 	// EventLimits its limits for them, null from a den older than events,
-	// which the page offers them by (M17.4).
+	// which the page offers them by.
 	Events      []denproto.DenEvent   `json:"events"`
 	EventLimits *denproto.EventLimits `json:"event_limits"`
 }
 
 // PageCall is a call as the page sees it: the den's, its length given as
 // StartedAt, when it began on this computer's clock, which the page's timer
-// counts from, so the den's clock and this one may disagree (M21.2). A den
-// older than M21.2 gives no length, and its calls none.
+// counts from, so the den's clock and this one may disagree. A den
+// older than v1.13.0 gives no length, and its calls none.
 type PageCall struct {
 	denproto.Call
 	StartedAt int64 `json:"started_at,omitempty"`
@@ -299,14 +296,14 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 		return c, ok && cleanExpiry(c)
 	}
 	if c.Kind == denproto.KindNotes {
-		// A member's notes name them alone (M17.3), whom the state checks.
+		// A member's notes name them alone, whom the state checks.
 		ok := len(c.Members) == 1 && validID(c.Members[0]) && c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly &&
 			c.Bitrate == 0 && c.Changes == 0 && c.SealedName == nil && c.ExpiresAfter == 0 && c.ExpiresSet == nil
 		return c, ok
 	}
 	if c.Kind == denproto.KindGroupDM {
 		// Its members as the den holds them, which only its changes, checked
-		// here, make (M16.3).
+		// here, make.
 		ok := len(c.Members) <= denproto.MaxGroupMembers && c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly &&
 			c.Bitrate == 0 && c.Changes >= 1 && c.Changes <= denproto.MaxGroupChanges && (c.SealedName == nil || c.SealedName.Check() == nil)
 		for i, m := range c.Members {
@@ -322,7 +319,7 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 		(c.Kind != denproto.KindText && c.Kind != denproto.KindVoice) || denproto.CheckDescription(c.Description) != nil {
 		return c, false
 	}
-	// A voice channel's bitrate is one staff could set (M4.2), and a text
+	// A voice channel's bitrate is one staff could set, and a text
 	// channel has none.
 	if (c.Kind == denproto.KindVoice) != (denproto.CheckVoiceBitrate(c.Bitrate) == nil) {
 		return c, false
@@ -331,7 +328,7 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	return c, true
 }
 
-// cleanExpiry checks a DM's or a group's time (M16.4): up to four weeks, in
+// cleanExpiry checks a DM's or a group's time: up to four weeks, in
 // any whole number of seconds, which a development instance's den takes,
 // and who set it, and when.
 func cleanExpiry(c denproto.Channel) bool {
@@ -340,19 +337,19 @@ func cleanExpiry(c denproto.Channel) bool {
 }
 
 // hasMessages reports whether a channel holds messages, as text channels,
-// DMs, group DMs (M16.3) and notes (M17.3) do.
+// DMs, group DMs and notes do.
 func hasMessages(c denproto.Channel) bool {
 	return c.Kind == denproto.KindText || isSealed(c)
 }
 
 // isSealed reports whether a channel's messages are sealed by its
-// members' Dens: a DM's, a group's (M16.3), or the member's notes (M17.3).
+// members' Dens: a DM's, a group's, or the member's notes.
 func isSealed(c denproto.Channel) bool {
 	return c.Kind == denproto.KindDM || c.Kind == denproto.KindGroupDM || c.Kind == denproto.KindNotes
 }
 
 // ownNotes checks the notes among a den's channels: those of the member
-// whose ID is me, once at most (M17.3). With me empty, as the cache's
+// whose ID is me, once at most. With me empty, as the cache's
 // state restores before the connection knows, only that there's one.
 func ownNotes(channels map[string]denproto.Channel, me string) bool {
 	n := 0
@@ -384,8 +381,8 @@ func cleanRead(r denproto.ReadState) (denproto.ReadState, bool) {
 
 // cleanLimits checks a den's upload limits, its limits for calls, its
 // retention period, its soundboard's limits and its limits for emoji and
-// events, which a den older than the soundboard (M14.3), emoji (M15.2) or
-// events (M17.4) doesn't send. The den checked them when they were set, so
+// events, which a den older than the soundboard, emoji or
+// events doesn't send. The den checked them when they were set, so
 // any that don't check are the den misbehaving.
 func cleanLimits(d denproto.Den) bool {
 	return denproto.CheckLimits(d.Limits) == nil && denproto.CheckCallLimits(d.CallLimits) == nil &&
@@ -431,9 +428,9 @@ func cleanSounds(list []denproto.Sound) (map[string]denproto.Sound, bool) {
 // load replaces the state with a snapshot of the den with denID, which
 // arrived at now. Anything malformed in it is a protocol violation. A
 // snapshot that sends only the members changed since the client's list
-// (M6.2) changes that list, prev, which the client named on the socket's
+// changes that list, prev, which the client named on the socket's
 // upgrade; starts are when the calls the state held before began, which a
-// call going on keeps (M21.2).
+// call going on keeps.
 func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto.Member, starts map[string]int64, now time.Time) error {
 	next := newState()
 	if !cleanLimits(r.Den) || denproto.CheckSync(r.Sync) != nil {
@@ -527,7 +524,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		}
 		next.keys[k.ID] = k
 	}
-	// A den older than M16.1 sends no signed keys at all.
+	// A den older than v1.9.0 sends no signed keys at all.
 	next.identities = r.SignedKeys != nil
 	for _, k := range r.SignedKeys {
 		if !next.cleanSigned(denID, k) || next.keys[k.ID].ID != "" {
@@ -561,7 +558,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 }
 
 // keptState is a den's state as the cache keeps it between runs of the
-// service (M6.2), for the page to show while the den is away: all of it
+// service, for the page to show while the den is away: all of it
 // but who's online, in calls and asking to sign in, which only a
 // connection knows. The members are kept apart, since they change least
 // and take most of the room.
@@ -572,19 +569,19 @@ type keptState struct {
 	Reads     []denproto.ReadState `json:"reads"`
 	Keys      []denproto.DMKey     `json:"keys"`
 	SealCheck denproto.Bytes       `json:"seal_check"`
-	Sounds    []denproto.Sound     `json:"sounds,omitempty"` // M14.3
-	Emoji     []denproto.Emoji     `json:"emoji,omitempty"`  // M15.2
-	// M16.1: the DM keys sealed to identities, and whether the den keeps
+	Sounds    []denproto.Sound     `json:"sounds,omitempty"`
+	Emoji     []denproto.Emoji     `json:"emoji,omitempty"`
+	// The DM keys sealed to identities, and whether the den keeps
 	// identities.
 	SignedKeys []denproto.SignedKey `json:"signed_keys,omitempty"`
 	Identities bool                 `json:"identities,omitempty"`
-	// M16.3: the member's group DMs as their changes, checked, made them,
+	// The member's group DMs as their changes, checked, made them,
 	// and whether the den has them for this Dens.
 	GroupStates map[string]*groupState `json:"group_states,omitempty"`
 	GroupDMs    bool                   `json:"group_dms,omitempty"`
-	// M17.3: whether the den has notes to self for this Dens.
+	// Whether the den has notes to self for this Dens.
 	Notes bool `json:"notes,omitempty"`
-	// M17.4: the den's events to come and live that the member saw, each
+	// The den's events to come and live that the member saw, each
 	// with their own mark, as the connection last knew them.
 	Events []denproto.DenEvent `json:"events,omitempty"`
 }
@@ -834,7 +831,7 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if !ok {
 			return e, false, errMalformed
 		}
-		// The member's own notes alone, and one (M17.3).
+		// The member's own notes alone, and one.
 		if c.Kind == denproto.KindNotes {
 			next := maps.Clone(s.channels)
 			next[c.ID] = c
@@ -908,7 +905,7 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if e.T == denproto.EventMessageCreated {
 			s.noteMessage(m, me)
 		} else {
-			// The files an edit took off its message are gone (M5).
+			// The files an edit took off its message are gone.
 			s.gone = append(s.gone, u.Files...)
 		}
 		data = m
@@ -970,13 +967,13 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if known, err := s.talliedIn(d.ChannelID, true); !known || err != nil {
 			return e, false, err
 		}
-		// A group's member may have left it as their set came (M16.3).
+		// A group's member may have left it as their set came.
 		if c := s.channels[d.ChannelID]; c.Kind == denproto.KindDM && !slices.Contains(c.Members, d.MemberID) {
 			return e, false, errMalformed
 		}
 		data = d
 	case denproto.EventGroupChange:
-		// The connection checks it, against the group as it knew it (M16.3).
+		// The connection checks it, against the group as it knew it.
 		var g denproto.GroupChanged
 		if json.Unmarshal(e.D, &g) != nil || !validID(g.ChannelID) || !validID(g.Change.ID) {
 			return e, false, errMalformed
@@ -1022,9 +1019,9 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		s.keys[k.ID] = k
 		data = pageKey(k)
 	case denproto.EventDMSignedKey:
-		// The page hears of it as of any of a DM's keys (M16.1). One of a
+		// The page hears of it as of any of a DM's keys. One of a
 		// channel it doesn't know, as a group this member just left, is
-		// passed over (M16.3).
+		// passed over.
 		var k denproto.SignedKey
 		if json.Unmarshal(e.D, &k) != nil || denproto.CheckSignedKey(denID, k) != nil {
 			return e, false, errMalformed
@@ -1117,7 +1114,7 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if known && old.Banner.ID != "" && old.Banner.ID != ev.Banner.ID {
 			s.gone = append(s.gone, old.Banner.ID) // replaced, so deleted
 		}
-		// So is a badge's picture replaced, or the badge taken off (M17.5).
+		// So is a badge's picture replaced, or the badge taken off.
 		if known && old.Badge != nil && (ev.Badge == nil || old.Badge.Image.ID != ev.Badge.Image.ID) {
 			s.gone = append(s.gone, old.Badge.Image.ID)
 		}
@@ -1129,7 +1126,7 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 			return e, false, errMalformed
 		}
 		// A canceled event's banner and badge go with it; an ended one's stay
-		// on the den, for its card and its badge (M17.5).
+		// on the den, for its card and its badge.
 		if old, ok := s.events[x.ID]; ok && e.T == denproto.EventEventCanceled {
 			if old.Banner.ID != "" {
 				s.gone = append(s.gone, old.Banner.ID)
@@ -1179,8 +1176,8 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 
 // talliedIn says whether the channel of an event that changes a message's
 // tallies is one the member sees, of the kind its event is for: a DM for a
-// sealed set of reactions, a text channel for the rest, reactions' (M15.3)
-// and polls' (M15.4). One it doesn't know, as one deleted while the event
+// sealed set of reactions, a text channel for the rest, reactions'
+// and polls'. One it doesn't know, as one deleted while the event
 // was on its way, is passed over.
 func (s *denState) talliedIn(channel string, dm bool) (bool, error) {
 	c, ok := s.channels[channel]
@@ -1194,14 +1191,14 @@ func (s *denState) talliedIn(channel string, dm bool) (bool, error) {
 }
 
 // marks are a den's channels and DMs with messages unread, and the
-// mentions waiting in them (M13.1).
+// mentions waiting in them.
 type marks struct {
 	unread, mentions int
 }
 
 // marks counts what the member hasn't read, as the page's list marks it:
 // text channels and DMs, the DMs they closed aside, and nothing in their
-// notes, which are all their own (M17.3).
+// notes, which are all their own.
 func (s *denState) marks() marks {
 	var m marks
 	for id, r := range s.reads {
@@ -1228,7 +1225,7 @@ func (s *denState) liveKey(channel string) (denproto.DMKey, bool) {
 
 // noteMessage keeps unread state current as messages arrive: the channel's
 // last message moves, and a mention of this member counts unless it's
-// their own message, staff's @everyone among them (M15.4); in a DM, as the
+// their own message, staff's @everyone among them; in a DM, as the
 // den counts, every message does. A page showing the channel marks it
 // read, and the den's read_state.updated resets the count.
 func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
@@ -1243,7 +1240,7 @@ func (s *denState) noteMessage(m denproto.Message, me denproto.Member) {
 	if dm {
 		r.Closed = false // a new message reopens a closed DM, as on the den
 	}
-	// Everything in the member's notes is their own (M17.3).
+	// Everything in the member's notes is their own.
 	if m.AuthorID == me.ID || s.channels[m.ChannelID].Kind == denproto.KindNotes {
 		r.ReadPosition = m.ID
 	} else if dm || m.Everyone || slices.Contains(denproto.Mentions(m.Text), strings.ToLower(me.Username)) {

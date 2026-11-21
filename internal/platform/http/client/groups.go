@@ -6,7 +6,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Group DMs (M16.3): making one, adding and removing members, leaving and
+// Group DMs: making one, adding and removing members, leaving and
 // naming it. The page's own requests, each a change this service signs.
 
 func (rt *router) mountGroups(r chi.Router) {

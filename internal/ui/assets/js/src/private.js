@@ -1,4 +1,4 @@
-// What the page works out about private DMs (M1.7) without drawing it:
+// What the page works out about private DMs without drawing it:
 // where a DM's keys changed, what stands in its composer's place while it
 // can't take messages, and what to say about a message that can't be
 // opened. The keys themselves never reach the page.
@@ -17,8 +17,8 @@ export const LOCKED = {
 
 // keyChanges finds where a DM's messages move from one key to the next,
 // and says why, where the change has words: who started over or started
-// the check again before M16.1, and when the two checked the new key. From
-// M16.1 a DM's keys change as identities do, which their own lines say
+// the check again before v1.9.0, and when the two checked the new key. From
+// v1.9.0 a DM's keys change as identities do, which their own lines say
 // (keysChangedAt), so only this member's own start over has one here. It
 // returns, by the ID of the first message under a new key, what its
 // divider says.
@@ -50,7 +50,7 @@ export function dividerText(old, next, names, me) {
     }
     if (old?.signed) return '';
     if (next?.signed) {
-        // From before M16.1 to a key sealed to identities.
+        // From a legacy key to a key sealed to identities.
         if (old?.retired === 'started_over') return `${who(old.retired_by)} started over on ${when(old.retired_at)}.`;
         return 'The keys changed.';
     }
@@ -65,7 +65,7 @@ export function dividerText(old, next, names, me) {
     return `${why}.`;
 }
 
-// keysChangedAt places the lines that say a member's keys changed (M16.1),
+// keysChangedAt places the lines that say a member's keys changed,
 // at the times their Dens saw it: each before the first message sent
 // after it, and those after every message loaded at the list's end once
 // it holds the newest. One from before the first message loaded waits
@@ -98,11 +98,11 @@ export function placeAt(messages, items, timeOf, { hasOlder = false, hasNewer = 
 
 // dmGate says what stands in a DM's composer's place, or '' when it takes
 // messages: no_seal, on a device without the member's DM recovery key;
-// den, on a den older than M16.1, which keeps no identities, without a key
+// den, on a den older than v1.9.0, which keeps no identities, without a key
 // both members checked before it; update, while the other member's Dens
 // publishes no identity, being older; and held, once the other's keys
 // changed since this member verified them. A key both checked before
-// M16.1 goes on as it did. A DM whose other member left is closed apart.
+// v1.9.0 goes on as it did. A DM whose other member left is closed apart.
 export function dmGate(view, channel) {
     const me = view.me?.id;
     const other = (channel.members || []).find((id) => id !== me);
@@ -121,31 +121,31 @@ export function partnerOf(channel, me) {
 }
 
 // isPrivate reports whether a channel's messages are sealed by its
-// members' Dens: a DM's, a group DM's (M16.3), or the member's notes
-// (M17.3), all of which the Direct messages tab lists.
+// members' Dens: a DM's, a group DM's, or the member's notes,
+// all of which the Direct messages tab lists.
 export function isPrivate(channel) {
     return channel?.kind === 'dm' || channel?.kind === 'group_dm' || channel?.kind === 'notes';
 }
 
-// isNotes reports whether a channel is the member's notes (M17.3).
+// isNotes reports whether a channel is the member's notes.
 export function isNotes(channel) {
     return channel?.kind === 'notes';
 }
 
 // ownNotes is the member's notes in a den, once the den made them as they
-// first opened them, or null (M17.3).
+// first opened them, or null.
 export function ownNotes(view) {
     return (view?.channels || []).find(isNotes) || null;
 }
 
-// notesGate says what stands in the notes' composer's place (M17.3):
+// notesGate says what stands in the notes' composer's place:
 // no_seal, on a device without the member's DM recovery key, which their
 // key comes from; or '' when they take notes.
 export function notesGate(view) {
     return view.seal ? '' : 'no_seal';
 }
 
-// groupTitle is what a group DM is called (M16.3): its name, or its other
+// groupTitle is what a group DM is called: its name, or its other
 // members' names as its changes make them, the first two and how many more
 // past three.
 export function groupTitle(group, members, me) {
@@ -157,7 +157,7 @@ export function groupTitle(group, members, me) {
 }
 
 // groupGate says what stands in a group's composer's place, or '' when it
-// takes messages (M16.3): no_seal, on a device without the member's DM
+// takes messages: no_seal, on a device without the member's DM
 // recovery key; checking, while the den holds changes this Dens hasn't
 // checked yet; broken, once one doesn't check; alone, with nobody else
 // left in it; update, while a member's Dens publishes no identity, being
@@ -180,7 +180,7 @@ export function groupGate(view, channel) {
 }
 
 // changeText says what a change to a group did, as its line in the group
-// shows it (M16.3): who made it, You for this member, whom it took in or
+// shows it: who made it, You for this member, whom it took in or
 // out, and a name where the change carries one this Dens could open.
 export function changeText(change, nameOf, me) {
     const who = (id, start) => (id === me ? (start ? 'You' : 'you') : nameOf(id));
@@ -214,7 +214,7 @@ export function sameDigits(a, b) {
 }
 
 // EXPIRY_TIMES are the times a DM's or a group's messages disappear after
-// they're sent (M16.4), in seconds, Off first: an hour, a day, a week and
+// they're sent, in seconds, Off first: an hour, a day, a week and
 // four weeks, as the den takes them.
 export const EXPIRY_TIMES = [0, 3600, 86400, 604800, 2419200];
 
@@ -236,7 +236,7 @@ export function shortAfter(seconds) {
 }
 
 // expiryText says who last set a DM's or a group's time, when, and to
-// what, as its line in the conversation shows it (M16.4): you for this
+// what, as its line in the conversation shows it: you for this
 // member. The day stays said once the messages around the line are gone.
 export function expiryText(after, set, nameOf, me) {
     const lead = `On ${when(set.at)}, ${set.by === me ? 'you' : nameOf(set.by)}`;
@@ -244,7 +244,7 @@ export function expiryText(after, set, nameOf, me) {
     return `${lead} set messages to disappear ${afterText(after)} after they're sent.`;
 }
 
-// dueBy lists the messages whose time to disappear came by now (M16.4).
+// dueBy lists the messages whose time to disappear came by now.
 export function dueBy(messages, now) {
     return messages.filter((m) => m.expires_at && m.expires_at <= now);
 }

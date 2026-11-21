@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-// Sign-in codes (M22.6): what a new device scans in place of typing. Add
+// Sign-in codes: what a new device scans in place of typing. Add
 // device's names a den's address and the member's username there; the
 // digits' is the approving device's half of the check code. Each holds
 // only what its screen shows beside it. A scanned code is hostile: it

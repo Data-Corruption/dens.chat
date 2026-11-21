@@ -34,7 +34,7 @@ export function isStaff(role) {
     return rank(role) > 0;
 }
 
-/** roleMark names the mark beside a staff member's name (M17.6): Owner, a
+/** roleMark names the mark beside a staff member's name: Owner, a
     crown, or Moderator, a shield; a member has none */
 export function roleMark(role) {
     return role === 'owner' ? 'Owner' : role === 'moderator' ? 'Moderator' : '';
@@ -46,7 +46,7 @@ export function roleMark(role) {
 export const MARK = 'text-base-content/80';
 
 /** RoleMark is a staff member's mark beside their name, in place of a
-    role's pill (M17.6). Its boxes are flex boxes down to the icon, so no
+    role's pill. Its boxes are flex boxes down to the icon, so no
     line of text sets its height, and each row centers it on the name.
     With id, its tip opens on a tap too, as on the card; without, the tip
     is hover's alone and its words are read with the row's, where the row
@@ -63,12 +63,12 @@ export function RoleMark({ role, id }) {
 }
 
 /** shownBadges are the badges a profile card shows: all but those its
-    member hid, which their own copy of it alone carries (M17.6) */
+    member hid, which their own copy of it alone carries */
 export function shownBadges(badges) {
     return badges.filter((b) => !b.hidden);
 }
 
-/** cardMenu lists what a profile card's ⋯ offers (M17.6), each by key,
+/** cardMenu lists what a profile card's ⋯ offers, each by key,
     label and whether it's a danger: comparing codes with a member whose
     Dens publishes an identity, where this member's keeps them; the
     owner's promoting a member or demoting a moderator; and removing
@@ -184,7 +184,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
     );
 }
 
-// Profile shows a member as a card (M17.6): their banner across its top,
+// Profile shows a member as a card: their banner across its top,
 // to its edges, or a band of the theme's quiet color where they have none;
 // their picture across the banner's foot, ringed in the card's own color,
 // so the two read as one, with actions to its right; under it their
@@ -192,9 +192,8 @@ export function MemberList({ denID, members, online, card, onProfile }) {
 // beside the names on a card wide enough and under them on a narrow one;
 // then, under a thin line, their bio as text and how long they've been in
 // the den. The bio and the badges come as the den sends them with the
-// card (M17.5). In a panel the bio runs its full length, which the panel
-// scrolls. Its pictures play while it shows, since the member opened it
-// (M15.1).
+// card. In a panel the bio runs its full length, which the panel
+// scrolls. Its pictures play while it shows, since the member opened it.
 function Profile({ denID, member, me, online, panel = false, verified = false, actions, fixed, children }) {
     const [fetched, setBio] = useState(null);
     const [badgesFetched, setBadges] = useState([]);
@@ -269,10 +268,10 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
 }
 
 // ProfilePanel shows the other member of a DM beside it, in the member
-// list's place (M11), as the profile card shows them (M17.6), and from
-// M16.1 whether this member verified them, with Compare codes. kept is
+// list's place, as the profile card shows them, and
+// whether this member verified them, with Compare codes. kept is
 // what this member's Dens kept of their identity, null on a den that keeps
-// none. expiry is the DM, whose time either member sets (M16.4), where the
+// none. expiry is the DM, whose time either member sets, where the
 // den keeps one.
 export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAddPeople, expiry }) {
     return (
@@ -280,7 +279,7 @@ export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAdd
             <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified}>
                 <CompareCodes member={member} kept={kept} onCompare={onCompare} />
                 {/* A group of the two and those added, which leaves the DM as it
-                    is (M16.3). */}
+                    is. */}
                 {onAddPeople && (
                     <div>
                         <Button data-add-people onClick={onAddPeople}>Add people</Button>
@@ -293,7 +292,7 @@ export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAdd
 }
 
 // CompareCodes offers to compare codes with a member whose Dens publishes
-// an identity (M16.1), saying where their keys changed since this member
+// an identity, saying where their keys changed since this member
 // verified them.
 function CompareCodes({ member, kept, onCompare }) {
     if (!kept || !member.identity || member.left_at) return null;
@@ -306,11 +305,11 @@ function CompareCodes({ member, kept, onCompare }) {
 }
 
 // ProfileCard shows a member, and what the viewer can do with them, with
-// one button standing out (M17.6): Message, or on the member's own card
-// Edit profile, with Notes beside it, which open their notes (M17.3) while
+// one button standing out: Message, or on the member's own card
+// Edit profile, with Notes beside it, which open their notes while
 // the den has them for this Dens. The rest is under ⋯. On a wide window it
-// opens beside from, the name or picture clicked, with nothing dimmed
-// (M22.4); a phone, or a card with nothing to open beside, keeps a dialog.
+// opens beside from, the name or picture clicked, with nothing dimmed;
+// a phone, or a card with nothing to open beside, keeps a dialog.
 export function ProfileCard({ denID, member, me, role, online, kept, from, onClose, onMessage, onNotes, onCompare, onEdit, onRemove }) {
     const narrow = useNarrow();
     const act = useAction();
@@ -417,7 +416,7 @@ function ProfilePopover({ from, onClose, children }) {
 }
 
 // MoreMenu is a profile card's ⋯ and the menu of the rest of what the
-// member may do (M17.6), as a message's is, or on the phone layout a
+// member may do, as a message's is, or on the phone layout a
 // sheet. Each item is as MenuItems takes it.
 function MoreMenu({ items }) {
     return (
@@ -428,7 +427,7 @@ function MoreMenu({ items }) {
 
 // Badges shows the badges a member earned and shows, latest first,
 // wrapping into as many rows as they take, each with a tip saying what
-// it's called, and what event it was for and when (M17.5). Each takes a
+// it's called, and what event it was for and when. Each takes a
 // finger's 44 pixels on a touch screen.
 export function Badges({ denID, badges, panel = false }) {
     const tz = zone();
@@ -451,7 +450,7 @@ export function Badges({ denID, badges, panel = false }) {
 }
 
 // BadgePicture shows a badge's picture, square, at a size of the caller's.
-// An animated one plays as an emoji does (M15.1).
+// An animated one plays as an emoji does.
 export function BadgePicture({ denID, image, size = 'h-8 w-8' }) {
     const how = usePicture(!!image.animated);
     const fit = 'h-full w-full select-none rounded object-cover';
@@ -462,7 +461,7 @@ export function BadgePicture({ denID, image, size = 'h-8 w-8' }) {
     );
 }
 
-// BadgeToggle is one of the member's badges in Edit profile (M17.6): its
+// BadgeToggle is one of the member's badges in Edit profile: its
 // picture, with an eye at its top right, open while the badge shows on
 // their card and struck while it's hidden, which a click or a tap turns.
 // Its tip, on a mouse's hover, says what it is.
@@ -481,9 +480,9 @@ export function BadgeToggle({ denID, badge, busy, onToggle }) {
     );
 }
 
-// Banner shows the wide picture on a profile, or an event's (M17.4), three
+// Banner shows the wide picture on a profile, or an event's, three
 // times as wide as it is high, at its final size before it loads. An
-// animated one plays as an avatar does (M15.1), which in a profile is
+// animated one plays as an avatar does, which in a profile is
 // while it shows. One to its box's edges, edge, takes the box's corners.
 export function Banner({ denID, image, edge = false }) {
     const how = usePicture(!!image.animated);
@@ -496,11 +495,11 @@ export function Banner({ denID, image, edge = false }) {
 }
 
 // EditProfile changes the member's own display name, bio and pictures in
-// this den, and which of their badges their card shows (M17.6), which
+// this den, and which of their badges their card shows, which
 // takes at once, as a picture does; and, in a den that keeps them,
 // nameStyles, how their name shows to everyone. Save stays at its foot,
 // and a wide window shows the card beside the fields as others will see
-// it, changing as they do (M22.3).
+// it, changing as they do.
 export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) {
     const narrow = useNarrow();
     const [name, setName] = useState(me.display_name);
@@ -544,8 +543,8 @@ export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) 
 
     // savePicture uploads a cropped picture and puts it on the profile; the
     // den deletes the one it replaces, which the upload names, so a member
-    // at their limit can still change it (M5). An animated one goes as it
-    // is, with the part framed, for the local service to make (M15.1).
+    // at their limit can still change it. An animated one goes as it
+    // is, with the part framed, for the local service to make.
     function savePicture(blob, rect) {
         const { shape } = cropping;
         picture.run(async () => {

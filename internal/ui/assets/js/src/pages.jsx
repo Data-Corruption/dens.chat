@@ -1,9 +1,9 @@
-// Pages of sections (M13.3): the app's settings and a den's Manage, which
+// Pages of sections: the app's settings and a den's Manage, which
 // on the phone layout take the screen, their sections a list, each opening
 // as a page with ← back, as Android's own settings do, and Back walks out
 // of a section, then out of the list. Wider windows keep them as a card
-// over the page, their sections in a column beside. Both are one frame
-// (M22.3), SectionsFrame.
+// over the page, their sections in a column beside. Both are one frame,
+// SectionsFrame.
 
 import { Fragment } from 'preact';
 import { useEffect, useRef } from 'preact/hooks';
@@ -76,7 +76,7 @@ export function SectionList({ label, groups, onPick }) {
 // last.
 export const PLAIN_CARDS = 'max-md:[&>.card]:rounded-none max-md:[&>.card]:bg-transparent max-md:[&>.card>.card-body]:p-0 max-md:[&>.card+.card]:border-t max-md:[&>.card+.card]:border-base-300 max-md:[&>.card+.card]:pt-4';
 
-/** SectionsFrame is the settings' and Manage's one frame (M22.3), named
+/** SectionsFrame is the settings' and Manage's one frame, named
     label for screen readers. On a wide window it's a card over the page,
     headed by title, its sections listed down its left under each group's
     heading, a danger one, as Leave den, at the column's foot, and the

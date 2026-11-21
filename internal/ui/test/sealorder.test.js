@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 
-// A sealed call's senders as Chromium treats them (M18): a sender made as an
+// A sealed call's senders as Chromium treats them: a sender made as an
 // offer is applied takes a transform only until the end of the task the
 // offer was applied in, and one it gets any later is taken without an error
 // and never runs, the sender sending around it. The page seals every

@@ -11,7 +11,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Signed DM keys (M16.1). A DM's key is made by either member's Dens when
+// Signed DM keys. A DM's key is made by either member's Dens when
 // the DM has no live key both can use: before its first message, after a
 // member started over, or after an identity changed. It's 32 random bytes,
 // sealed with HPKE to each member's identity, with a statement naming
@@ -26,12 +26,12 @@ import (
 // slower takes the live one.
 //
 // Opening a copy takes X-Wing, so once one opened here its key is kept in
-// memory sealed with the seal, as M1.7's copies are, and opened from that
+// memory sealed with the seal, as legacy keys' copies are, and opened from that
 // as it's used.
 
 var errCommit = errors.New("a key's copy opened to another key than its statement names")
 
-// PageKey is a DM key as the page sees it, M1.7's or a signed one,
+// PageKey is a DM key as the page sees it, legacy or signed,
 // without its copies, exchange or statement, which are this service's.
 // Signed keys need no checks, and come with their maker as StartedBy.
 type PageKey struct {
@@ -47,7 +47,7 @@ type PageKey struct {
 	Signed    bool                  `json:"signed,omitempty"`
 }
 
-// pageKey is an M1.7 key as the page sees it.
+// pageKey is a legacy key as the page sees it.
 func pageKey(k denproto.DMKey) PageKey {
 	return PageKey{ID: k.ID, ChannelID: k.ChannelID, StartedBy: k.StartedBy, StartedAt: k.StartedAt, Stage: k.Stage, Checks: k.Checks,
 		RetiredAt: k.RetiredAt, RetiredBy: k.RetiredBy, Retired: k.Retired}
@@ -61,7 +61,7 @@ func pageSignedKey(k denproto.SignedKey) PageKey {
 
 // cleanSigned checks a signed key from the den: its shape, and that it's
 // the key of one of this member's DMs, naming its two members, or of one
-// of their groups (M16.3), whose members its changes say.
+// of their groups, whose members its changes say.
 func (s *denState) cleanSigned(denID []byte, k denproto.SignedKey) bool {
 	if denproto.CheckSignedKey(denID, k) != nil {
 		return false
@@ -151,7 +151,7 @@ func (c *conn) verdictLocked(k denproto.SignedKey, sending bool) string {
 		return lockedBroken
 	}
 	// A group's key is sent under only where it names the group's members
-	// as its changes, checked here, make them (M16.3).
+	// as its changes, checked here, make them.
 	if sending && c.den.channels[k.ChannelID].Kind == denproto.KindGroupDM {
 		g := c.groups[k.ChannelID]
 		if g == nil || g.Broken != "" || len(g.Members) != len(k.Members) ||
@@ -225,7 +225,7 @@ func (c *conn) partnerLocked(channel string) (string, bool) {
 }
 
 // canMakeKeyLocked says why a DM can't get a new key, if it can't: on a
-// den older than M16.1, which keeps no identities; with a member whose
+// den older than v1.9.0, which keeps no identities; with a member whose
 // Dens publishes none, being older; or while it holds, since the other's
 // keys changed after this member verified them. The caller holds c.mu.
 func (c *conn) canMakeKeyLocked(channel string) error {
@@ -399,7 +399,7 @@ func (c *conn) addSignedKeys(keys ...denproto.SignedKey) {
 }
 
 // canMakeGroupKeyLocked says why a group can't get a new key, if it
-// can't, as canMakeKeyLocked does a DM's (M16.3): its changes don't check,
+// can't, as canMakeKeyLocked does a DM's: its changes don't check,
 // nobody else is in it, or one of its members is gone, has a Dens that
 // publishes no identity, or holds since their keys changed. The caller
 // holds c.mu.

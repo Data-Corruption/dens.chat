@@ -1,4 +1,4 @@
-// Notifications (M12.3). The service decides what notifies the member and
+// Notifications. The service decides what notifies the member and
 // where it shows, since a page may be hidden, frozen or closed. A page
 // shows those the service gives it through the browser's notifications,
 // which the settings ask the browser for as a kind is turned on, and a
@@ -8,7 +8,7 @@
 // channel, wherever it shows. Android's WebView has no notifications: the
 // app's shell posts them there.
 //
-// From M14.2 the service places the message's sound too, so a message
+// The service places the message's sound too, so a message
 // makes one: a page plays it with the notification it shows, which it asks
 // the browser to show silently, and alone where the service says, as when
 // the member turned the kind off. It also carries the sounds' settings in
@@ -54,8 +54,8 @@ export function heading(n) {
 
 // show shows a notification through the browser, replacing its channel's;
 // a click on it brings the page forward and opens the message, or the
-// event (M17.4), through open, which it hands the notification. It shows
-// silently, since the page plays the message's sound (M14.2): Chromium
+// event, through open, which it hands the notification. It shows
+// silently, since the page plays the message's sound: Chromium
 // and, from 132, Firefox keep the system's own quiet. It returns the
 // browser's notification, or null where the browser won't show it.
 export function show(n, open, win = globalThis) {
@@ -143,13 +143,13 @@ export function mutedIn(st, denID) {
 }
 
 // notifying is whether any kind notifies: DMs or mentions, which the
-// member turns on, or events, on unless they turn them off (M17.4).
+// member turns on, or events, on unless they turn them off.
 export function notifying(st) {
     return !!(st && (st.dms || st.mentions || !st.eventsOff));
 }
 
 // whereTheyShow is what the settings say of where the member's
-// notifications show, each a [kind, line], only what calls for one (M22.3):
+// notifications show, each a [kind, line], only what calls for one:
 // a browser or Android that won't show them, and the desktop's helper
 // showing them with no tab open. helper is the keys' status from the
 // service, which says whether a helper that shows notifications runs.

@@ -41,7 +41,7 @@ func eventsIn(t *testing.T, m *denclient.Manager, denID string) string {
 }
 
 // The den's events reach each member's view with their own marks, and a
-// cached member's view keeps them with the den away (M17.4). The member
+// cached member's view keeps them with the den away. The member
 // marks one Interested, which the others' views count; as it starts the
 // member's Dens notifies them, naming it and its voice channel, and
 // carol's, not interested, doesn't; End now takes the notice back.
@@ -165,7 +165,7 @@ func TestEvents(t *testing.T) {
 	}
 }
 
-// A link's card reads an event by its ID (M17.5): one to come from the
+// A link's card reads an event by its ID: one to come from the
 // view, with the member's mark and its badge, so the den hears nothing of
 // it; an ended one from the den, saying so with its badge; and one the
 // member can't see not at all.

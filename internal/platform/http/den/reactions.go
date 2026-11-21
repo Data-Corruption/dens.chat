@@ -9,7 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Reactions (M15.3): a member adds a reaction to a channel's message, or
+// Reactions: a member adds a reaction to a channel's message, or
 // takes one back; staff take one emoji's reactions off a message; and in a
 // DM a member sets their sealed set. Each counts toward the member's other
 // writes.

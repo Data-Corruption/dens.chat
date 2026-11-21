@@ -240,7 +240,7 @@ func TestStripWritesPhoneVideoAsMP4WithItsIndexFirst(t *testing.T) {
 
 // A movie's timescale is 1000, whatever its streams', since Firefox misreads
 // the edit lists of one with FFmpeg 9's own choice and plays a track's
-// start late (M11). with-gps.mp4 has 90 kHz video and 48 kHz sound, for
+// start late. with-gps.mp4 has 90 kHz video and 48 kHz sound, for
 // which FFmpeg picks 720,000, with-gps.mov 600 and 44,100, 88,200, and
 // late-sound.mp4 a phone's 90 kHz and 44.1 kHz, 4,410,000, with its sound
 // starting late, which Firefox played seconds late.
@@ -315,7 +315,7 @@ func red(img image.Image, x, y int) bool {
 }
 
 // A JPEG's copy turns as its EXIF orientation says, which the host reads,
-// fits the side it's given, and keeps the JPEG's color profile (M5).
+// fits the side it's given, and keeps the JPEG's color profile.
 func TestStillMakesAJPEGsCopy(t *testing.T) {
 	r := newRunner(t)
 	var src bytes.Buffer
@@ -360,7 +360,7 @@ func TestStillMakesAJPEGsCopy(t *testing.T) {
 }
 
 // A PNG's copy stays a PNG, with or without transparency, and keeps its
-// color profile (M5).
+// color profile.
 func TestStillKeepsAPNGAPNG(t *testing.T) {
 	r := newRunner(t)
 	for _, alpha := range []bool{false, true} {

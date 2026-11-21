@@ -1,4 +1,4 @@
-// The message box's height (M22.7): its text's, wrapped lines too, from a
+// The message box's height: its text's, wrapped lines too, from a
 // line's up to half of its pane's room, past which it scrolls.
 
 import assert from 'node:assert/strict';

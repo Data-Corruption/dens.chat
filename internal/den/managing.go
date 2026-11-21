@@ -13,7 +13,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Managing files (M5): a member lists their own uploads, largest first,
+// Managing files: a member lists their own uploads, largest first,
 // with what uses each, and the author's edit of a message can change its
 // files, which is how they delete one or swap it for another.
 
@@ -23,8 +23,8 @@ const ownFilesBudget = 600 << 10
 
 // OwnFiles lists a page of the member's files, largest first by the space
 // each takes, previews included, with what uses each: an event's banner
-// among them (M17.4). after is the cursor the page before gave, or empty
-// for the first. A named file's file is the den's (M14.3), so it isn't
+// among them. after is the cursor the page before gave, or empty
+// for the first. A named file's file is the den's, so it isn't
 // among them.
 func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.OwnFiles, error) {
 	page := denproto.OwnFiles{Files: []denproto.OwnFile{}}
@@ -212,7 +212,7 @@ func setAttachments(ctx context.Context, tx *sql.Tx, message, author int64, file
 	for _, id := range had {
 		on[id] = true
 	}
-	// An upload taking a file's place is a spoiler if the file was (M17.2).
+	// An upload taking a file's place is a spoiler if the file was.
 	carried := map[int64]int64{}
 	for _, id := range files {
 		if on[id] {

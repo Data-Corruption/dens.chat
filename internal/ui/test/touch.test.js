@@ -136,7 +136,7 @@ test("the pointer is coarse as the window's media say", () => {
     assert.equal(coarse({}), false, 'no media to ask');
 });
 
-// The call's button (M13.4) holds the microphone while it's held: every way
+// The call's button holds the microphone while it's held: every way
 // a press can end lets it go, so the microphone never stays open.
 function holding() {
     const timers = clock();

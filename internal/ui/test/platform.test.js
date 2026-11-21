@@ -1,4 +1,4 @@
-// The browser and system the settings describe (M8.3).
+// The browser and system the settings describe.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
@@ -30,7 +30,7 @@ test('the system comes from the user agent', () => {
     assert.equal(systemOf(''), 'other');
 });
 
-// What a browser has decides what the page offers (M9.1), as its user
+// What a browser has decides what the page offers, as its user
 // agent can't: Android's WebView says it's Linux.
 test('calls need WebRTC, and sharing a screen getDisplayMedia too', () => {
     const pc = function RTCPeerConnection() {};
@@ -49,7 +49,7 @@ test('calls need WebRTC, and sharing a screen getDisplayMedia too', () => {
 });
 
 // A den that seals its calls takes a page only where it seals what it
-// sends, which takes Encoded Transform in a worker (M16.2): Firefox from
+// sends, which takes Encoded Transform in a worker: Firefox from
 // 117, and Chromium, Android's WebView among them, from 141.
 test('sealing a call needs WebRTC and RTCRtpScriptTransform', () => {
     const pc = function RTCPeerConnection() {};
@@ -59,7 +59,7 @@ test('sealing a call needs WebRTC and RTCRtpScriptTransform', () => {
     assert.equal(canSeal({ RTCRtpScriptTransform: transform }), false, 'no WebRTC at all');
 });
 
-// A share's window of its own is for a desktop's monitors (M11).
+// A share's window of its own is for a desktop's monitors.
 test("a share opens in a window of its own where the browser opens one that moves between monitors", () => {
     const pc = function RTCPeerConnection() {};
     const desktop = { RTCPeerConnection: pc, navigator: { mediaDevices: { getUserMedia() {}, getDisplayMedia() {} } }, open() {} };
@@ -73,8 +73,8 @@ test("a share opens in a window of its own where the browser opens one that move
 // form, on the app's element.
 const page = (dataset) => ({ getElementById: (id) => (id === 'app' && dataset ? { dataset } : null) });
 
-// What the service says of its form decides what a phone's settings show
-// (M13.3): the Android app's page is in Dens's own app, with no keys for
+// What the service says of its form decides what a phone's settings show:
+// the Android app's page is in Dens's own app, with no keys for
 // its shortcuts; a browser's has keys, and its permissions are the
 // browser's.
 test("the page has keys, and a browser's permissions, unless the service says it's in Dens's app", () => {

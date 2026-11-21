@@ -75,7 +75,7 @@ func notRunning(err error) bool {
 }
 
 // quitService stops a session form's running service over its control
-// endpoint (M9.3), as a restore needs; one that isn't running is already
+// endpoint, as a restore needs; one that isn't running is already
 // stopped.
 func quitService(bi build.BuildInfo, instanceName string) error {
 	client, l, err := controlClient(bi, instanceName)

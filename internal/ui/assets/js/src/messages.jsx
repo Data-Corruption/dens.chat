@@ -61,7 +61,7 @@ const EDGE = 600; // px from an end at which the next page loads
 const READ_EVERY = 2000; // ms between read position updates
 const GROUP_GAP = 5 * 60 * 1000;
 // DUE_WAIT is the longest the list waits to look again for messages whose
-// time to disappear came (M16.4), well within what a timer holds.
+// time to disappear came, well within what a timer holds.
 const DUE_WAIT = 24 * 60 * 60 * 1000;
 
 // MAX_EDITORS is how many others may edit a message with its author.
@@ -81,7 +81,7 @@ function joinNames(names) {
 let nextKey = 1;
 
 // pendingJump is a message to show once its channel opens, which the list
-// of a member's files asks for (M5), and a link to a message (M11): the
+// of a member's files asks for, and a link to a message: the
 // pane that opens on its channel jumps there rather than to the newest.
 let pendingJump = null;
 // jumpers are the panes open, each of which jumps to a message of its own
@@ -101,7 +101,7 @@ export function openAt(denID, channelID, messageID) {
 // it, as a run's later message: by the same author, on the same day,
 // within GROUP_GAP, not a reply, disappearing after the same time, which
 // a run's header shows, and with no line between them; in Compact never,
-// as each message shows its own name (M17.2).
+// as each message shows its own name.
 export function continues(prev, m, line, between = false) {
     return !line && !between && !!prev && prev.author_id === m.author_id && !m.reply_to && m.created_at - prev.created_at < GROUP_GAP &&
         new Date(prev.created_at).toDateString() === new Date(m.created_at).toDateString() && lasts(prev) === lasts(m);
@@ -111,7 +111,7 @@ export function continues(prev, m, line, between = false) {
 const lasts = (m) => (m.expires_at ? m.expires_at - m.created_at : 0);
 
 // viewed is what the viewer shows from a message: its images, and which,
-// but for spoilers still covered (M17.2).
+// but for spoilers still covered.
 export function viewed(m, file, covered = new Set()) {
     const files = (m.attachments || []).filter((f) => attachmentKind(f) === 'image' && !covered.has(f.id));
     const index = files.findIndex((f) => f.id === file.id);
@@ -120,7 +120,7 @@ export function viewed(m, file, covered = new Set()) {
 
 // dividerAt is where a channel's New divider goes, as the channel opens:
 // after the read position when messages came after it, and nowhere when
-// none did, so messages that arrive while it's open get none (M11).
+// none did, so messages that arrive while it's open get none.
 export function dividerAt(readPosition, lastMessage) {
     return readPosition && compareIds(lastMessage, readPosition) > 0 ? readPosition : '';
 }
@@ -128,9 +128,9 @@ export function dividerAt(readPosition, lastMessage) {
 // MessagePane shows a channel or DM. dm is the other member of a DM, and
 // keys the DM's keys; typing lists who is typing here; closed, when set,
 // says why nothing can be sent; limits are the den's upload limits, and
-// retention the days it keeps a message, 0 for ever (M5). lastMessage is
+// retention the days it keeps a message, 0 for ever. lastMessage is
 // the channel's newest, as its read state has it, and denURL the den's
-// address, which links to its messages start with (M11).
+// address, which links to its messages start with.
 export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, group, groupTitle, keys, gate = '', changes, identities,
     typing, closed, limits, retention, offline, spoilers, onProfile, onCompare, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
@@ -140,39 +140,38 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const [replyTo, setReplyTo] = useState(null);
     // menu is the message whose ⋯ menu is open, with where a right click
     // opened it, if one did, and deleting the one whose delete
-    // waits on the member's word (M11).
+    // waits on the member's word.
     const [menu, setMenu] = useState(null);
     const [deleting, setDeleting] = useState(null);
     // reacting is the message whose picker is open to react to it, with
-    // what opened it, and removing the one whose reactions staff take off
-    // (M15.3).
+    // what opened it, and removing the one whose reactions staff take off.
     const [reacting, setReacting] = useState(null);
     const [removing, setRemoving] = useState(null);
     // A den older than reactions, which came with its emoji, takes none,
-    // nor polls nor @everyone, which came with them (M15.4). Polls go in
+    // nor polls nor @everyone, which came with them. Polls go in
     // channels, and staff send @everyone there.
     const emoji = useContext(EmojiContext);
-    // The member's notes (M17.3) are theirs alone: nobody reacts to them,
+    // The member's notes are theirs alone: nobody reacts to them,
     // writes in them or shares their editing, and nothing in them goes as
     // a spoiler.
     const notes = channel.kind === 'notes';
     const reactions = !!emoji?.known && !notes;
     const polls = reactions && channel.kind === 'text';
-    // A DM's, a group's (M16.3) and the notes' messages are sealed by their
+    // A DM's, a group's and the notes' messages are sealed by their
     // members.
     const sealed = isPrivate(channel);
-    // Compact shows each message as a line (M17.2).
+    // Compact shows each message as a line.
     const line = useDensity() === DENSITY_COMPACT;
     const marks = useStaffMarks();
     const background = useBackground();
     // A photo or video goes as a spoiler in a DM, inside its seal, and in a
-    // channel where the den keeps which files are (M17.2).
+    // channel where the den keeps which files are.
     const canSpoil = !notes && (sealed || !!spoilers);
     // editors may edit the message being written, besides its author.
     const [editors, setEditors] = useState([]);
     const [editing, setEditing] = useState(null);
     // sharing is the member's own message whose other editors they're
-    // picking, from its ⋯ (M22.4).
+    // picking, from its ⋯.
     const [sharing, setSharing] = useState(null);
     const [error, setError] = useState('');
     // files are the attachments the member is getting ready to send.
@@ -181,16 +180,15 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     filesRef.current = files;
     const [viewing, setViewing] = useState(null);
     // comparing is the key of the file whose two versions the member
-    // compares (M5).
+    // compares.
     const [comparing, setComparing] = useState(null);
     const [dragging, setDragging] = useState(false);
     const [divider] = useState(() => dividerAt(readPosition, lastMessage));
     // A finger works the messages by long presses, and on the phone
-    // layout their actions open as a sheet (M13.2).
+    // layout their actions open as a sheet.
     const narrow = useNarrow();
     const touch = useCoarse();
-    // The call's button floats above the pane's foot, where the composer is
-    // (M13.4).
+    // The call's button floats above the pane's foot, where the composer is.
     const foot = useRef(null);
     const scroller = useRef(null);
     const content = useRef(null);
@@ -200,7 +198,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const lastTop = useRef(0);
     const listRef = useRef(list);
     listRef.current = list;
-    // While the den is offline (M6.2), the note over the messages says why
+    // While the den is offline, the note over the messages says why
     // the pages beyond what this computer kept don't load.
     const offlineRef = useRef(offline);
     offlineRef.current = offline;
@@ -474,7 +472,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
 
     function handleEvent(e) {
         const d = e.d;
-        // A retention pass reaches every channel at once (M5).
+        // A retention pass reaches every channel at once.
         if (e.t === 'messages.expired' && d) return expired(e);
         if (!d || d.channel_id !== channel.id) return;
         caught.current.forEach((since) => since.push(e));
@@ -509,7 +507,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             setList((cur) => (follow ? atTail(cur, d, above) : { ...cur, messages: mergeIn(cur.messages, [d]) }));
             if (follow) setTimeout(markRead, 0);
         } else if (e.t === 'message.updated') {
-            // A swap or a delete changes what the viewer may show (M5).
+            // A swap or a delete changes what the viewer may show.
             setViewing((v) => (v && v.message === d.id ? viewed(d, v.files[v.index]) : v));
             setList((cur) => withUpdate(cur, d));
         } else if (e.t === 'message.deleted') {
@@ -539,8 +537,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     }
 
     // A message that disappears leaves the list as its time comes, by this
-    // computer's clock, as the den and the local service take it too
-    // (M16.4): a page doesn't wait on them to stop showing it, as while
+    // computer's clock, as the den and the local service take it too:
+    // a page doesn't wait on them to stop showing it, as while
     // the den is offline.
     const [looked, setLooked] = useState(0);
     useEffect(() => {
@@ -557,7 +555,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     }, [list.messages, looked]);
 
     // holdView keeps what the member reads where it is as a message above
-    // it changes size, as a reaction's row comes or goes, or wraps (M15.3).
+    // it changes size, as a reaction's row comes or goes, or wraps.
     // At the newest, the list stays there by itself.
     function holdView() {
         if (!atBottom.current || listRef.current.hasNewer) captureAnchor();
@@ -619,9 +617,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // addFiles starts uploading files the member picked, dropped or pasted,
     // up to what a message holds. Uploads go ahead while they write. A
     // photo or video goes as a smaller copy unless the member turned copies
-    // off, and one over the den's limit may still go as its copy (M5). Each
-    // upload has a key the chip follows it by while a video's copy is made
-    // (M5.4).
+    // off, and one over the den's limit may still go as its copy. Each
+    // upload has a key the chip follows it by while a video's copy is made.
     function addFiles(list) {
         const picked = [...list];
         const room = MAX_ATTACHMENTS - filesRef.current.length;
@@ -660,7 +657,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
 
     // switchVersions sends photos on the message being written as the
     // other version, to, which the local service uploads, dropping the one
-    // waiting (M5). The message waits for it, as for an upload. A photo
+    // waiting. The message waits for it, as for an upload. A photo
     // taken off meanwhile drops what it switched to.
     function switchVersions(entries, to) {
         for (const f of entries) {
@@ -681,7 +678,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
 
     // removeFile takes a file off the message being written: an upload in
     // progress stops, and one already up is dropped, so its space is free at
-    // once (M5).
+    // once.
     function removeFile(key) {
         const f = filesRef.current.find((x) => x.key === key);
         f?.abort?.();
@@ -730,18 +727,18 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     }
 
     // A DM takes messages unless something stands in its composer's
-    // place (M16.1), and a group as well (M16.3), whose gate names whom it
+    // place, and a group as well, whose gate names whom it
     // waits on.
     const gated = group ? gate.gate : gate;
     const canSend = !sealed || gated === '';
     const byId = new Map(list.messages.map((m) => [m.id, m]));
     const rows = [];
     let prev = null;
-    // In a DM, dividers mark where its keys changed before M16.1, and
+    // In a DM, dividers mark where its keys changed before v1.9.0, and
     // lines where the other member's keys changed since.
     const dividers = sealed && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id))), me.id) : new Map();
     // In a group, lines where its members changed, and where each one's
-    // keys did since this member joined it (M16.3).
+    // keys did since this member joined it.
     const joinedAt = group?.changes?.[0]?.at || 0;
     const keyLines = group
         ? group.members.filter((id) => id !== me.id)
@@ -755,7 +752,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const groupLines = group ? placeAt(list.messages, group.changes || [], (c) => c.at, list) : { before: new Map(), after: [] };
     const groupLine = (c) => <GroupLine key={`group-${c.n}`} change={c} me={me.id} nameOf={(id) => name(members.get(id))} />;
     // In a DM or a group, the line that says who last set its time, and
-    // when (M16.4).
+    // when.
     const expiry = sealed && channel.expires_set ? placeAt(list.messages, [channel.expires_set], (x) => x.at, list) : { before: new Map(), after: [] };
     const expiryLine = (x) => <ExpiryLine key={`expiry-${x.at}`} channel={channel} me={me.id} nameOf={(id) => name(members.get(id))} />;
     for (const m of list.messages) {
@@ -904,7 +901,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 </div>
             </div>
             {/* The pane's foot, the composer among it, which the call's button
-                floats above (M13.4). */}
+                floats above. */}
             <div ref={foot}>
                 {(list.hasNewer || newCount > 0) && (
                     <div class="flex cursor-default select-none items-center justify-between bg-primary px-4 py-1 text-sm text-primary-content">
@@ -1010,12 +1007,12 @@ function Quoted({ text, locked, me }) {
 }
 
 // MessageRow is a message in the list, with its ⋯ menu of what the member
-// may do with it: link is the link to it, for Copy message link (M11). A
+// may do with it: link is the link to it, for Copy message link. A
 // finger's long press opens the menu in the ⋯'s place, which a touch
-// screen has none of, and on the phone layout, narrow, it's a sheet
-// (M13.2); a mouse's right click opens it at the pointer, menuAt. compact
+// screen has none of, and on the phone layout, narrow, it's a sheet;
+// a mouse's right click opens it at the pointer, menuAt. compact
 // is a run's later message, under its first's name; line is Compact's row,
-// each a line of its own (M17.2). children go under its files, as
+// each a line of its own. children go under its files, as
 // Appearance's preview puts its photo.
 export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
     const [error, setError] = useState('');
@@ -1043,7 +1040,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         copiedTimer.current = setTimeout(() => setCopied(''), 1500);
     }
     // Add reaction opens the picker beside the ⋯ it was picked from, or as
-    // a sheet (M15.3).
+    // a sheet.
     const actions = [
         canReply && { key: 'reply', label: 'Reply', icon: 'reply', run: onReply },
         canReact && { key: 'react', label: 'Add reaction', icon: 'react', run: (from) => onReactPick(from) },
@@ -1091,7 +1088,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         </span>
     );
     // In Compact, each message is a line of its time, its author's name and
-    // its text (M17.2): the name floats at the text's start, so the text
+    // its text: the name floats at the text's start, so the text
     // wraps under it, and the rest goes below, from the name's start.
     const lead = line ? (
         <span class="float-left mr-2 flex items-baseline gap-1">
@@ -1139,7 +1136,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         </>
     );
     // Its pictures, and that of the message it replies to, play under the
-    // pointer (M15.1).
+    // pointer.
     return (
         <HoverRow
             data-id={m.id}
@@ -1227,7 +1224,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
 
 // ReactingPicker opens the picker to react to a message, and hands what's
 // picked on with the message's chips, which say whether it has room for
-// another emoji (M15.3).
+// another emoji.
 function ReactingPicker({ m, me, anchor, sheet, onPick, onClose }) {
     const { chips } = useChips(m, me.id);
     return <ReactionPicker anchor={anchor} sheet={sheet} onPick={(item) => onPick(item, chips)} onClose={onClose} />;
@@ -1247,7 +1244,7 @@ function MessageHeading({ m, author, editorNames }) {
     );
 }
 
-// Disappears marks a message that disappears (M16.4), and says when.
+// Disappears marks a message that disappears, and says when.
 function Disappears({ at }) {
     const when = `Disappears ${new Date(at).toLocaleString()}`;
     return (
@@ -1258,9 +1255,9 @@ function Disappears({ at }) {
 }
 
 // MessageMenu is a message's hover bar, which shows on hover or focus, for
-// a mouse and the keyboard: react, Reply, Edit on the member's own (M22.4),
-// then ⋯, the menu of what the member may do with the message (M11), which
-// a touch screen's long press opens without it (M13.2), and a right click
+// a mouse and the keyboard: react, Reply, Edit on the member's own,
+// then ⋯, the menu of what the member may do with the message, which
+// a touch screen's long press opens without it, and a right click
 // at the pointer, at. Under the ⋯, the menu opens toward whichever side of
 // the list has room for it. Arrow keys move through it, and Escape, Tab or
 // a press elsewhere closes it. On the phone layout, narrow, the ⋯ opens the
@@ -1341,7 +1338,7 @@ function MessageMenu({ open, at, narrow, onOpen, actions, copied, onReact, onRep
 }
 
 // DeleteDialog asks before a message is deleted, which is for everyone and
-// for good, with its files (M11). Staff deleting another member's message
+// for good, with its files. Staff deleting another member's message
 // see whose it is. Closing it gives the focus back to the ⋯ that opened it.
 function DeleteDialog({ denID, m, author, me, onClose }) {
     const act = useAction();
@@ -1463,7 +1460,7 @@ function Spine() {
 
 function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
     const status = <span class="cursor-default select-none text-xs">{p.failed ? 'Not sent' : 'Sending…'}</span>;
-    // In Compact, a line as the sent ones are (M17.2).
+    // In Compact, a line as the sent ones are.
     const lead = line ? <span class="float-left mr-2 flex items-baseline gap-2"><Name member={me} class="font-semibold" />{status}</span> : null;
     const below = (
         <>
@@ -1514,9 +1511,8 @@ function PendingRow({ p, me, line, onToggle, onRetry, onDiscard }) {
 
 // EditBox edits a message against the revision it started from. If the
 // message changed meanwhile, it shows the newer text and keeps the draft.
-// Under it, one row: Save, Cancel and the keys (M22.4); who else may edit
-// it is its ⋯'s. With a finger, touch, ↵ starts a line, and Save saves
-// (M13.2).
+// Under it, one row: Save, Cancel and the keys; who else may edit
+// it is its ⋯'s. With a finger, touch, ↵ starts a line, and Save saves.
 function EditBox({ m, denID, channelID, touch, onDone }) {
     const [text, setText] = useState(m.text);
     const [base, setBase] = useState(m);
@@ -1584,7 +1580,7 @@ function EditBox({ m, denID, channelID, touch, onDone }) {
 }
 
 // EditorsDialog picks who else may edit the member's own message and tick
-// its boxes, from its ⋯ (M22.4): the message as it stands, its text
+// its boxes, from its ⋯: the message as it stands, its text
 // unchanged, against the revision it opened at.
 function EditorsDialog({ denID, channelID, m, candidates, onClose }) {
     const [editors, setEditors] = useState(m.editors || []);
@@ -1676,12 +1672,12 @@ export function boxHeight(text, room, least = BOX_LEAST) {
 }
 
 // Composer writes a message: its text, its files, a reply and who else may
-// edit it. A smiley in the box's corner opens the emoji picker (M15.2),
+// edit it. A smiley in the box's corner opens the emoji picker,
 // and typing a colon and two characters, or in a channel an @, where a
 // name or a mention may start, lists what completes it: mentionable are
 // the members a mention may name, none in a DM, and with everyone, staff's
-// @everyone first (M15.4). With polls, the + makes the message a poll,
-// whose question is its text (M15.4).
+// @everyone first. With polls, the + makes the message a poll,
+// whose question is its text.
 export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, shares = true, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
     // poll is the poll being written, which goes without files or other
@@ -1705,7 +1701,7 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
     const caret = useRef(null);
     const refocus = useRef(false);
     const [sharing, setSharing] = useState(false);
-    // The + menu, and the guide to writing a message (M3.3).
+    // The + menu, and the guide to writing a message.
     const [adding, setAdding] = useState(false);
     const [guide, setGuide] = useState(false);
     useEffect(() => {
@@ -1802,7 +1798,7 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
         setPoll(null);
         setProblem('');
         // The emoji it holds count toward the member's most used, once the
-        // list knows Unicode's (M15.2).
+        // list knows Unicode's.
         const sent = text;
         const counted = picked.current;
         picked.current = new Map();
@@ -2124,9 +2120,9 @@ function SendIcon() {
     );
 }
 
-// WritingGuide is what a member looks up while writing (M22.4): the
+// WritingGuide is what a member looks up while writing: the
 // markdown subset, each example rendered as the list shows it, and the
-// keys, or on a touch screen how sending goes (M13.2). The rest of writing
+// keys, or on a touch screen how sending goes. The rest of writing
 // a message is the guide's, linked at its foot.
 function WritingGuide({ touch, onClose }) {
     useEffect(() => {
@@ -2217,7 +2213,7 @@ function MetadataRemoved({ id }) {
 }
 
 // spoilable is a file waiting to go that may go as a spoiler: a photo or a
-// video (M17.2).
+// video.
 export function spoilable(f) {
     const type = f.result?.type || f.file?.type || '';
     return type.startsWith('image/') || type.startsWith('video/');
@@ -2228,12 +2224,12 @@ export function spoilable(f) {
 // out, and whether a photo browsers can't show was turned into one they
 // can, which then shows the preview the upload has. A photo or video with
 // two versions says which one it goes as, and its size opens the
-// comparison (M5). While a video's copy is made, by the local service or
+// comparison. While a video's copy is made, by the local service or
 // this browser, it says how far that is, as the upload's socket tells it
 // (following), and offers to send the video full size instead when the den
-// takes it (M5.4, M5.5). A photo or video has Spoiler, where the message
+// takes it. A photo or video has Spoiler, where the message
 // may carry one, canSpoil, which blurs its preview here as it'll show
-// covered (M17.2).
+// covered.
 function FileChip({ denID, f, limits, canSpoil, onSpoiler, onRemove, onCompare }) {
     const done = !!f.result;
     const name = f.result?.name || f.name;

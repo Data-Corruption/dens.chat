@@ -148,8 +148,7 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		file.Width, file.Height, file.Duration = p.stripped.Width, p.stripped.Height, p.stripped.DurationMS
 		switch {
 		case p.poster != nil:
-			// A video's copy takes the preview made from its full size
-			// (M5.4).
+			// A video's copy takes the preview made from its full size.
 			thumb = p.poster
 		case p.stripped.Decodes:
 			th, err := media.Poster(ctx, c.m.Media, p.out)

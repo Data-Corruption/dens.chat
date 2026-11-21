@@ -71,7 +71,7 @@ pair)
     api POST /api/password '{"password":"local password"}' >/dev/null
     ;;
 hosting-on)
-    # Turn hosting on from the page, as the owner does (M9.1).
+    # Turn hosting on from the page, as the owner does.
     api POST /api/hosting '{"on":true,"password":"local password"}' | json 'd["serving"]' | grep -qx True ||
         fail "hosting didn't turn on"
     ;;
@@ -146,18 +146,18 @@ owner-invite)
     ;;
 hosting-on-cli)
     # hosting-on-cli: turn hosting on from the command line, as on a server
-    # with no browser (M10); print what it said.
+    # with no browser; print what it said.
     printf 'local password\n' | runuser -u alice -- dens den hosting on --password-stdin --yes --instance "$INSTANCE" >/root/hosting.out 2>&1 ||
         fail "dens den hosting on failed: $(cat /root/hosting.out)"
     cat /root/hosting.out
     ;;
 hosting-off-cli)
-    # hosting-off-cli: turn hosting off from the command line (M10).
+    # hosting-off-cli: turn hosting off from the command line.
     runuser -u alice -- dens den hosting off --yes --instance "$INSTANCE" | grep -qx "Hosting is off." || fail "hosting didn't turn off"
     ;;
 export)
     # export FILE: export the den from the command line to FILE, as its
-    # desktop user (M10).
+    # desktop user.
     rm -f /home/alice/den.backup
     printf 'local password\n' | runuser -u alice -- dens den export --password-stdin -o /home/alice/den.backup --instance "$INSTANCE" \
         >/root/export.out 2>&1 || fail "dens den export failed: $(cat /root/export.out)"
@@ -181,7 +181,7 @@ restore)
 restore-refused)
     # restore-refused FILE: print why restoring FILE was refused, as root,
     # and fail if the refusal left a file beside the instance's database
-    # that its service account doesn't own (M10).
+    # that its service account doesn't own.
     if printf 'local password\n' | dens restore "$1" --password-stdin --yes --instance "$INSTANCE" >/root/restore.out 2>&1; then
         fail "the restore went ahead: $(cat /root/restore.out)"
     fi
@@ -191,7 +191,7 @@ restore-refused)
     ;;
 remove-den)
     # remove-den: remove this computer's copy of the den, which another
-    # serves now (M10); print what it said. The service's resolver keeps the
+    # serves now; print what it said. The service's resolver keeps the
     # hosts file it read for 5 seconds, as Go's does, so the den's new
     # address can take that long to reach it.
     for _ in $(seq 1 30); do
@@ -423,7 +423,7 @@ voice-probe)
 relay-probe)
     # relay-probe DEN_ID CHANNEL_ID: join the call in a voice channel, as
     # voice-probe does, and pass once push to talk, held on another of the
-    # member's installs, reaches the page as a relayed press (M20.1); then
+    # member's installs, reaches the page as a relayed press; then
     # create /tmp/relay-ready, which the stand-in helper waits for.
     cookie=$(awk '$6 ~ /^dens_session_/ { print $6 "=" $7 }' "$JAR")
     [ -n "$cookie" ] || fail "no browser session to call with"
@@ -434,7 +434,7 @@ relay-probe)
         fail "push to talk held on another of the member's installs never reached the call"
     ;;
 relay-keys)
-    # relay-keys: turn Keybind relay on (M20.1).
+    # relay-keys: turn Keybind relay on.
     api POST /api/settings '{"relayKeys":true}' >/dev/null
     ;;
 helper-probe)
@@ -458,7 +458,7 @@ wait-ready)
 call-length)
     # call-length DEN_ID CHANNEL_ID: print how long the call in a voice
     # channel has gone on, in whole seconds by this machine's clock, from
-    # the start this install's view gives it (M21.2), or -1 for none.
+    # the start this install's view gives it, or -1 for none.
     api GET "/api/dens/$1/state" | python3 -c '
 import json, sys, time
 d = json.load(sys.stdin)
@@ -467,7 +467,7 @@ print(int(time.time() * 1000 - c["started_at"]) // 1000 if c else -1)' "$2"
     ;;
 call-record)
     # call-record DEN_ID CHANNEL_ID: print a voice channel's longest call,
-    # in milliseconds, as staff read it (M21.2).
+    # in milliseconds, as staff read it.
     api GET "/api/dens/$1/channels/$2/record" | json 'd["record_ms"]'
     ;;
 voice-mute)
@@ -481,12 +481,12 @@ disconnect)
     ;;
 channel-bitrate)
     # channel-bitrate DEN_ID CHANNEL_ID BITS: set a voice channel's bitrate,
-    # as staff (M4.2).
+    # as staff.
     api PATCH "/api/dens/$1/channels/$2" "{\"bitrate\":$3}" >/dev/null
     ;;
 retention)
     # retention DEN_ID DAYS: keep messages DAYS days, or 0 for ever, as the
-    # owner (M5).
+    # owner.
     api POST "/api/dens/$1/settings" "{\"retention\":$2}" >/dev/null
     ;;
 retention-preview)
@@ -505,8 +505,7 @@ wait-retention)
     ;;
 wait-limit)
     # wait-limit DEN_ID BYTES: wait until this client hears that the den
-    # takes files of at most BYTES, which a video's copy is fitted to
-    # (M5.4).
+    # takes files of at most BYTES, which a video's copy is fitted to.
     for _ in $(seq 1 40); do
         [ "$(api GET "/api/dens/$1/state" | json 'd["limits"]["file_size"]')" = "$2" ] && exit 0
         sleep 0.25
@@ -561,12 +560,12 @@ dm)
     ;;
 notes)
     # notes DEN_ID: open this member's notes, which the den makes the first
-    # time (M17.3); print their ID.
+    # time; print their ID.
     api POST "/api/dens/$1/notes" | json 'd["id"]'
     ;;
 event)
     # event DEN_ID NAME CHANNEL_ID SECONDS: make an event in a voice
-    # channel, starting in SECONDS and lasting an hour (M17.4); print its ID.
+    # channel, starting in SECONDS and lasting an hour; print its ID.
     now=$(date +%s%3N)
     api POST "/api/dens/$1/events" \
         "{\"name\":\"$2\",\"channel_id\":\"$3\",\"starts_at\":$((now + $4 * 1000)),\"ends_at\":$((now + $4 * 1000 + 3600000))}" | json 'd["id"]'
@@ -600,7 +599,7 @@ log-level)
 started)
     # started EVENT_ID [TRIES]: wait, half a second at a time, until this
     # install's logs, at info or below, say the event, which its member is
-    # interested in, started (M17.4).
+    # interested in, started.
     for _ in $(seq 1 "${2:-60}"); do
         api GET /api/logs | grep -q "event $1, which the member is interested in, started" && exit 0
         sleep 0.5
@@ -609,7 +608,7 @@ started)
     ;;
 wait-identity)
     # wait-identity DEN_ID MEMBER_ID: wait until this member's Dens has
-    # published their identity and kept the other member's (M16.1).
+    # published their identity and kept the other member's.
     for _ in $(seq 1 80); do
         [ "$(api GET "/api/dens/$1/state" | json "'$2' in (d.get('identities') or {}) and d['me'].get('identity', '') != ''")" = True ] && exit 0
         sleep 0.25
@@ -618,7 +617,7 @@ wait-identity)
     ;;
 own-code)
     # own-code DEN_ID MEMBER_ID: print this member's own code, as comparing
-    # codes with a member shows it (M16.1).
+    # codes with a member shows it.
     api GET "/api/dens/$1/members/$2/code" | json 'd["mine"]'
     ;;
 compare)
@@ -691,7 +690,7 @@ upload-media)
     ;;
 upload-versions)
     # upload-versions DEN_ID FILE NAME SEND [CHANNEL_ID]: upload a photo or
-    # video for a message as the page does, sending it smaller or full (M5);
+    # video for a message as the page does, sending it smaller or full;
     # print its ID, the version it went as and its size, and the full
     # size's size and whether it fits, or "none" for a file without
     # versions.
@@ -704,7 +703,7 @@ upload-versions)
     ;;
 switch)
     # switch DEN_ID UPLOAD_ID TO: switch a photo waiting to be sent to its
-    # other version, smaller or full (M5); print the upload that takes its
+    # other version, smaller or full; print the upload that takes its
     # place, the version it is and its size.
     api POST "/api/dens/$1/uploads/$2/switch" "{\"to\":\"$3\"}" |
         json '" ".join([d["id"], d["versions"]["sent"], "%dx%d" % (d["width"], d["height"])])'
@@ -724,7 +723,7 @@ PY
     ;;
 mp4)
     # mp4 FILE: print the codec of an MP4's video, as its sample entry names
-    # it, av01 for a video's smaller copy, and its size in bytes (M5.4).
+    # it, av01 for a video's smaller copy, and its size in bytes.
     python3 - "$1" <<'PY'
 import os, sys
 d = open(sys.argv[1], "rb").read()
@@ -751,13 +750,13 @@ limits)
     ;;
 largest)
     # largest DEN_ID: print this member's largest file, from their list of
-    # files, and the message it's on (M5).
+    # files, and the message it's on.
     api GET "/api/dens/$1/files" | json 'd["files"][0]["id"] + " " + d["files"][0].get("message_id", "")'
     ;;
 swap)
     # swap DEN_ID CHANNEL_ID MESSAGE_ID FILE_ID PATH NAME: upload a file made
     # to replace one of this member's, and put it in that file's place;
-    # print the new file's ID (M5).
+    # print the new file's ID.
     id=$(curl -sS --fail-with-body -b "$JAR" -c "$JAR" -X POST -H "Origin: $BASE" \
         -H "Content-Type: application/octet-stream" -H "Dens-Filename: $6" \
         --data-binary "@$5" "$BASE/api/dens/$1/uploads?replaces=$4" | json 'd["id"]')
@@ -766,7 +765,7 @@ swap)
     ;;
 remove-file)
     # remove-file DEN_ID CHANNEL_ID MESSAGE_ID FILE_ID: take one of this
-    # member's files off its message (M5).
+    # member's files off its message.
     api POST "/api/dens/$1/messages/$3/files/$4/remove?channel=$2" "{}" >/dev/null
     ;;
 attachments)
@@ -797,8 +796,7 @@ delete)
     api DELETE "/api/dens/$1/messages/$2" >/dev/null
     ;;
 cache)
-    # cache: print how many bytes of other dens' files this client keeps
-    # (M6).
+    # cache: print how many bytes of other dens' files this client keeps.
     api GET /api/settings | json 'd["cacheUsed"]'
     ;;
 send-file)

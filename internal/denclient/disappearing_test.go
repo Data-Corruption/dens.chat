@@ -33,7 +33,7 @@ func deletedOn(t *testing.T, stream <-chan denclient.PageEvent, id string) {
 	}
 }
 
-// A DM's member sets its messages to disappear (M16.4), which reaches the
+// A DM's member sets its messages to disappear, which reaches the
 // other's view with who set it, and a message sent then goes once its time
 // passes: from the den, and from the other member's cache, page and
 // notifications, whether their Dens can reach the den or not.

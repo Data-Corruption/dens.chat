@@ -35,7 +35,7 @@ type KeyReader interface {
 	Modifiers() (ctrl, alt, shift, meta bool)
 }
 
-// DesktopKeys is a session with a desktop that owns the keys (M7.2):
+// DesktopKeys is a session with a desktop that owns the keys:
 // host.DesktopKeys, the portal under Wayland, or a test's. A session binds
 // once.
 type DesktopKeys interface {
@@ -49,7 +49,7 @@ type DesktopKeys interface {
 	Close() error
 }
 
-// Notifier shows notifications as the desktop's own (M12.3): host.Notifier,
+// Notifier shows notifications as the desktop's own: host.Notifier,
 // through the freedesktop notification service or Windows' toasts, or the
 // Flatpak's portal, or a test's. Each shows under an ID of the helper's,
 // which a newer one replaces, and Clicks delivers the ID of each the member
@@ -69,7 +69,7 @@ type Helper struct {
 	Version string
 	// Instances lists the instances to try, and Open opens the stream to
 	// each one's hub: over its control endpoint, or a pipe inside the
-	// Flatpak's service (M9.3).
+	// Flatpak's service.
 	Instances func() ([]string, error)
 	Open      func(instance string) (*control.Stream, error)
 	// Keys reads the keys; where the system offers no way to, it's nil and
@@ -88,7 +88,7 @@ type Helper struct {
 	// version than this helper; Run returns what it returns.
 	Restart func() error
 	Logf    func(format string, args ...any)
-	// Notifier shows the instances' notifications (M12.3), nil where the
+	// Notifier shows the instances' notifications, nil where the
 	// desktop has nothing to show them with. Or OpenNotifier opens it
 	// beside the run, since a notification service that hangs, as D-Bus
 	// lets one for two minutes, would otherwise hold back the keys and the
@@ -99,7 +99,7 @@ type Helper struct {
 	Notifier     Notifier
 	OpenNotifier func() (Notifier, error)
 	OpenPage     func(instance string, n notify.Notification) error
-	// OpenSound opens an instance's sound request (M20.2), over its
+	// OpenSound opens an instance's sound request, over its
 	// control endpoint or a pipe inside the Flatpak's service, and Capture
 	// reads the computer's sound for it: host.CaptureSound, or a test's.
 	// Without either the helper reads none.
@@ -142,7 +142,7 @@ type Helper struct {
 // UseSystem has the helper read the keys as the system lets it: through
 // the desktop's global shortcuts portal where there's one, as under Wayland
 // and from the Flatpak's sandbox, where the portal knows Dens by its app ID
-// whatever the session (M9.3), and otherwise from the X11 session's
+// whatever the session, and otherwise from the X11 session's
 // keyboard. Where neither works, Problem says why. It returns what closes
 // the reader.
 func (h *Helper) UseSystem(sandboxed bool) (close func()) {
@@ -174,7 +174,7 @@ func (h *Helper) UseSystem(sandboxed bool) (close func()) {
 
 // remote is one instance's stream and what it asks the helper to watch,
 // with its page's origin, and what stops its sound while the helper reads
-// it (M20.2).
+// it.
 type remote struct {
 	name   string
 	page   string

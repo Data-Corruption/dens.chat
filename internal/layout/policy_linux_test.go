@@ -65,7 +65,7 @@ func setFlatpakHome(t *testing.T) string {
 
 // The Flatpak keeps its data in the app's data directory, its cache where
 // backup tools skip it, and its socket where every sandbox of the app
-// finds it (M9.3).
+// finds it.
 func TestFlatpakLayoutUsesTheAppsDirectories(t *testing.T) {
 	app := setFlatpakHome(t)
 	l, err := New("dens", "main", Flatpak)
@@ -110,8 +110,7 @@ func TestFlatpakLayoutUsesTheAppsDirectories(t *testing.T) {
 }
 
 // The Android app keeps everything in the files directory its shell names,
-// the cache and the control socket too, beside the key its shell wraps
-// (M12).
+// the cache and the control socket too, beside the key its shell wraps.
 func TestAndroidLayoutUsesTheAppsFiles(t *testing.T) {
 	files := filepath.Join(t.TempDir(), "data", "user", "0", "chat.dens.Dens", "files")
 	t.Setenv("XDG_DATA_HOME", files)

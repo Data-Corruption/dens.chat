@@ -55,7 +55,7 @@ test('mentions are highlighted exactly where the den counts them', () => {
     }
 });
 
-// A link to a message is a chip (M11), as is one to an event (M17.5), a
+// A link to a message is a chip, as is one to an event, a
 // link all the same.
 const linksIn = (tree) => nodes(tree).filter((n) => n.type === 'a' || n.type === MessageLink || n.type === EventLink).map((n) => n.props.href || n.props.url);
 
@@ -119,7 +119,7 @@ test("a mention of the reader looks different from anyone else's", () => {
     assert.notEqual(mine.props.class, theirs.props.class);
 });
 
-test("staff's @everyone mentions every reader, and anyone else's only a member of that name (M15.4)", () => {
+test("staff's @everyone mentions every reader, and anyone else's only a member of that name", () => {
     const [mine] = mentioned(render('@alice', { username: 'alice' }));
     const [marked] = mentioned(parse('@everyone, lunch', { username: 'alice', everyone: true }));
     const [unmarked] = mentioned(parse('@everyone, lunch', { username: 'alice' }));
@@ -154,7 +154,7 @@ test('links are bare http(s) addresses that show where they go and open safely',
     }
 });
 
-// The links' rule (M14.1): a link is set apart by its color, and underlined
+// The links' rule: a link is set apart by its color, and underlined
 // only under a pointer that hovers, or with the keyboard's focus. One rule
 // in input.css gives every element with DaisyUI's link that underline, so
 // each has a color of its own too, without which it would read as text:

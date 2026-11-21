@@ -1,4 +1,4 @@
-// What the page says of what differs in the Flatpak (M9.3): the update
+// What the page says of what differs in the Flatpak: the update
 // notice, which follows Flatpak's update monitor there, and where the key
 // it remembers is kept.
 
@@ -7,7 +7,7 @@ import { api } from './api.js';
 // updateNotice is the page's notice of an update, or null: the release host's
 // for an installed Dens, with the command that installs it; the Android
 // app's, once its update is downloaded and checked, which Android's
-// installer installs once the member confirms (M12.4); or Flatpak's, with
+// installer installs once the member confirms; or Flatpak's, with
 // what the member can do about it: restart into an update something
 // installed, update from Dens where Flatpak lets it, or update in the
 // software center.

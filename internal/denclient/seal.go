@@ -10,14 +10,14 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// The DM seal (M1.7): 32 random bytes that seal this member's copies of
+// The DM seal: 32 random bytes that seal this member's copies of
 // their DM keys on a den. It never leaves their devices, except sealed for
 // a new one of theirs. An install keeps one it starts new dens with; each
 // den keeps its own, which is the same one unless this device got it from
 // another of the member's, or the member started over there.
 
 // setSeal gives this device a den's seal, keeps it, and publishes the
-// identity it makes (M16.1).
+// identity it makes.
 func (c *conn) setSeal(ctx context.Context, seal []byte) error {
 	secret, err := vault.NewSecret(seal)
 	if err != nil {
@@ -39,12 +39,12 @@ func (c *conn) setSeal(ctx context.Context, seal []byte) error {
 	old := c.j.seal
 	c.j.seal = secret
 	// The identity comes from the seal, and the keys opened here were kept
-	// sealed with the old one (M16.1).
+	// sealed with the old one.
 	c.ownHash = nil
 	clear(c.copies)
 	clear(c.verdicts)
 	// The identity before signed the changes to groups this member made
-	// before (M16.3).
+	// before.
 	now := c.ownHashLocked()
 	replaced := before != nil && !bytes.Equal(before, now)
 	if replaced {

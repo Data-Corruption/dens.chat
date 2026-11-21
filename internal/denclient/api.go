@@ -190,7 +190,7 @@ var ErrMoveRefused = errors.New("the den gives a new address on this computer, o
 var errFollowLater = errors.New("a new address for the den was checked within the minute")
 
 // checkMove refuses a den's move from where its member reached it to an
-// address they shouldn't be sent to (M8): from https to plain http, or from
+// address they shouldn't be sent to: from https to plain http, or from
 // elsewhere to this computer, where a hostile den could have its members'
 // clients ask their own services. A den on this computer, as in
 // development, may move anywhere but from https to http.
@@ -210,8 +210,8 @@ func onThisComputer(base string) bool {
 	return err == nil && denproto.IsLoopbackHost(u.Hostname())
 }
 
-// followGate lets a den's member check a new address for it once a minute
-// (M8). A den chooses the addresses its members' clients ask, so it could
+// followGate lets a den's member check a new address for it once a minute.
+// A den chooses the addresses its members' clients ask, so it could
 // otherwise turn them into a crowd asking someone else's server. A check
 // ends within requestTimeout, so they also go one at a time.
 type followGate struct {

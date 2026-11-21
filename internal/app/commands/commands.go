@@ -48,8 +48,8 @@ func All(bi build.BuildInfo) []*cli.Command {
 }
 
 // Root is what dens does with no command. In the Flatpak, which flatpak run
-// chat.dens.Dens runs so, it opens Dens, as the desktop file's launch does
-// (M9.3); elsewhere it says how to.
+// chat.dens.Dens runs so, it opens Dens, as the desktop file's launch does;
+// elsewhere it says how to.
 func Root(bi build.BuildInfo) cli.ActionFunc {
 	return func(ctx context.Context, cmd *cli.Command) error {
 		if app.FormOf(bi) == layout.Flatpak {

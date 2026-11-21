@@ -1,7 +1,7 @@
-// The settings' frame (M19.1), checked without a browser: the sections'
+// The settings' frame, checked without a browser: the sections'
 // list and names, openSettings reaching each, the dialog listing them
 // down its side with the one shown marked, and Appearance taking the
-// window (M22.8).
+// window.
 
 import './dom.js';
 import assert from 'node:assert/strict';
@@ -45,7 +45,7 @@ test("a device's row says how its link stands, or what it offers", () => {
 
 // relayPanel renders the Relay section as the service answers: the
 // settings, with what the install relays, and the member's other devices,
-// and whether the member refused the install its network (M20.3).
+// and whether the member refused the install its network.
 async function relayPanel(relay, devices, refused = false) {
     const saved = [];
     globalThis.fetch = async (path, init) => {

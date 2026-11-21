@@ -1,4 +1,4 @@
-// Group DMs (M16.3): what the page shows of a group, beside it and in it,
+// Group DMs: what the page shows of a group, beside it and in it,
 // and the dialogs that make one, add people to it and name it. The
 // group's members are what its changes make them, which the local service
 // checks: someone the den lists without a member's signed add shows
@@ -56,8 +56,8 @@ export function memberItems({ self, member, kept, removes, broken }) {
 // profile: its name, which any member changes, its members in the order
 // they joined, each a picture and a name, with their verified mark, and a
 // line under the name of the one who removes others; comparing codes and
-// removing are each row's ⋯ and right click (M22.4). Then Add people and
-// Leave, and its time, which any member sets (M16.4), where expiry gives
+// removing are each row's ⋯ and right click. Then Add people and
+// Leave, and its time, which any member sets, where expiry gives
 // the group.
 export function GroupPanel({ denID, view, channel, group, title, members, online, onCompare, onProfile, onAdd, onRename, expiry }) {
     const act = useAction();

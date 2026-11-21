@@ -1,4 +1,4 @@
-// The review's pictures (M22.1): every screen the phone check reaches and
+// The review's pictures: every screen the phone check reaches and
 // those reviewScreens and callReview add, in Chromium at a desktop's 1280
 // by 800 with a mouse and at a phone's 390 by 844 by touch, each on Dark
 // and on Light, with each screen's audit beside it. Bob's screens, a call

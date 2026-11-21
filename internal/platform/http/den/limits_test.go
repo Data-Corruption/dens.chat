@@ -11,7 +11,7 @@ import (
 )
 
 // TestMessageBudgetAcrossChannels checks that a member's messages spread
-// over many channels are held to one budget (M8), while each channel's own
+// over many channels are held to one budget, while each channel's own
 // limit still holds within it.
 func TestMessageBudgetAcrossChannels(t *testing.T) {
 	f := newFixture(t)
@@ -44,7 +44,7 @@ func TestMessageBudgetAcrossChannels(t *testing.T) {
 }
 
 // TestSlowBodyIsCutOff checks that a request's body has bodyDeadline to
-// arrive (M8), so a client that stops sending doesn't hold its handler.
+// arrive, so a client that stops sending doesn't hold its handler.
 func TestSlowBodyIsCutOff(t *testing.T) {
 	f := newFixture(t)
 	f.owner()

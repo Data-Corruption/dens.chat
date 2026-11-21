@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Writes the list of Unicode's emoji (M15.2) from its pinned inputs in
+# Writes the list of Unicode's emoji from its pinned inputs in
 # scripts/vendor.sh, Emoji's test file and CLDR's English annotations: the
 # page's, which its picker and completion read (internal/ui/assets/
 # emoji.json), and denproto's, which reactions are checked against

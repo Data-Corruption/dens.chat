@@ -1,4 +1,4 @@
-// make-sound.mjs FILE SECONDS writes a sound for a den's soundboard (M14.3)
+// make-sound.mjs FILE SECONDS writes a sound for a den's soundboard
 // as the page of staff adding one writes it, Opus in Ogg, here of Opus's
 // silence, 20 ms a packet: for the checks that walk the soundboard, or count
 // what reaches a call, rather than listen to it.

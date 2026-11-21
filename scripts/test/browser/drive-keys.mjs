@@ -1,4 +1,4 @@
-// The M7.1 check: Alice binds push to talk to V and toggle mute to Mouse 4
+// The keys check: Alice binds push to talk to V and toggle mute to Mouse 4
 // in the settings, without the side button taking the page back. A
 // stand-in helper on her instance's control socket says it reads both, and
 // the keys card marks them; in a call, its presses open her push-to-talk

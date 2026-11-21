@@ -63,7 +63,7 @@ type fileStore struct {
 
 	// holds counts the backups being written. While there are any, the
 	// files remove would take off the disk wait in held, so an archive has
-	// every file its database snapshot names (M8).
+	// every file its database snapshot names.
 	holdMu sync.Mutex
 	holds  int
 	held   [][]byte
@@ -226,7 +226,7 @@ func (s *fileStore) unlink(blobs [][]byte) {
 // HoldFiles keeps the den from taking files off the disk until release is
 // called, as a backup is written: from before its database snapshot is
 // taken until its archive holds the uploads, so every file the snapshot
-// names is still there (M8). Rows go as ever; only their files wait.
+// names is still there. Rows go as ever; only their files wait.
 func (d *Den) HoldFiles() (release func()) {
 	s := d.files
 	s.holdMu.Lock()
@@ -263,7 +263,7 @@ func tooLarge(l denproto.Limits) error {
 }
 
 // usage is how much space a member's files take, and everyone's. A named
-// file's file is the den's, not its uploader's (M14.3), so it counts
+// file's file is the den's, not its uploader's, so it counts
 // toward the den's space alone.
 func usage(ctx context.Context, q querier, member int64) (denproto.Storage, error) {
 	var st denproto.Storage
@@ -307,7 +307,7 @@ func sniffType(head []byte) string {
 //
 // An upload that replaces one of the member's files in use, by its ID,
 // counts against the space that file takes, so a member at their limit
-// can swap a file for a smaller one (M5). It takes only that file's place,
+// can swap a file for a smaller one. It takes only that file's place,
 // and a newer one made for the same file drops it.
 func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, body io.Reader, sealed bool, replaces string) (denproto.File, error) {
 	info, _ := d.Info()
@@ -490,7 +490,7 @@ func (d *Den) Upload(ctx context.Context, s *Session, name string, size int64, b
 // replacedSpace is the space the file an upload replaces takes, which the
 // upload counts against: one of the member's files, in use on a message or
 // their profile, sealed or not as the upload is. A named file's is the
-// den's, which no upload replaces (M14.3). Without one it's 0.
+// den's, which no upload replaces. Without one it's 0.
 func replacedSpace(ctx context.Context, q querier, member int64, replaced sql.NullInt64, sealed bool) (int64, error) {
 	if !replaced.Valid {
 		return 0, nil
@@ -505,7 +505,7 @@ func replacedSpace(ctx context.Context, q querier, member int64, replaced sql.Nu
 }
 
 // DropUpload deletes one of the member's uploads waiting to be used, which
-// frees its space at once rather than within the hour (M5).
+// frees its space at once rather than within the hour.
 func (d *Den) DropUpload(ctx context.Context, s *Session, id string) error {
 	fid, err := denproto.ParseID(id)
 	if err != nil {
@@ -565,9 +565,9 @@ func (d *Den) preview(ctx context.Context, orig *part, blob []byte, kind media.K
 
 // OpenFile opens a file, or its preview, for a member who may see it:
 // anyone who can see the message it's on, anyone in the den for a picture
-// on a profile or an emoji (M15.2), which every page draws, staff alone for
-// a sound (M14.3), since only the den plays one, anyone who sees its event
-// for an event's banner (M17.4), and only its uploader while it waits to
+// on a profile or an emoji, which every page draws, staff alone for
+// a sound, since only the den plays one, anyone who sees its event
+// for an event's banner, and only its uploader while it waits to
 // be used.
 func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (StoredFile, error) {
 	none := StoredFile{}
@@ -581,7 +581,7 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	var profile bool
 	var named sql.NullString
 	// An event's banner: whether the file is one, and whether its event is
-	// staff's alone. A badge's picture, whether its event is (M17.5).
+	// staff's alone. A badge's picture, whether its event is.
 	var event, staffEvent, staffBadge bool
 	err = d.db.QueryRowContext(ctx, `SELECT f.blob, f.size, f.thumb_size, f.uploader_id, m.channel_id,
 		EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id OR banner_id = f.id),
@@ -774,8 +774,8 @@ func deleteFiles(ctx context.Context, q querier, where string, args ...any) ([][
 	return blobs, rows.Err()
 }
 
-// bannerShape checks a banner's shape and size, a profile's or an event's
-// (M17.4): three times as wide as high, give or take the rounding of a
+// bannerShape checks a banner's shape and size, a profile's or an event's:
+// three times as wide as high, give or take the rounding of a
 // crop, within the sides and size a still or an animated one takes.
 func bannerShape(width, height, size int64, animated bool) error {
 	shaped := width >= denproto.MinBannerWide && width*100 >= height*290 && width*100 <= height*310
@@ -793,11 +793,11 @@ func bannerShape(width, height, size int64, animated bool) error {
 const unused = `message_id IS NULL AND NOT EXISTS (SELECT 1 FROM den_members WHERE avatar_id = den_files.id OR banner_id = den_files.id)
 	AND NOT ` + named + ` AND NOT ` + eventBanner
 
-// eventBanner selects files an event's banner uses (M17.4).
+// eventBanner selects files an event's banner uses.
 const eventBanner = `EXISTS (SELECT 1 FROM den_events WHERE banner_id = den_files.id)`
 
-// named selects files one of the den's names uses, as a sound (M14.3) or
-// an emoji (M15.2).
+// named selects files one of the den's names uses, as a sound or
+// an emoji.
 const named = `EXISTS (SELECT 1 FROM den_named_files WHERE file_id = den_files.id)`
 
 // scheduleSweep makes sure pending uploads are swept by at.
@@ -849,7 +849,7 @@ func (d *Den) sweepUploads() {
 // tidyFiles clears what an interrupted delete left behind: stored files no
 // row names, which nothing can reach. The service empties the temporary
 // directory before the den opens, so no upload's part survives a crash
-// either (M8). Then it sweeps expired uploads.
+// either. Then it sweeps expired uploads.
 func (d *Den) tidyFiles(ctx context.Context) error {
 	known := map[string]bool{}
 	rows, err := d.db.QueryContext(ctx, `SELECT blob FROM den_files`)
@@ -891,7 +891,7 @@ func (d *Den) tidyFiles(ctx context.Context) error {
 }
 
 // checkPicture checks an upload a member puts on their profile: their own,
-// waiting to be used, a still image or an animated GIF (M15.1), and the
+// waiting to be used, a still image or an animated GIF, and the
 // shape and size the kind of picture takes. One made to replace a file
 // must replace the picture it takes the place of. It returns the upload's
 // ID.

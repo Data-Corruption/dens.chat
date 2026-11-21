@@ -1,4 +1,4 @@
-// The page's sounds (M14.2): seven of Kenney's Interface Sounds, which are
+// The page's sounds: seven of Kenney's Interface Sounds, which are
 // CC0, among the page's assets: a message, a member joining and leaving the
 // call, a share starting and ending, and the member's microphone opening
 // and closing. The member turns each off, sets its volume, or replaces it
@@ -9,7 +9,7 @@
 // A sound plays as the call's voices play: through the call's context
 // where the page plays its call through one, as in the Android app, which
 // Android then routes as the call's, to the earpiece, the loudspeaker or
-// Bluetooth (M12.2); and otherwise from an element on the speaker the
+// Bluetooth; and otherwise from an element on the speaker the
 // member chose. A browser plays a page's sound only once the member has
 // clicked in it, so a tab untouched since it opened plays none, as it
 // plays no call.

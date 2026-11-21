@@ -54,7 +54,7 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountEmoji(r)
 	rt.mountEvents(r)
 	// A development build's browser checks deny a page a member's keys for
-	// calls, to show it then hears nothing of them (M16.2); no other form
+	// calls, to show it then hears nothing of them; no other form
 	// offers it.
 	if rt.a.Layout.Form == layout.Development {
 		r.Post("/api/dens/{den}/members/{member}/withhold", rt.handleWithhold)
@@ -62,7 +62,7 @@ func (rt *router) mountDens(r chi.Router) {
 }
 
 // handleWithhold keeps a member's keys for calls from this install's
-// pages, or with on false gives them again (M16.2): development builds
+// pages, or with on false gives them again: development builds
 // alone.
 func (rt *router) handleWithhold(w http.ResponseWriter, r *http.Request) {
 	var req struct {
@@ -78,20 +78,20 @@ func (rt *router) handleWithhold(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// hosting describes the den this install holds: whether hosting is on
-// (M9.1), whether the den serves, and why not when it's on and doesn't,
+// hosting describes the den this install holds: whether hosting is on,
+// whether the den serves, and why not when it's on and doesn't,
 // how far its setup went, and when it was exported, if it hasn't been
-// hosted here since (M10).
+// hosted here since.
 type hosting struct {
 	// CanHost is false where the form hosts no den, which Add a den then
-	// doesn't offer (M13.3).
+	// doesn't offer.
 	CanHost bool   `json:"can_host"`
 	Enabled bool   `json:"enabled"`
 	Serving bool   `json:"serving"`
 	Problem string `json:"problem,omitempty"`
 	Created bool   `json:"created"`
 	// Owned is whether the den has an owner, which setting it up gives it,
-	// or a den moved here has already (M10).
+	// or a den moved here has already.
 	Owned bool   `json:"owned"`
 	Name  string `json:"name,omitempty"`
 	URL   string `json:"url,omitempty"`
@@ -154,7 +154,7 @@ func (rt *router) handleDens(w http.ResponseWriter, r *http.Request) {
 // handleEvents streams the dens view to the page whenever it changes, with
 // the dens' events, the voice keys and the page's call, and takes the
 // page's own messages, until the stream closes. Why it closed goes to the
-// log at info, with how long it was open (M11).
+// log at info, with how long it was open.
 func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// Accept checks the Origin against the Host, which the Host guard has
 	// already pinned to this listener, so other sites can't open it.
@@ -170,7 +170,7 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// The service stopping closes every page's stream too, but cancels the
 	// requests' context first, and leaves the call alone: the den holds it
 	// once the service's connection drops, for the page to take back when
-	// the service is back (M3).
+	// the service is back.
 	calls := make(chan denclient.CallEvent, 16)
 	deliver := func(e denclient.CallEvent) {
 		select {
@@ -198,7 +198,7 @@ func (rt *router) handleEvents(w http.ResponseWriter, r *http.Request) {
 	// while its stream is down and sends once it's back.
 	notes := rate.NewLimiter(2, 64)
 	// How long the stream was open goes by the wall clock, without the
-	// monotonic reading, which stops while a phone sleeps (M14.1).
+	// monotonic reading, which stops while a phone sleeps.
 	opened := time.Now().Round(0)
 	rt.a.Log.Debugf("Page %s's stream opened", page)
 	why := pageServer{
@@ -238,10 +238,10 @@ const closeHeard = 200 * time.Millisecond
 
 // pageServer is what a page's stream carries: the dens view, sent at first
 // and whenever changes says it changed; the events of the call the page
-// holds; the dens' events; the voice keys' status and the helper's presses
-// (M7); the notifications' status, those the page shows through the
-// browser (M12.3), and the messages whose sound it plays alone (M14.2);
-// and Relay's status, the device this computer's sound goes to (M20.2).
+// holds; the dens' events; the voice keys' status and the helper's presses;
+// the notifications' status, those the page shows through the
+// browser, and the messages whose sound it plays alone;
+// and Relay's status, the device this computer's sound goes to.
 // handle takes each of the page's own messages.
 type pageServer struct {
 	view    func(context.Context) (densView, error)
@@ -339,7 +339,7 @@ func (p pageServer) serve(ctx context.Context, c *websocket.Conn) string {
 				return behind()
 			}
 			// The voice keys' status, and the helper's presses during a
-			// call, which only the page holding it acts on (M7).
+			// call, which only the page holding it acts on.
 			if e.Press != nil {
 				why = write("key", e.Press)
 			} else {
@@ -414,10 +414,10 @@ func (p pageServer) read(ctx context.Context, cancel context.CancelFunc, c *webs
 // pageMessage is what the page sends on its event stream: the channel it
 // shows in a den ("focus", with an empty channel for none), typing, and
 // its call: joining or resuming it, answering the den's offers, asking for
-// an ICE restart, muting, sharing its screen and watching others' (M4.2),
-// holding push to talk and its notes for the log (M11), playing one of the
-// den's sounds (M14.3), asking for its keys again (M16.2), and leaving;
-// and from M12.3 "page", whether it's on screen and whether the browser
+// an ICE restart, muting, sharing its screen and watching others',
+// holding push to talk and its notes for the log, playing one of the
+// den's sounds, asking for its keys again, and leaving;
+// "page", whether it's on screen and whether the browser
 // lets it notify; and "relay.key", a press of the call's button on a page
 // that holds no call, for the call another of the member's devices holds.
 type pageMessage struct {
@@ -453,7 +453,7 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 	case "page":
 		rt.a.Notify.SetPage(page, msg.D.Visible, msg.D.Allowed)
 	case "bars":
-		// The page's background, for the Android app's bars (M13.3); a
+		// The page's background, for the Android app's bars; a
 		// color that isn't one goes nowhere.
 		_ = rt.a.SetBars(msg.D.Color)
 	case "typing":

@@ -102,7 +102,7 @@ func (v *voiceSocket) watch(member string, on bool) {
 	v.send(denproto.EventVoiceWatch, denproto.VoiceWatch{MemberID: member, On: on})
 }
 
-// TestScreenShare checks who may share and watch (M4.2): a member of the
+// TestScreenShare checks who may share and watch: a member of the
 // call shares, with sound, and another watches and receives it; the den's
 // limits refuse a second share and a viewer past the cap, and nobody
 // watches a member who isn't sharing, or themselves. Stopping, and
@@ -205,7 +205,7 @@ func TestStaffMuteEndsAShare(t *testing.T) {
 	bob.wait(refused(lounge.ID, denproto.RefusedShare, denproto.RefusedStaffMuted))
 }
 
-// TestChannelBitrate checks a voice channel's bitrate (M4.2): a new one's,
+// TestChannelBitrate checks a voice channel's bitrate: a new one's,
 // one set at creation, the values staff may set, and a change reaching
 // the call in progress in its next offer.
 func TestChannelBitrate(t *testing.T) {

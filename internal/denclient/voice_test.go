@@ -52,7 +52,7 @@ type page struct {
 	// sends that offer again after a resume, as the page does.
 	version int
 	answer  string
-	// keys are the call's keys as the page last got them (M16.2).
+	// keys are the call's keys as the page last got them.
 	keysMu sync.Mutex
 	keys   *denclient.CallKeys
 }
@@ -223,8 +223,8 @@ func TestCallThroughTheClient(t *testing.T) {
 		return lounge != ""
 	})
 	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
-	// The shortcut helper reads keys only while the install holds a call
-	// (M7), which OnCall says as it changes.
+	// The shortcut helper reads keys only while the install holds a call,
+	// which OnCall says as it changes.
 	var hookMu sync.Mutex
 	var holds []bool
 	member.OnCall = func(active bool) {
@@ -291,7 +291,7 @@ func TestCallThroughTheClient(t *testing.T) {
 }
 
 // Two members' installs give one call's length alike, whatever their
-// clocks say (M21.2): each turns the den's elapsed_ms into a start on its
+// clocks say: each turns the den's elapsed_ms into a start on its
 // own clock, which the page counts from, and both get the channel's record
 // as the call began.
 func TestCallLengthOnEveryClock(t *testing.T) {
@@ -430,7 +430,7 @@ func TestCallRefusalsReachThePage(t *testing.T) {
 }
 
 // TestMovesThroughTheClient checks staff moving a member's call through
-// both installs (M17.2): the den's info says it can, so the page offers it,
+// both installs: the den's info says it can, so the page offers it,
 // staff's install asks, and the member's page hears the channel to join,
 // which it joins as it would any other; and a refusal comes back as the
 // den's.
@@ -480,8 +480,8 @@ func TestMovesThroughTheClient(t *testing.T) {
 	}
 }
 
-// TestShareThroughTheClient checks a share relayed by both installs
-// (M4.2): the den's limits and a voice channel's bitrate in the page's
+// TestShareThroughTheClient checks a share relayed by both installs:
+// the den's limits and a voice channel's bitrate in the page's
 // view, an offer with VP9 sections passing the client's check, the
 // marks reaching the views, the share reaching its viewer, and a refusal
 // reaching the page that asked.
@@ -561,7 +561,7 @@ func (p *page) waitTalking(want ...string) {
 
 // TestPushToTalkThroughTheClient checks that the push to talk a page holds
 // reaches the den through its install, and the den's word of it the other
-// page in the call (M11).
+// page in the call.
 func TestPushToTalkThroughTheClient(t *testing.T) {
 	h, owner, member, denID, _ := chatDen(t)
 	h.startCalls()
@@ -615,7 +615,7 @@ func (p *page) waitSounding(want string) {
 }
 
 // TestTheSoundboardThroughTheClient checks the soundboard through both
-// installs (M14.3): staff add a sound from an upload their page prepared,
+// installs: staff add a sound from an upload their page prepared,
 // rename it and delete it, which every page's view follows, with the den's
 // limits for it; a member plays it in a call, every page holding the call
 // hears whose sound plays and receives it, and a refusal reaches the page
@@ -699,7 +699,7 @@ func TestTheSoundboardThroughTheClient(t *testing.T) {
 }
 
 // TestCallKeysThroughTheClient checks a sealed call's keys between three
-// installs (M16.2): each member's Dens makes a key as they join, and a new
+// installs: each member's Dens makes a key as they join, and a new
 // one as anyone joins or leaves, sealed to the others' identities, which
 // the den passes on; each opens the others' and gives its page the call's
 // keys whole, without those of a member who left; a page asks for them

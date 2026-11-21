@@ -11,7 +11,7 @@ import (
 	"github.com/godbus/dbus/v5"
 )
 
-// The desktop's global shortcuts portal (M7.2), which owns the keys under
+// The desktop's global shortcuts portal, which owns the keys under
 // Wayland: the helper binds the voice actions through it, the desktop asks
 // the member to confirm or change them, and it reports each press and
 // release.
@@ -46,7 +46,7 @@ type DesktopKeys struct {
 // OpenDesktopKeys connects to the desktop's global shortcuts portal under
 // Wayland, as appID, and opens a session. It fails with
 // errors.ErrUnsupported where there's none: X11, or a desktop without it.
-// From a sandbox, as the Flatpak's (M9.3), it tries the portal under X11
+// From a sandbox, as the Flatpak's, it tries the portal under X11
 // too, which Plasma's has, since the portal knows a sandboxed app by its
 // Flatpak ID.
 func OpenDesktopKeys(appID string, sandboxed bool) (*DesktopKeys, error) {

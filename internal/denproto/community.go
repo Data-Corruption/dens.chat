@@ -6,7 +6,7 @@ import (
 	"unicode/utf8"
 )
 
-// Limits for M1.3.
+// Limits for profiles, and the channels a connection views.
 const (
 	MaxBioRunes = 300
 	MaxBioBytes = 4 * MaxBioRunes
@@ -27,7 +27,7 @@ const (
 const (
 	CloseReasonKeyRevoked      = "key revoked"
 	CloseReasonPasswordChanged = "password changed" // the key was revoked by a new den password
-	CloseReasonStartedOver     = "started over"     // the key was revoked by a new DM seal (M1.7)
+	CloseReasonStartedOver     = "started over"     // the key was revoked by a new DM seal
 	CloseReasonRemoved         = "removed"
 	CloseReasonBanned          = "banned"
 	CloseReasonLeft            = "left"

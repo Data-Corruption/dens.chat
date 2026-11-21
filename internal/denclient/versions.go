@@ -18,7 +18,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 )
 
-// Smaller copies (M5). A photo or video added to a message goes as a
+// Smaller copies. A photo or video added to a message goes as a
 // smaller copy unless its sender sends it full size. This service makes
 // both versions as it's added, with the media module, uploads the one to
 // send, and keeps both, each in a scratch file sealed with a key of its
@@ -136,7 +136,7 @@ type UploadOptions struct {
 	// Progress, if it's set, is the key the page follows the upload by
 	// (UploadProgress, FollowUpload), and may ask for a video full size by
 	// instead of waiting for its copy (SendFullSize). PageCopies says the
-	// page makes a video's copy itself when it can (M5.5).
+	// page makes a video's copy itself when it can.
 	Progress   string
 	PageCopies bool
 }

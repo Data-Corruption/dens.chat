@@ -1,4 +1,4 @@
-// Appearance (M22.8): a page of the settings that takes the window, in the
+// Appearance: a page of the settings that takes the window, in the
 // shape of DaisyUI's theme generator. At the left the themes: New theme
 // and Paste a code, the member's own, then the built-in ones. In the
 // middle the one chosen, with Messages and Calls in tabs beside its
@@ -584,8 +584,8 @@ function MessagesPane() {
     );
 }
 
-// CallsPane chooses whether each call's length shows beside its channel
-// (M21.2), on until the member turns it off.
+// CallsPane chooses whether each call's length shows beside its channel,
+// on until the member turns it off.
 function CallsPane() {
     const on = useCallTimer();
     return <Toggle id="call-timer" label="Call timer" tip="Each call's length beside its channel." checked={on} onChange={setCallTimer} />;

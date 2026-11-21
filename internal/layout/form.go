@@ -2,10 +2,10 @@ package layout
 
 import "fmt"
 
-// Form is how an instance is deployed (M9): installed, as a service under
+// Form is how an instance is deployed: installed, as a service under
 // its own account; as a development build's instance, run by the
 // developer; as the Flatpak, run by the member in their session; or under
-// the Android app's shell (M12). What
+// the Android app's shell. What
 // differs by form, from where the instance's paths are to how its data key
 // unwraps and what it may do, is chosen at runtime from it, never by build
 // tags; the system decides the rest.
@@ -19,12 +19,12 @@ const (
 	// runs as themselves, with a plaintext data key and data that's theirs
 	// to throw away.
 	Development
-	// Flatpak is the release binary in Dens's Flatpak sandbox (M9.3),
+	// Flatpak is the release binary in Dens's Flatpak sandbox,
 	// which the member runs in their session, from the app's own
 	// directories, and Flatpak installs and updates.
 	Flatpak
 	// Android is Dens built for Android, under the app's shell, as its
-	// child process (M12): from the app's files, which the shell names in
+	// child process: from the app's files, which the shell names in
 	// the environment, with the data key the shell unwraps from the
 	// Keystore. The app's updater, or F-Droid, installs and updates it.
 	Android

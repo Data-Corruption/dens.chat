@@ -83,13 +83,13 @@ func TestExiftoolFindsNothingLeft(t *testing.T) {
 		t.Skip("covered without the race detector")
 	}
 	r := newRunner(t)
-	// A phone's JPEG, as a smaller copy turns and scales it (M5), as well
+	// A phone's JPEG, as a smaller copy turns and scales it, as well
 	// as the files in testdata.
 	phone := filepath.Join(t.TempDir(), "phone.jpg")
 	if err := os.WriteFile(phone, phoneJPEG(t), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	// A video's smaller copy, made from the phone video stripped (M5.4).
+	// A video's smaller copy, made from the phone video stripped.
 	const videoCopy = "with-gps.mov, smaller"
 	for _, name := range []string{"with-gps.mov", "with-gps.mp4", "rotated.heic", "meta.mp4", "meta.mkv", "meta.webm",
 		"meta.mp3", "meta.m4a", "meta.flac", "meta.ogg", "meta.wav", phone, videoCopy} {

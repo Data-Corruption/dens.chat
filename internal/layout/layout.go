@@ -18,7 +18,7 @@ import (
 )
 
 // DesktopID names Dens to Linux desktops: its .desktop file, and the app ID
-// the shortcut helper gives the desktop's portal (M7.2).
+// the shortcut helper gives the desktop's portal.
 const DesktopID = "chat.dens.Dens"
 
 // DefaultInstance is the instance name used when none is given.
@@ -51,13 +51,13 @@ type Layout struct {
 	// HostKey is the data key kept for this host: wrapped by systemd-creds
 	// or DPAPI for an installed instance, and in a file for a development
 	// one, and for the Flatpak until its local password exists, or where
-	// it remembers the key without a keyring it can trust (M9.3). The
+	// it remembers the key without a keyring it can trust. The
 	// Android app's shell keeps it wrapped with a Keystore key, and hands
-	// it to the service unwrapped (M12).
+	// it to the service unwrapped.
 	HostKey string
 	// KeyringKey is the Flatpak's data key wrapped with the secret the
 	// member's keyring keeps for the app, through the Secret portal, once
-	// the member asks it to remember (M9.3). Empty for the other forms.
+	// the member asks it to remember. Empty for the other forms.
 	KeyringKey string
 
 	Data    string
@@ -65,17 +65,17 @@ type Layout struct {
 	Logs    string
 	Uploads string
 	Temp    string
-	// Cache holds the client's cache of other dens' files (M6), which
+	// Cache holds the client's cache of other dens' files, which
 	// backups leave out: in the data directory, but for the Flatpak, whose
 	// cache goes where backup tools skip it.
 	Cache string
 	// Snapshot holds the Flatpak's snapshot of the data an older version
-	// left, kept as it updates them: a backup archive, the last one only
-	// (M9.3). Empty for the other forms.
+	// left, kept as it updates them: a backup archive, the last one only.
+	// Empty for the other forms.
 	Snapshot string
 	// Update holds the newer release's APK the Android app's updater
 	// downloaded and checked, with the release's signed checksums, until
-	// the shell hands it to Android's installer (M12). Empty for the other
+	// the shell hands it to Android's installer. Empty for the other
 	// forms.
 	Update string
 
@@ -95,13 +95,13 @@ type Layout struct {
 	SysusersFile string
 	// AutostartFile starts the shortcut helper at the desktop user's
 	// sign-in, and DesktopFile, with its icon, names Dens to the desktop,
-	// whose shortcuts portal needs it, and opens the page from its menu
-	// (M7.2). All three are Linux-only.
+	// whose shortcuts portal needs it, and opens the page from its menu.
+	// All three are Linux-only.
 	AutostartFile string
 	DesktopFile   string
 	IconFile      string
 	// StartMenuShortcut opens the page from the Start menu, and carries
-	// Dens's app ID, which Windows shows Dens's toasts under (M12.3).
+	// Dens's app ID, which Windows shows Dens's toasts under.
 	// Windows-only.
 	StartMenuShortcut string
 }
@@ -125,8 +125,7 @@ func New(app, instance string, form Form) (Layout, error) {
 
 // Instances lists the instances of app in form on this computer by the
 // names of their roots, which every account may list, whether or not it
-// may read them. The shortcut helper tries each one's control endpoint
-// (M7).
+// may read them. The shortcut helper tries each one's control endpoint.
 func Instances(app string, form Form) ([]string, error) {
 	l, err := New(app, DefaultInstance, form)
 	if err != nil {

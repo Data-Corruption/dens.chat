@@ -24,66 +24,66 @@ var releasedSchema = []struct {
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
 	{"v1.6.0", 1, slices.Concat([]string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"},
 		m16Tables, m17Tables, m19Tables)},
-	// v1.7.0 added M14.2's own sounds and M14.3's soundboard.
+	// v1.7.0 added own sounds and the soundboard.
 	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables, m19Tables)},
-	// v1.8.0 added M15.2's emoji, M15.3's reactions and M15.4's polls.
+	// v1.8.0 added emoji, reactions and polls.
 	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables, m19Tables)},
-	// v1.9.0 added M16.1's identities, M16.3's group DMs and M16.4's
-	// disappearing messages.
+	// v1.9.0 added identities, group DMs and disappearing messages.
 	{"v1.9.0", 9, slices.Concat(m17Tables, m19Tables)},
-	// v1.10.0 added M17.2's spoilers, M17.3's notes, M17.4's events,
-	// M17.5's badges and M17.6's hidden ones, and v1.10.1 nothing more.
+	// v1.10.0 added spoilers, notes, events, badges and hidden ones, and
+	// v1.10.1 nothing more.
 	{"v1.10.1", 14, m19Tables},
-	// v1.11.0 added M19.4's chat background and M19.5's name styles, and
-	// v1.12.0 nothing more.
+	// v1.11.0 added the chat background and name styles, and v1.12.0
+	// nothing more.
 	{"v1.12.0", 16, nil},
 }
 
-// m16Tables are the tables M16's steps add: M16.1's identities and
-// records, and M16.3's group DMs.
+// m16Tables are the tables v1.9.0's steps add: identities and records,
+// and group DMs.
 var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_group_members", "den_group_changes"}
 
-// m17Tables are the tables M17's steps add: M17.4's events and who's
-// interested in them, and M17.5's badges and their awards.
+// m17Tables are the tables v1.10.0's steps add: events and who's
+// interested in them, and badges and their awards.
 var m17Tables = []string{"den_events", "den_event_interest", "den_badges", "den_badge_awards"}
 
-// m19Tables are the tables M19's steps add: M19.4's chat background.
-// M19.5's name styles are a column.
+// m19Tables are the tables v1.11.0's steps add: the chat background.
+// Name styles are a column.
 var m19Tables = []string{"background"}
 
-// retiredKeys are the tables of DM keys, which M16.1's step changes for a
+// retiredKeys are the tables of DM keys, which Identities changes for a
 // release before it: an exchange still running, or checked by one member
 // alone, retires.
 var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 
 // A database a release left, with a row in every table, migrates to this
-// build's schema keeping every row (M14.2, the first migration since
-// v1.0.0), and so does a backup made of it, which a restore installs as
-// it is: the steps before it never change, so running them alone makes the
-// release's schema. A table keeps every column it had, with the same
-// values; a step may add columns, as M14.3 adds the den's limits for its
-// soundboard and M15.2 its limit for emoji, which hold their defaults, as
-// does M15.4's mark of a message's @everyone and M16.1's identities, and
-// tables, as M15.3 adds the reactions', M15.4 the polls', M16.1 the
-// identities' and the records' and M16.3 the group DMs', which start
-// empty. M16.1 retires the DM keys whose exchanges hadn't finished, and
-// keeps every row of them. M16.3 makes den_channels again, with foreign
-// keys off, which keeps every row that refers to a channel, and its
-// counter where a restore moved it. M16.4 adds each DM's time, which
-// starts off, and each message's, which none has; a database v1.9.0 left,
-// with identities, a group DM and a time set, keeps them all. M17.2 adds a
-// file's spoiler, which none is. M17.3 makes den_channels again to take
-// notes, keeping every row, M16.4's times among them, and the counter, as
-// M16.3's step did. M17.4 adds events and who's interested in them, which
-// start empty, and the den's limit for members' events, which starts at 0,
-// leaving them to staff. M17.5 adds badges and their awards, which start
-// empty, and an event's staff-only mark, which none has; and M17.6 an
-// award's hidden mark, which an award starts without; a database v1.10.1
-// left, with a spoiler, notes, an event, a badge and a hidden award, keeps
-// them all. M19.4 adds the chat's background, which starts with none, and
-// M19.5 each member's name style, which none has; a database v1.12.0 left,
-// with a background and a name style, keeps them. M21.2 adds each voice
-// channel's longest call, which none has.
+// build's schema keeping every row, and so does a backup made of it, which
+// a restore installs as it is: the steps before it never change, so running
+// them alone makes the release's schema. Each step goes by the name
+// migration.go adds it under.
+// A table keeps every column it had, with the same values; a step may add
+// columns, as Soundboard adds the den's limits for its sounds and Emoji its
+// limit for emoji, which hold their defaults, as do Polls' mark of a
+// message's @everyone and Identities' column for a member's identity, and
+// tables, as Reactions, Polls, Identities (the records' too) and Group DMs
+// add theirs, which start empty. Identities retires the DM keys whose
+// exchanges hadn't finished, and keeps every row of them. Group DMs makes
+// den_channels again, with foreign keys off, which keeps every row that
+// refers to a channel, and its counter where a restore moved it.
+// Disappearing messages adds each DM's time, which starts off, and each
+// message's, which none has; a database v1.9.0 left, with identities, a
+// group DM and a time set, keeps them all. Spoilers adds a file's spoiler,
+// which none is. Notes makes den_channels again to take notes, keeping
+// every row, the DMs' times among them, and the counter, as Group DMs did.
+// Events adds events and who's interested in them, which start empty, and
+// the den's limit for members' events, which starts at 0, leaving them to
+// staff. Badges adds badges and their awards, which start empty, and an
+// event's staff-only mark, which none has; and Hidden badges an award's
+// hidden mark, which an award starts without; a database v1.10.1 left,
+// with a spoiler, notes, an event, a badge and a hidden award, keeps them
+// all. Chat background adds the chat's background, which starts with none,
+// and Name styles each member's name style, which none has; a database
+// v1.12.0 left, with a background and a name style, keeps them. Call
+// records adds each voice channel's longest call, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -187,7 +187,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if err := db.QueryRow(`SELECT max(id) FROM den_channels`).Scan(&channel); err != nil || channel != 1700000000000001 {
 					t.Errorf("%s gave a new channel ID %d, %v, not one past the counter", what, channel, err)
 				}
-				// And again with a member's notes among them (M17.3), one each,
+				// And again with a member's notes among them, one each,
 				// and naming their member alone.
 				if _, err := db.Exec(`INSERT INTO den_channels (name, kind, position, created_at, notes_of) VALUES ('', 'notes', 0, 9, 1)`); err != nil {
 					t.Errorf("%s takes no notes after the migration: %v", what, err)
@@ -204,7 +204,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 						t.Errorf("%s took %s", what, q)
 					}
 				}
-				// Nothing disappears until a member sets a time (M16.4).
+				// Nothing disappears until a member sets a time.
 				var timed, expiring int
 				if err := db.QueryRow(`SELECT
 					(SELECT count(*) FROM den_channels WHERE expires_after != 0 OR expires_by IS NOT NULL OR expires_set_at IS NOT NULL),
@@ -215,7 +215,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if _, err := db.Exec(`UPDATE den_channels SET expires_after = -1 WHERE id = 3`); err == nil {
 					t.Errorf("%s takes a DM's time below 0", what)
 				}
-				// No file went as a spoiler before M17.2.
+				// No file went as a spoiler before v1.10.0.
 				var spoilers int
 				if err := db.QueryRow(`SELECT count(*) FROM den_files WHERE spoiler != 0`).Scan(&spoilers); err != nil ||
 					(released.version < 14 && spoilers != 0) {
@@ -224,7 +224,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if _, err := db.Exec(`UPDATE den_files SET spoiler = 2 WHERE id = 1`); err == nil {
 					t.Errorf("%s takes a spoiler other than 0 or 1", what)
 				}
-				// Events are staff's until the owner says otherwise (M17.4),
+				// Events are staff's until the owner says otherwise,
 				// and each is to come, live or ended, ending no sooner than
 				// it starts.
 				var memberEvents int
@@ -237,7 +237,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					t.Errorf("%s takes nobody's interest after the migration: %v", what, err)
 				}
 				// A badge is an event's, its picture a named file, and an award
-				// one member's, once (M17.5).
+				// one member's, once.
 				var event int64
 				if err := db.QueryRow(`SELECT max(id) FROM den_events`).Scan(&event); err != nil {
 					t.Fatal(err)
@@ -258,7 +258,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					(released.version < 14 && staffEvents != 0) {
 					t.Errorf("%s holds %d staff-only events of its own after the migration, %v", what, staffEvents, err)
 				}
-				// An award starts shown, and its member hides it or not (M17.6).
+				// An award starts shown, and its member hides it or not.
 				var hidden int
 				if err := db.QueryRow(`SELECT hidden FROM den_badge_awards WHERE event_id = ?`, event).Scan(&hidden); err != nil || hidden != 0 {
 					t.Errorf("%s's award starts with hidden %d, %v", what, hidden, err)
@@ -279,7 +279,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 						t.Errorf("%s took %s", what, q)
 					}
 				}
-				// No name has a style until its member sets one (M19.5).
+				// No name has a style until its member sets one.
 				var styled int
 				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE name_style IS NOT NULL`).Scan(&styled); err != nil ||
 					(released.version < 16 && styled != 0) {
@@ -288,8 +288,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if _, err := db.Exec(`UPDATE den_members SET name_style = '{"font":"pacifico"}' WHERE id = 1`); err != nil {
 					t.Errorf("%s takes no name style after the migration: %v", what, err)
 				}
-				// No voice channel has a record until a call there ends
-				// (M21.2), and only a voice channel takes one, longer than 0.
+				// No voice channel has a record until a call there ends,
+				// and only a voice channel takes one, longer than 0.
 				var records int
 				if err := db.QueryRow(`SELECT count(*) FROM den_channels WHERE call_record IS NOT NULL`).Scan(&records); err != nil || records != 0 {
 					t.Errorf("%s holds %d call records after the migration, %v", what, records, err)
@@ -320,7 +320,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	}
 }
 
-// checkRetired checks M16.1's step retired the DM key whose exchange one
+// checkRetired checks Identities retired the DM key whose exchange one
 // member alone had checked, by its starter, dropping its exchange and the
 // states, and kept the one both members checked as it was, with every
 // member's copy of each.
@@ -418,14 +418,14 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 		`UPDATE den_members SET avatar_id = 1, banner_id = 1 WHERE id = 1`,
 		`INSERT INTO den_dm_keys (id, channel_id, started_by, started_at, stage, offer, answer, reveal) VALUES (1, 3, 1, 1, 'revealed', x'51', x'52', x'53')`,
 		`INSERT INTO den_dm_key_members (key_id, member_id, state, sealed, checked_at) VALUES (1, 1, x'54', x'55', 2)`,
-		// A DM both members checked, whose key stays (M16.1).
+		// A DM both members checked, whose key stays.
 		`INSERT INTO den_members (id, username, display_name, role, verifier_hash, joined_at, seal_check) VALUES (3, 'carol', 'Carol', 'member', x'17', 3, x'18')`,
 		`INSERT INTO den_channels (id, name, kind, position, dm_low, dm_high, created_at) VALUES (4, '', 'dm', 0, 1, 3, 2)`,
 		`INSERT INTO den_dm_keys (id, channel_id, started_by, started_at, stage) VALUES (2, 4, 3, 2, 'revealed')`,
 		`INSERT INTO den_dm_key_members (key_id, member_id, sealed, checked_at) VALUES (2, 1, x'56', 3), (2, 3, x'57', 4)`,
 		`INSERT INTO den_changes (id, kind, ref, channel_id, at) VALUES (1, 'message', 1, 1, 2)`,
 		`INSERT INTO den_read_states (member_id, channel_id, message_id, closed) VALUES (1, 1, 1, 0)`,
-		// A restore moved the channels' counter past their IDs (M11).
+		// A restore moved the channels' counter past their IDs.
 		`UPDATE sqlite_sequence SET seq = 1700000000000000 WHERE name = 'den_channels'`,
 	}
 	if version >= 3 {

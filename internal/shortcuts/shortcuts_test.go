@@ -696,7 +696,7 @@ func (f *fakeNotifier) showing() map[string]host.DesktopNotification {
 
 // The helper shows the notifications the service sends it, replacing a
 // channel's with its newer one, takes back those it's told to, and a
-// click opens the page at the message (M12.3). Until a helper that shows
+// click opens the page at the message. Until a helper that shows
 // them is connected, the hub shows none.
 func TestTheHelperShowsNotifications(t *testing.T) {
 	me, _ := host.CurrentUser()
@@ -852,7 +852,7 @@ func waitFor(t *testing.T, what string, ok func() bool) {
 	}
 }
 
-// TestRelayedKeys checks the hub's part in Keybind relay (M20). Outside a
+// TestRelayedKeys checks the hub's part in Keybind relay. Outside a
 // call of its own, while another of the member's devices holds one, the
 // helper reads keys and its presses go to Relay, not the pages. In a call,
 // another device's keys reach the pages as a second helper's: push to talk
@@ -914,7 +914,7 @@ func TestRelayedKeys(t *testing.T) {
 }
 
 // TestPagePresses checks the call's button on a page that holds no call,
-// as a phone's (M20.3): its presses go to Relay while another of the
+// as a phone's: its presses go to Relay while another of the
 // member's devices holds the call, and nowhere otherwise, nor during a
 // call of the install's own, nor for an action that isn't one.
 func TestPagePresses(t *testing.T) {

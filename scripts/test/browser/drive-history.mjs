@@ -1,4 +1,4 @@
-// The M6.2 check: Bob reads general, which his install keeps. While his
+// The history check: Bob reads general, which his install keeps. While his
 // service is off, alice edits one message, deletes another and posts; back,
 // his page shows all three changes. With alice's den stopped, his page says
 // it's offline over the messages, and reads them from his cache, even after

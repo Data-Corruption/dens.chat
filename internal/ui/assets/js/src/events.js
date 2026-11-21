@@ -1,7 +1,7 @@
 // The local event stream, shared by every view: one WebSocket to the
 // service, which pushes den statuses and den events. The page sends on it
-// too: the channel it shows in each den, typing, from M12.3 whether it's
-// on screen and may notify, and from M13.3 its background, which the
+// too: the channel it shows in each den, typing, whether it's
+// on screen and may notify, and its background, which the
 // Android app's shell paints its bars with. The service is on this computer, so a
 // lost stream retries quickly; after a reconnect, views reload, since
 // events may have been missed while it was down.
@@ -31,8 +31,8 @@ let down = false;
 let everConnected = false;
 let delay = MIN_DELAY;
 let retry = null;
-// The service sends den statuses, the voice keys' (M7), the
-// notifications' (M12.3) and Relay's (M20.2), when the stream opens and
+// The service sends den statuses, the voice keys', the
+// notifications' and Relay's, when the stream opens and
 // when they change, so a view that starts listening later gets the latest
 // from here.
 let latestDens = null;
@@ -156,7 +156,7 @@ export function showChannel(den, channel) {
 }
 
 // setPageState tells the service whether this page is on screen, and
-// whether the browser lets it notify (M12.3), so a notification shows
+// whether the browser lets it notify, so a notification shows
 // once, in the right place.
 export function setPageState(visible, allowed) {
     if (pageState?.visible === visible && pageState?.allowed === allowed) return;
@@ -164,7 +164,7 @@ export function setPageState(visible, allowed) {
     send({ t: 'page', d: pageState });
 }
 
-// setBars tells the service the page's background, as #rrggbb (M13.3).
+// setBars tells the service the page's background, as #rrggbb.
 export function setBars(color) {
     if (bars === color) return;
     bars = color;

@@ -322,7 +322,7 @@ func TestVoiceBitrate(t *testing.T) {
 	alice.hears(bob)
 }
 
-// TestTwoSharesTwentyViewers checks the den at the milestone's scale: two
+// TestTwoSharesTwentyViewers checks the den at the scale it's built for: two
 // members share in a call of 22, and each of the other 20 sees both.
 func TestTwoSharesTwentyViewers(t *testing.T) {
 	s, udpPort, tcpPort := testSFU(t, Config{AnswerTimeout: time.Minute, ConnectTimeout: time.Minute})

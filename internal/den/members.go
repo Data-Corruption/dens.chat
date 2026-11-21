@@ -24,8 +24,8 @@ func forbidden(format string, args ...any) error {
 func bioAD(id int64) []byte { return []byte("den_members.bio:" + strconv.FormatInt(id, 10)) }
 
 // memberColumns selects a member from den_members, with the size of the
-// pictures on their profile, and whether each is animated (M15.1), their
-// identity's hash (M16.1) and their name's style.
+// pictures on their profile, and whether each is animated, their
+// identity's hash and their name's style.
 const memberColumns = `id, username, display_name, role, joined_at, left_at,
 	avatar_id, (SELECT width FROM den_files WHERE den_files.id = den_members.avatar_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.avatar_id),
@@ -75,8 +75,8 @@ func (d *Den) Member(ctx context.Context, id int64) (denproto.Member, error) {
 }
 
 // Profile returns a member with their bio, and the badges they earned
-// whose events the session sees (M17.5), but those they hid, which their
-// own profile alone carries, marked (M17.6). Any member may look at anyone
+// whose events the session sees, but those they hid, which their
+// own profile alone carries, marked. Any member may look at anyone
 // who has been in the den, so old messages can show who wrote them.
 func (d *Den) Profile(ctx context.Context, s *Session, id string) (denproto.MemberProfile, error) {
 	m, err := d.profileOf(ctx, id)
@@ -261,12 +261,12 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // their messages keep a name and a returning member can reclaim it, but
 // they lose their role, devices and sessions, recovery codes, read state,
 // any invites they made, the pictures on their profile, the uploads they
-// hadn't sent, and their identity and record (M16.1), which they publish
+// hadn't sent, and their identity and record, which they publish
 // again if they come back. The sounds and emoji they added are the den's, and
-// stay (M14.3, M15.2).
-// They leave their group DMs too, each by a change of the den's own
-// (M16.3), their notes go, with their files (M17.3), and their events to
-// come, with their banners, and their marks on the rest (M17.4); their
+// stay.
+// They leave their group DMs too, each by a change of the den's own,
+// their notes go, with their files, and their events to
+// come, with their banners, and their marks on the rest; their
 // live events go on to their end, banners and all.
 // It returns what's to be told once tx commits: those files' blobs, to
 // remove, the groups' changes, to tell their members of, and the events.
@@ -315,7 +315,7 @@ type departure struct {
 
 // publishDeparted tells the members of a member's groups that the den
 // took them out, as they left the den, and everyone who saw them of the
-// events their leaving canceled and the counts it changed (M17.4).
+// events their leaving canceled and the counts it changed.
 func (d *Den) publishDeparted(ctx context.Context, gone departure) error {
 	var errs []error
 	for _, g := range gone.groups {
@@ -351,13 +351,13 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	var unreacted []denproto.ReactionChange
 	var blobs [][]byte
 	var gone departure
-	// The reactions a ban takes off wait their turn with edits (M15.3).
+	// The reactions a ban takes off wait their turn with edits.
 	if req.DeleteMessages > 0 {
 		d.changes.Lock()
 		defer d.changes.Unlock()
 	}
-	// Their groups' keys retire with their leaving them (M16.3), and their
-	// events to come go (M17.4).
+	// Their groups' keys retire with their leaving them, and their
+	// events to come go.
 	d.keys.Lock()
 	defer d.keys.Unlock()
 	d.calendar.Lock()
@@ -387,13 +387,13 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			}
 		}
 		if req.DeleteMessages > 0 {
-			// DMs too (M8): the den deletes them without reading them, and
+			// DMs too: the den deletes them without reading them, and
 			// a member flooding DMs leaves no other way to clear them.
 			since := now - req.DeleteMessages*1000
 			if deleted, readers, blobs, err = deleteRecent(ctx, tx, mid, since, time.UnixMilli(now)); err != nil {
 				return err
 			}
-			// And the reactions they added then, in channels (M15.3).
+			// And the reactions they added then, in channels.
 			if unreacted, err = unreactRecent(ctx, tx, mid, since, time.UnixMilli(now)); err != nil {
 				return err
 			}
@@ -569,7 +569,7 @@ func (d *Den) Bans(ctx context.Context, s *Session) (denproto.BanList, error) {
 // Unban lets a banned member's username come back. They stay out of the
 // den until someone invites them again. Staff lift a ban placed by someone
 // of their rank or lower, as that member's role is now, so a ban the owner
-// placed only the owner lifts (M8).
+// placed only the owner lifts.
 func (d *Den) Unban(ctx context.Context, s *Session, id string) error {
 	if !IsStaff(s.Role) {
 		return forbidden("only moderators and the owner lift bans")

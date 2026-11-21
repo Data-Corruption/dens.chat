@@ -23,7 +23,7 @@ const keyringWrapAD = "dens-vault-keyring-wrap-v1"
 // portal's are 64 random bytes.
 const minKeyringSecret = 16
 
-// KeyringWrap is the Flatpak's remembered copy of the data key (M9.3),
+// KeyringWrap is the Flatpak's remembered copy of the data key,
 // sealed under a key derived from the secret the member's keyring keeps for
 // the app, which the Secret portal hands over. The wrap is authenticated,
 // so a wrong secret fails to open it rather than yielding a wrong key. It

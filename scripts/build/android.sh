@@ -1,4 +1,4 @@
-# The Android app (M12): Dens built for Android with cgo through the NDK,
+# The Android app: Dens built for Android with cgo through the NDK,
 # and the APK around it, built without Gradle from the SDK's aapt2, d8,
 # zipalign and apksigner, Kotlin's compiler and a JDK, as vendor.sh pins
 # them. Sourced by ../build.sh.
@@ -6,7 +6,7 @@
 # A development build is chat.dens.Dens.dev, labelled Dens (development),
 # debuggable, and signed with a key of the developer's own, apart from the
 # release's, so Play Protect's verdict on one never reaches the other. A
-# release's is chat.dens.Dens, signed with the release key (M12.4).
+# release's is chat.dens.Dens, signed with the release key.
 
 # Each ABI the APKs carry Dens for: Go's name for it, Android's, and the
 # NDK's clang that builds for it. The phones are arm64, the emulator x86_64.
@@ -126,7 +126,7 @@ android_build() {
 
 # android_release DEST builds a release's APK for phones, as
 # DEST/android-arm64.apk, around the release's Dens, from the page this
-# build made (M12.4). It's signed with the keystore ANDROID_KEYSTORE holds
+# build made. It's signed with the keystore ANDROID_KEYSTORE holds
 # in base64, which ANDROID_KEYSTORE_PASSWORD opens; the release
 # pipeline's must hold the key the committed certificate names.
 android_release() {

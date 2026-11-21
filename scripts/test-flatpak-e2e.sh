@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Flatpak e2e (M9.3, M9.4): first the release pipeline's publisher of the
+# Flatpak e2e: first the release pipeline's publisher of the
 # Flatpak, tested in a container of its own (test/flatpak-publish.sh). Then
 # Dens's Flatpak, made from this tree's binary and published by it to a
 # release host in a directory, served over HTTP, installed from its link
@@ -9,7 +9,7 @@
 # checks for updates every few seconds, which the app may install by
 # itself. Two launches at once start one service; the Flatpak has
 # PulseAudio's socket, through which Dens's capture, run in its sandbox as
-# a test probe, reads a tone from the member's own PulseAudio (M20.2); the
+# a test probe, reads a tone from the member's own PulseAudio; the
 # page's API pairs and sets the local password, and a restarted service
 # starts locked, until the password opens it; Remember, with no keyring
 # there to take it, keeps the key in a file, and the next start is
@@ -181,7 +181,7 @@ run() {
   gzip -dc "$HARNESS_DIR/release/releases/$first/$target.gz" >"$HARNESS_DIR/dens-$first"
   gzip -dc "$HARNESS_DIR/release/next/releases/$next/$target.gz" >"$HARNESS_DIR/dens-$next"
   # Dens's capture of the computer's sound, as a test probe the Flatpak's
-  # sandbox runs (M20.2).
+  # sandbox runs.
   CGO_ENABLED=0 go test -c -o "$HARNESS_DIR/capture-probe" ./internal/platform/host
 
   image

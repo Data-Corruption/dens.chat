@@ -5,7 +5,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Disappearing messages (M16.4): the den deletes a DM's or a group's
+// Disappearing messages: the den deletes a DM's or a group's
 // message at the time its members set, and tells those connected, as it
 // tells them of any delete. The cache lets its copy go at that time too,
 // by this computer's clock, whether the den can be reached or not, so a

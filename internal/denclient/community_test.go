@@ -128,7 +128,7 @@ func TestLeaveForgetsTheDen(t *testing.T) {
 
 // A den this computer can't reach, as one whose server is gone for good,
 // comes off it without leaving, whoever the member is there: its owner
-// too, on a computer that doesn't host it (M10). A den that answers
+// too, on a computer that doesn't host it. A den that answers
 // doesn't, nor does the den this computer hosts.
 func TestForgettingADenThatsGone(t *testing.T) {
 	h, owner, member, denID, _ := chatDen(t)
@@ -297,7 +297,7 @@ func TestProfilesAndBans(t *testing.T) {
 	if err != nil || p.Bio != bio || p.DisplayName != name {
 		t.Fatalf("profile: %+v %v", p, err)
 	}
-	// Hiding a badge asks the den, which has none of bob's (M17.6); an ID
+	// Hiding a badge asks the den, which has none of bob's; an ID
 	// that isn't one asks nothing.
 	var perr *denproto.Error
 	if err := member.SetBadgeHidden(ctx, denID, "999", true); !errors.As(err, &perr) || perr.Status != http.StatusNotFound {
@@ -335,7 +335,7 @@ func TestProfilesAndBans(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Each ban says the role of whoever placed it, which says who may lift
-	// it (M8).
+	// it.
 	bans, err := owner.Bans(ctx, denID)
 	if err != nil || len(bans) != 1 || bans[0].Member.ID != bob || bans[0].BannedByRole != denproto.RoleOwner {
 		t.Fatalf("bans: %+v %v", bans, err)

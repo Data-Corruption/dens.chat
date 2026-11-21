@@ -30,7 +30,7 @@ type joined struct {
 	// has none.
 	seal *vault.Secret
 	// identities are those the member's Dens kept at this den, as this
-	// device holds them (M16.1).
+	// device holds them.
 	identities *keptIdentities
 }
 

@@ -1,4 +1,4 @@
-// What someone pastes to add a den (M8.3).
+// What someone pastes to add a den.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

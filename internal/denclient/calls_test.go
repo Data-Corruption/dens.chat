@@ -9,7 +9,7 @@ import (
 )
 
 // TestDenCallsAreChecked checks what a den says of calls and shares
-// (M4.2) before it reaches the page: who shares and watches, a voice
+// before it reaches the page: who shares and watches, a voice
 // channel's bitrate, the den's limits and its refusals.
 func TestDenCallsAreChecked(t *testing.T) {
 	call := func(members ...denproto.CallMember) denproto.Call {
@@ -61,7 +61,7 @@ func TestDenCallsAreChecked(t *testing.T) {
 		t.Error("a den with no call limits checked")
 	}
 
-	// A den older than the soundboard sends none of its limits (M14.3).
+	// A den older than the soundboard sends none of its limits.
 	den.CallLimits = denproto.DefaultCallLimits
 	for name, l := range map[string]denproto.SoundLimits{"none": {}, "a new den's": denproto.DefaultSoundLimits} {
 		den.SoundLimits = l
@@ -107,7 +107,7 @@ func TestDenCallsAreChecked(t *testing.T) {
 }
 
 // TestDenSoundsAreChecked checks a den's sounds before they're kept or
-// reach the page (M14.3): each checks out, once, and no more than a den
+// reach the page: each checks out, once, and no more than a den
 // keeps.
 func TestDenSoundsAreChecked(t *testing.T) {
 	sound := func(id, name string) denproto.Sound {

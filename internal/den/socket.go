@@ -48,12 +48,11 @@ type socket struct {
 	// which go to it alone.
 	voiceOut chan denproto.Event
 	// sub is the socket's subscription, set before it reads a frame, which
-	// takes what goes to the call's members alone (M11). It's set under
-	// the socket set's lock, which a box between devices reads it under
-	// (M20).
+	// takes what goes to the call's members alone. It's set under
+	// the socket set's lock, which a box between devices reads it under.
 	sub *Sub
 	// forGood marks a socket the den closed because its device or member is
-	// done here, whose call ends rather than waits for the device (M3).
+	// done here, whose call ends rather than waits for the device.
 	forGood atomic.Bool
 }
 
@@ -153,7 +152,7 @@ func (s *socketSet) subscribed(sock *socket, sub *Sub) {
 }
 
 // devicesOf returns the subscriptions of a member's sockets on devices
-// other than from's, or on to's alone where to names one (M20).
+// other than from's, or on to's alone where to names one.
 func (s *socketSet) devicesOf(member int64, from, to []byte) map[*Sub]bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -174,7 +173,7 @@ func (d *Den) CloseMemberSockets(member int64, code websocket.StatusCode, reason
 }
 
 // openSockets has the den take sockets again after CloseSockets, as
-// hosting starts again (M9.1).
+// hosting starts again.
 func (d *Den) openSockets() {
 	s := d.sockets
 	s.mu.Lock()
@@ -232,8 +231,8 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	// A call waits for its device when its socket closes, or ends with it.
 	defer d.socketClosed(sock)
 	// Frames past the library's threshold, such as ready and replays, go
-	// compressed, each on its own, so no connection holds a compressor
-	// (M6). The read limit applies to a frame as it inflates.
+	// compressed, each on its own, so no connection holds a compressor.
+	// The read limit applies to a frame as it inflates.
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{CompressionMode: websocket.CompressionNoContextTakeover})
 	if err != nil {
 		return
@@ -242,8 +241,8 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	c.SetReadLimit(denproto.MaxClientFrame)
 	d.socketsChanged(s.MemberID, 1)
 	defer d.socketsChanged(s.MemberID, -1)
-	// Why the socket closed goes to the log, with how long it was open
-	// (M11): the first cause, since closing it brings on the rest, and the
+	// Why the socket closed goes to the log, with how long it was open:
+	// the first cause, since closing it brings on the rest, and the
 	// time it was found, before any close handshake. The reader and the
 	// pinger hand theirs over before they end its context.
 	opened := time.Now()
@@ -278,8 +277,8 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	if e, v, ok := denproto.ParseMembersCursor(r.URL.Query().Get("members")); ok {
 		members = &membersCursor{epoch: e, version: v}
 	}
-	// A Dens speaking a version before group DMs gets nothing of them
-	// (M16.3), and one before notes nothing of those (M17.3).
+	// A Dens speaking a version before group DMs gets nothing of them,
+	// and one before notes nothing of those.
 	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(s.Role), s.Version, epoch, after)
 	defer d.Hub.Unsubscribe(sub)
 	d.sockets.subscribed(sock, sub)

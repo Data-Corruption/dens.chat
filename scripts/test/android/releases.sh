@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds the Android e2e's fixture releases (M12.4): the app's release,
+# Builds the Android e2e's fixture releases: the app's release,
 # chat.dens.Dens, for the emulator, as v99.0.1-e2e, which the e2e installs,
 # and v99.0.2-e2e, which the app's updater updates it to, on a release host
 # in DEST, which the e2e serves at FIXTURE_URL on the emulator's loopback.

@@ -1,8 +1,8 @@
-// The M4.1 check: Alice posts YouTube links; Bob turns players on, plays
+// The youtube check: Alice posts YouTube links; Bob turns players on, plays
 // them, and checks what the page does, in Chromium and Firefox, with each
-// browser's own autoplay rules; and from M14.1, a cover's title and channel
+// browser's own autoplay rules; a cover's title and channel
 // as links to YouTube, underlined only on hover and keyboard focus, which
-// open their tabs without playing it; and from M19.2 a Short, its cover and
+// open their tabs without playing it; and a Short, its cover and
 // player portrait. YouTube is on the internet, so this check needs it.
 //
 //   run.sh youtube chromium|firefox chromium|firefox   (alice's, then bob's)
@@ -86,7 +86,7 @@ async function setPlayers(s, on) {
 
 // playCover clicks a cover as a member would, in its middle, or with
 // beside, just right of its channel's name, in the band its title and name
-// lie in (M14.1), and waits for the player.
+// lie in, and waits for the player.
 async function playCover(s, label, id, beside = false) {
     const at = JSON.parse(await s.b.eval(`(() => { const c = ${COVER(label, id)}, b = c.querySelector('button'); b.scrollIntoView({ block: 'center' });
         const r = b.getBoundingClientRect(), name = c.querySelectorAll('a')[1]?.getBoundingClientRect();
@@ -143,7 +143,7 @@ try {
     await B.b.shot(`${HOME}/shot-youtube-${B.browser}-cover.png`);
 
     // The cover's title links to the video and its channel's name to the
-    // channel (M14.1), each opening a tab of its own, outside the button
+    // channel, each opening a tab of its own, outside the button
     // that plays it, and underlined only on hover and keyboard focus.
     const LINKS = `[...${COVER(rick, RICK)}.querySelectorAll('a')]`;
     const caption = JSON.parse(await B.b.eval(`JSON.stringify({ links: ${LINKS}.map((a) => ({ href: a.href, text: a.textContent.trim(), target: a.target, rel: a.rel })),
@@ -237,7 +237,7 @@ try {
         `${B.browser}: scrolled out of view, it plays on: ${out}, ${t1.time} s then ${t2.time} s`);
 
     // Another channel stops it, and coming back finds covers.
-    // A channel's # is an icon (M8.3), so its button reads its name alone.
+    // A channel's # is an icon, so its button reads its name alone.
     const channel = (name) => `[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === '${name}')`;
     await B.b.eval(`${channel('other')}.click(), true`);
     await waitFor(() => B.b.eval(`location.pathname.endsWith('/${other}')`), `${B.browser} other channel`);
@@ -250,7 +250,7 @@ try {
 
     // A Short, linked as a phone shares one, stays a Short: its cover is as
     // tall as another's is wide, with the Short's own picture, and plays
-    // there (M19.2).
+    // there.
     const short = `${tag}-short`;
     await post(A, general, `${short} https://youtube.com/shorts/${SHORT}?si=abc`);
     await waitFor(() => B.b.eval(`!!document.querySelector('a[href="https://www.youtube.com/shorts/${SHORT}"]')`), `${B.browser} sees the Short's link`);

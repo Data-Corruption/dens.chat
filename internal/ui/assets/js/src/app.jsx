@@ -1,10 +1,10 @@
-// The app: pairing, the first local password, unlocking the Flatpak
-// (M9.3), link previews in a browser new to Dens (M22.7), and the pages
+// The app: pairing, the first local password, unlocking the Flatpak,
+// link previews in a browser new to Dens, and the pages
 // (home and a den's), chosen from what /api/status says about this
-// browser, with the app's settings and a den's Manage dialog over them
-// (M8.3). A den's page reaches home and the settings from its channel
+// browser, with the app's settings and a den's Manage dialog over them.
+// A den's page reaches home and the settings from its channel
 // list; home has a cog of its own for the settings. Which page shows, and
-// which of a den's panes, is the page's history's (M13.1).
+// which of a den's panes, is the page's history's.
 
 import { useCallback, useEffect, useState } from 'preact/hooks';
 import { watchTab } from './tabmark.js';
@@ -31,9 +31,9 @@ import { CallBox, CallButton } from './voice.jsx';
 
 // dens open opens the page with a one-time token in the URL fragment,
 // which never reaches the server in the request line, and a notification's
-// click with the message to open there too (M12.3), or the event (M17.4),
-// and the Android app's shell, on a page that shows, where to open it
-// (M13.1). The page reads them before its history starts, which takes them
+// click with the message to open there too, or the event,
+// and the Android app's shell, on a page that shows, where to open it.
+// The page reads them before its history starts, which takes them
 // out of the address.
 function readFragment(loc = window.location) {
     if (!loc.hash.startsWith('#')) return { token: '', message: '', event: '', open: '' };
@@ -144,8 +144,8 @@ export function App({ instance, version, pair, pairLink }) {
     const asking = open && !asked && asksLinkPreviews();
     const chat = open && !asking ? chatRoute(pathOf(trail)) : null;
     // The event stream needs a paired browser, so it starts only then, and
-    // with it the chat's background and the notifications this page shows
-    // (M12.3), whose click opens their message.
+    // with it the chat's background and the notifications this page shows,
+    // whose click opens their message.
     useEffect(() => (open ? onConnection(setLive) : undefined), [open]);
     useEffect(() => (open ? watchTab() : undefined), [open]);
     useEffect(() => {
@@ -162,9 +162,9 @@ export function App({ instance, version, pair, pairLink }) {
         });
     }, [open]);
     // An update installed meanwhile, as in the software center, shows once
-    // the member is back on the page, and within a minute while they stay
-    // (M9.3): the service asks the newest build installed as the page asks
-    // for its status (M9.4).
+    // the member is back on the page, and within a minute while they stay:
+    // the service asks the newest build installed as the page asks
+    // for its status.
     useEffect(() => {
         if (!open) return undefined;
         let last = Date.now();
@@ -234,17 +234,17 @@ export function App({ instance, version, pair, pairLink }) {
                             </div>
                         )}
                         {/* The phone layout docks the shares the member
-                            watches under the call's box (M13.4). */}
+                            watches under the call's box. */}
                         {open && narrow && <div class="overflow-hidden rounded-box empty:hidden"><DockedPlayer /></div>}
                         {page}
                     </div>
                 </main>
             )}
-            {/* The shares this member watches play over every page (M4.2), and
-                the call's button floats over them on a touch screen (M13.4). */}
+            {/* The shares this member watches play over every page, and
+                the call's button floats over them on a touch screen. */}
             {open && <SharePlayer />}
             {open && <CallButton />}
-            {/* A den's page opens them with its den's own sections (M22.3). */}
+            {/* A den's page opens them with its den's own sections. */}
             {open && settings !== null && (
                 <SettingsDialog section={settings.section} denID={settings.denID || chat?.denID || ''} navigate={navigate}
                     onSection={(section) => setSettings((v) => ({ ...v, section }))} onClose={closeSettings} instance={instance} version={version}
@@ -255,7 +255,7 @@ export function App({ instance, version, pair, pairLink }) {
                     onSection={(section) => setManage((m) => ({ ...m, section }))} onClose={() => setManage(null)} />
             )}
             {/* A sign-in waiting for this member's approval opens over all
-                of it (M22.6). */}
+                of it. */}
             {open && <Approvals />}
         </div>
     );
@@ -265,7 +265,7 @@ export function App({ instance, version, pair, pairLink }) {
 // Flatpak, which has no command for it, by opening Dens from the apps
 // menu, either of which opens the default browser; and in another, with the
 // link dens open --print prints. The Android app, with neither, pairs its
-// own page as it opens it (M12).
+// own page as it opens it.
 function Unpaired({ pair, pairLink, error }) {
     return (
         <Card title={pair || pairLink ? 'Pair this browser' : 'Pair this page'}>
@@ -294,8 +294,8 @@ function Unpaired({ pair, pairLink, error }) {
     );
 }
 
-// Remember is the choice the Flatpak offers with the local password
-// (M9.3): to keep a copy of its key that opens Dens without the password,
+// Remember is the choice the Flatpak offers with the local password:
+// to keep a copy of its key that opens Dens without the password,
 // so it starts unlocked, and at sign-in.
 function Remember({ checked, onChange }) {
     return (
@@ -312,7 +312,7 @@ function Remember({ checked, onChange }) {
 }
 
 // Unlock opens the Flatpak, which starts locked unless it remembers its
-// key (M9.3), with the local password.
+// key, with the local password.
 function Unlock({ remembered, onDone }) {
     const [password, setPassword] = useState('');
     const [remember, setRemember] = useState(remembered);

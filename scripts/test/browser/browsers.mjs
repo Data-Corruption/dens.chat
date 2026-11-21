@@ -34,22 +34,22 @@ export async function waitFor(fn, what, ms = 20000) {
     throw new Error(`timed out waiting for ${what}: ${typeof last === 'string' ? last : JSON.stringify(last)}`);
 }
 
-// The app's settings (M8.3): the dialog, a section of it by name in the
-// list down its side (M19.1), and opening it at a section from the cog on
+// The app's settings: the dialog, a section of it by name in the
+// list down its side, and opening it at a section from the cog on
 // either page, as expressions for a page's eval and a step that waits.
 export const SETTINGS = `document.querySelector('[role=dialog][aria-label="Settings"]')`;
 export const settingsTab = (name) => `[...document.querySelectorAll('[role=dialog][aria-label="Settings"] nav button')].find((t) => t.textContent.trim() === ${JSON.stringify(name)})`;
 export async function openSettings(b, tab) {
     if (tab === 'Appearance') return openAppearance(b);
     if (!(await b.eval(`!!${SETTINGS}`))) await b.eval(`document.querySelector('button[aria-label="Settings"], a[aria-label="Settings"]').click(), true`);
-    // Appearance takes the window, its list folded to ← (M22.8).
+    // Appearance takes the window, its list folded to ←.
     if (await b.eval(`!!${APPEARANCE}`)) await b.eval(`${SETTINGS}.querySelector('[data-back]').click(), true`);
     await waitFor(() => b.eval(`!!${settingsTab(tab)}`), 'the settings');
     await b.eval(`${settingsTab(tab)}.click(), true`);
     await waitFor(() => b.eval(`${settingsTab(tab)}.getAttribute('aria-current') === 'page'`), `the settings' ${tab} section`);
 }
 
-// Appearance (M22.8), a page of the settings that takes the window:
+// Appearance, a page of the settings that takes the window:
 // openAppearance opens it at a tab of its middle column, Theme, Messages
 // or Calls, which the phone layout shows under the foot's Editor.
 export const APPEARANCE = `document.querySelector('[role=dialog][aria-label="Settings"] [data-appearance]')`;
@@ -115,12 +115,12 @@ export function picture(file) {
 }
 
 // CLOSE_CARD closes a profile card, as an expression for a page's eval:
-// beside its click on a wide window it has no ✕, and Escape closes it
-// (M22.4); as a phone's sheet, its ✕.
+// beside its click on a wide window it has no ✕, and Escape closes it;
+// as a phone's sheet, its ✕.
 export const CLOSE_CARD = `(document.querySelector('[role=dialog][aria-label="Profile"] button[aria-label="Close"]')?.click()
     ?? document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true)`;
 
-// openYours opens one of a member's own sections of a den (M22.3): its
+// openYours opens one of a member's own sections of a den: its
 // page, if the browser isn't on it, then the cog's settings, which list
 // them first.
 export async function openYours(b, port, den, section) {
@@ -130,7 +130,7 @@ export async function openYours(b, port, den, section) {
 }
 
 // openManage opens the Manage dialog of the first den on home's list
-// (M8.3) at a section, from the home page.
+// at a section, from the home page.
 export const MANAGE = `document.querySelector('[role=dialog][aria-label^="Manage "]')`;
 export async function openManage(b, section) {
     const manage = `[...document.querySelectorAll('button')].find((x) => x.textContent.trim() === 'Manage')`;
@@ -175,7 +175,7 @@ export async function pair(b, who, previews = false) {
 }
 
 // paired waits for a page just paired to reach its home, answering Link
-// previews as the page asks a browser new to Dens (M22.7): off, as they
+// previews as the page asks a browser new to Dens: off, as they
 // were before it asked, unless previews.
 export const PREVIEWS = `document.querySelector('[data-link-previews]')`;
 export async function paired(b, what, previews = false) {
@@ -187,7 +187,7 @@ export async function paired(b, what, previews = false) {
     await waitFor(() => b.eval(home), what);
 }
 
-// helper stands in for the shortcut helper (dens shortcuts, M7) on an
+// helper stands in for the shortcut helper (dens shortcuts) on an
 // instance's control socket: it sends what a driver gives it, and keeps
 // what the service sends, the latest state among it.
 export function helper(instance = 'm2a') {
@@ -274,14 +274,14 @@ class Socket {
 //   preload: a function's source, run in each document before the page.
 //   prefs: more Firefox prefs, as { name: value }.
 //   size: the window, [1400, 900] unless given.
-//   downloads: a directory downloads go to, without asking (M10).
+//   downloads: a directory downloads go to, without asking.
 //   hover: a pointer that hovers, as a desktop's mouse. Headless, both
 //     browsers say they have no pointer, so what shows on hover never
-//     shows (M11). Chromium's touch emulation forgets it.
+//     shows. Chromium's touch emulation forgets it.
 //   camera: a Y4M file Chromium's camera plays, again and again, read
-//     each time the page opens the camera (M22.6).
+//     each time the page opens the camera.
 // A launched browser's windows, windowEval, closeWindow and windowShot reach
-// the windows its page opens, as a share's own (M11): how many there are,
+// the windows its page opens, as a share's own: how many there are,
 // and the newest.
 export function launch(name, port, opts = {}) {
     return name === 'chromium' ? chromium(port, opts) : firefox(port, opts);
@@ -392,10 +392,10 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             await mouse('mousePressed', x, y, { button, clickCount: 1 });
             await mouse('mouseReleased', x, y, { button, clickCount: 1 });
         },
-        // move moves the pointer there, hovering what's under it (M11).
+        // move moves the pointer there, hovering what's under it.
         move: (x, y) => mouse('mouseMoved', x, y),
         // touch has the page take this browser for a touch screen's, or
-        // not, as its pointer and hover media say (M11); tap then taps.
+        // not, as its pointer and hover media say; tap then taps.
         async touch(on) {
             await cdp('Emulation.setTouchEmulationEnabled', on ? { enabled: true, maxTouchPoints: 1 } : { enabled: false });
         },
@@ -403,7 +403,7 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
             await cdp('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
         },
-        // press holds a finger there for ms, a long press (M13.2).
+        // press holds a finger there for ms, a long press.
         async press(x, y, ms = 800) {
             await cdp('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
             await sleep(ms);
@@ -423,7 +423,7 @@ async function chromium(port, { media, screen, autoplay, preload, size = [1400, 
             if (type !== 'down') await cdp('Input.dispatchKeyEvent', { type: 'keyUp', key, code, windowsVirtualKeyCode: vk });
         },
         // chord presses a key while modifiers ('Control', 'Shift', 'Alt',
-        // 'Meta') are held (M11).
+        // 'Meta') are held.
         async chord(mods, key) {
             const bits = { Alt: 1, Control: 2, Meta: 4, Shift: 8 };
             const modifiers = mods.reduce((m, k) => m | bits[k], 0);

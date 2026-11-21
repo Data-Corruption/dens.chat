@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M8 hostile-text check's den: a channel of 200 messages from alice,
+# The hostile check's den: a channel of 200 messages from alice,
 # each 4,000 characters, a message's most, of markdown made to be slow to
 # parse, as any member could send.
 # shellcheck source=scripts/test/browser/lib.sh

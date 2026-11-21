@@ -1,4 +1,4 @@
-// The M9.1 check: alice's instance hosts nothing until she turns hosting
+// The hosting check: alice's instance hosts nothing until she turns hosting
 // on in the settings, with her local password, and then home offers to
 // create her den, and the setting says where Caddy and the router send it.
 // Turned off, once she confirms, her den's row says so and leads back to

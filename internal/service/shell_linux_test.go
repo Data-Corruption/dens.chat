@@ -29,7 +29,7 @@ import (
 // names, with the key the shell wrapped in its control directory, and a
 // data key where this platform's LoadHostKey finds one: on Linux, as
 // systemd gives an installed service its key, standing in for the shell's
-// pipe (M12).
+// pipe.
 func androidHome(t *testing.T, key []byte) layout.Layout {
 	t.Helper()
 	files := filepath.Join(t.TempDir(), "files")
@@ -114,7 +114,7 @@ func runAndroid(t *testing.T, bi build.BuildInfo, port int) (*app.App, control.C
 
 // The Android app's service starts from the key its shell hands it, greets
 // the shell's stream with where the page is, and hosts no den. A key that
-// isn't the data's, and data a newer version wrote, are refused (M12).
+// isn't the data's, and data a newer version wrote, are refused.
 func TestAndroidServiceStartsFromTheShellsKey(t *testing.T) {
 	key := bytes.Repeat([]byte{3}, host.HostKeySize)
 	l := androidHome(t, key)
@@ -188,7 +188,7 @@ func next(t *testing.T, s *control.Stream) control.Message {
 	}
 }
 
-// The shell's stream carries the notifications the shell posts (M12.3):
+// The shell's stream carries the notifications the shell posts:
 // whether the member turned any on, each one to post and each to take
 // back, and the shell's word on the app being in front and on Android
 // letting it post them.
@@ -246,7 +246,7 @@ func TestTheShellPostsNotifications(t *testing.T) {
 
 // The phone's name and its model, which the shell gives Dens, name its
 // device on the dens it joins, where its hostname would say only
-// localhost (M13.3).
+// localhost.
 func TestThePhonesNameAndModelAreItsDevicesLabel(t *testing.T) {
 	androidHome(t, bytes.Repeat([]byte{3}, host.HostKeySize))
 	t.Setenv(app.DeviceNameEnv, "Galaxy S24 Ultra")
@@ -264,7 +264,7 @@ func TestThePhonesNameAndModelAreItsDevicesLabel(t *testing.T) {
 // says over its stream as its theme changes, and the shell hears over its
 // own: at each change, in the order the page said them, and as it
 // connects, where the page has said one. A color that isn't one goes
-// nowhere (M13.3).
+// nowhere.
 func TestTheShellPaintsTheBarsWithThePagesTheme(t *testing.T) {
 	androidHome(t, bytes.Repeat([]byte{3}, host.HostKeySize))
 	a, client, _, err := runAndroid(t, androidBuild("v1.6.0"), freePort(t))
@@ -314,7 +314,7 @@ func TestTheShellPaintsTheBarsWithThePagesTheme(t *testing.T) {
 	bars(again, "#123456")
 }
 
-// Relay on the phone (M20.3): the member turning Keybind relay on has the
+// Relay on the phone: the member turning Keybind relay on has the
 // shell told Relay wants the network, which it asks Android for, and the
 // shell's word on that reaches the settings' list of devices: refused, it
 // says so. A shell that connects again hears it at once.

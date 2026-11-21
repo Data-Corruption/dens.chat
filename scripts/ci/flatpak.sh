@@ -1,4 +1,4 @@
-# Dens's Flatpak repository on the release host (M9.4).
+# Dens's Flatpak repository on the release host.
 #
 # This file is sourced by ../ci.sh, whose --flatpak runs publish_flatpak
 # once a release has finished. The repository, under flatpak/repo/, holds
@@ -13,7 +13,7 @@
 FLATPAK_APP=chat.dens.Dens
 FLATPAK_BRANCH=stable
 FLATPAK_HOMEPAGE=https://dens.chat
-# The first release whose binary runs as the Flatpak (M9.3); there's
+# The first release whose binary runs as the Flatpak; there's
 # nothing to publish before it.
 FLATPAK_FIRST_RELEASE=v1.2.0
 # The keys every Flatpak trusts: one, or two while a key is being replaced,

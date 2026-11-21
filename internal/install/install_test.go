@@ -414,7 +414,7 @@ func TestInstallRefusesPortInUse(t *testing.T) {
 }
 
 // Every install opens the media ports for the installed binary, so turning
-// hosting on needs nothing elevated (M9.1).
+// hosting on needs nothing elevated.
 func TestEveryInstallOpensTheMediaPorts(t *testing.T) {
 	f := newFake(t)
 	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
@@ -441,7 +441,7 @@ func TestEveryInstallOpensTheMediaPorts(t *testing.T) {
 	}
 }
 
-// v1.0's den option is refused: hosting is the settings' (M9.1). An update
+// v1.0's den option is refused: hosting is the settings'. An update
 // over an instance v1.0 wrote, whose den port is its client port, says
 // which flags fix it, and goes once one does.
 func TestUpdateOverV1ClashNamesTheFlags(t *testing.T) {
@@ -504,7 +504,7 @@ func TestUninstall(t *testing.T) {
 }
 
 // An install with no desktop session to open Dens in, as on a server,
-// ends with the guide to setting it up from the command line (M10); one
+// ends with the guide to setting it up from the command line; one
 // on a desktop, and an update, don't.
 func TestInstallOnAServerNamesTheGuide(t *testing.T) {
 	for _, c := range []struct {
@@ -540,7 +540,7 @@ func TestInstallOnAServerNamesTheGuide(t *testing.T) {
 }
 
 // Uninstall asks, where it's given a question, once its plan is printed,
-// saying what the instance holds (M10). A refusal deletes nothing, and a
+// saying what the instance holds. A refusal deletes nothing, and a
 // dry run asks nothing.
 func TestUninstallAsksAfterItsPlan(t *testing.T) {
 	f := newFake(t)
@@ -618,7 +618,7 @@ func makeBackupWith(t *testing.T, key []byte, password string, uploads map[strin
 	return makeArchive(t, key, password, uploads, backup.Manifest{}, nil)
 }
 
-// makeExport makes a den's export (M10), as makeBackup makes a backup.
+// makeExport makes a den's export, as makeBackup makes a backup.
 func makeExport(t *testing.T, key []byte, password string) string {
 	t.Helper()
 	return makeExportOf(t, key, password, nil)
@@ -756,8 +756,7 @@ func TestRestore(t *testing.T) {
 }
 
 // A den's export restores as a backup does, and the restore names it, and
-// ends with how to turn hosting on, where a backup's says to pair a browser
-// (M10).
+// ends with how to turn hosting on, where a backup's says to pair a browser.
 func TestRestoreNamesAnExport(t *testing.T) {
 	f := newFake(t)
 	if err := install(t, f, "v1.0.0", "main", Options{}); err != nil {
@@ -789,7 +788,7 @@ func TestRestoreNamesAnExport(t *testing.T) {
 }
 
 // TestOlderReleaseRefused checks that no instance moves to an older release
-// than the one it has (M8), nor one older than an update it was in the
+// than the one it has, nor one older than an update it was in the
 // middle of, which a dry run says too; the same release installs again.
 func TestOlderReleaseRefused(t *testing.T) {
 	f := newFake(t)
@@ -841,7 +840,7 @@ func releaseAt(t *testing.T, version string) string {
 
 // TestUpdateRefusesOlderPointer checks that dens update stops before it
 // downloads anything when the release host names an older release than its
-// own (M8), and goes on for the same one, which repairs.
+// own, and goes on for the same one, which repairs.
 func TestUpdateRefusesOlderPointer(t *testing.T) {
 	f := newFake(t)
 	if err := install(t, f, "v1.1.0", "main", Options{}); err != nil {
@@ -861,7 +860,7 @@ func TestUpdateRefusesOlderPointer(t *testing.T) {
 }
 
 // TestReleaseRefusesSkipVerify checks that a binary carrying the release
-// signing identity always verifies what it installs (M8): only a test
+// signing identity always verifies what it installs: only a test
 // release, built without it, skips verifying.
 func TestReleaseRefusesSkipVerify(t *testing.T) {
 	f := newFake(t)

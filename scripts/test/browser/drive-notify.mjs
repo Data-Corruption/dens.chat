@@ -1,17 +1,17 @@
-// The M12.3 check of notifications, as alice in the browser named: DMs
+// The notify check, of notifications, as alice in the browser named: DMs
 // turned on in the settings, which the browser lets the page show; a DM
 // from bob while her tab is behind another shows through the browser, with
 // who sent it, the den and its start, a spoiler hidden, and its click
 // opens the DM at the message; read on another device, it's taken back; on
 // screen in the DM, nothing shows; and muted from the DM's bell, nothing
 // shows. With mentions turned on, staff's @everyone in a channel shows, as
-// bob, a moderator, writes it (M15.4); the @everyone switch under Mentions,
+// bob, a moderator, writes it; the @everyone switch under Mentions,
 // on by default, silences it, though it still counts among her mentions;
 // and on again, a mute of the channel silences it too. Then with no tab
 // open, Dens's helper, dens shortcuts, shows a DM
 // through the desktop's notification service, dunst here, as Dens's, and
 // its click opens the page at the message, paired as dens open pairs it;
-// read elsewhere, it's taken back from the desktop too. From M22.2 the
+// read elsewhere, it's taken back from the desktop too. Then the
 // tab's icon: the mark, then with its dot while the DM waits behind
 // another tab, and the mark again once it's read.
 //
@@ -98,7 +98,7 @@ try {
     await waitFor(() => b.eval(`!!document.getElementById('notify-dms')`), 'the notifications card');
     await b.eval(`document.getElementById('notify-dms').click(), true`, true);
     await waitFor(() => settings().dms, 'DMs on, kept by the service');
-    // The card says only what calls for a line (M22.3): nothing, with the
+    // The card says only what calls for a line: nothing, with the
     // browser letting the page notify.
     await sleep(500);
     const explained = await b.eval(`['asks to show them', 'A Dens tab shows them', 'Mute a den'].filter((x) => document.querySelector('[role=dialog]').innerText.includes(x))`);

@@ -1,4 +1,4 @@
-// The M5.1 check: Alice, in Chromium, owns the den and sets retention in
+// The retention check: Alice, in Chromium, owns the den and sets retention in
 // its settings; Bob, in Firefox, watches #general, whose messages are three
 // days old, vanish without a reload, and #random's unread mark and mention
 // go with them.

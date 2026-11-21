@@ -97,8 +97,8 @@ func TestCheckDenEvent(t *testing.T) {
 	}
 }
 
-// TestBadges checks an event's badge and a profile's as a den sends them
-// (M17.5): a title cleaned as an event's name is, of up to 40 characters,
+// TestBadges checks an event's badge and a profile's as a den sends them:
+// a title cleaned as an event's name is, of up to 40 characters,
 // a picture of an emoji's size, an event in a voice channel, and on a
 // profile the event's name and times; and an ended event, which isn't
 // live, has nobody interested, may have ended as it started, and may have

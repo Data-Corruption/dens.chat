@@ -18,15 +18,15 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/sfu"
 )
 
-// A call joins one member's browser to the den's SFU, in a voice channel
-// (M2). The den decides who may be in which call, and who may share their
-// screen and watch others' (M4.2), and what sound of its soundboard plays
-// in a call (M14.3), and tells members who is; the SFU carries the media
+// A call joins one member's browser to the den's SFU, in a voice channel.
+// The den decides who may be in which call, and who may share their
+// screen and watch others', and what sound of its soundboard plays
+// in a call, and tells members who is; the SFU carries the media
 // and makes the offers. A call belongs to the socket that joined it. When
 // that socket closes, the den holds the call for its device to take back
-// on another (M3), unless the den closed the socket for good.
+// on another, unless the den closed the socket for good.
 //
-// From M16.2 every call is sealed end to end: each member's page seals
+// Every call is sealed end to end: each member's page seals
 // what it sends under a key their Dens makes, which the den passes to each
 // other member of the call sealed to their identity, and keeps the latest
 // of while the call lasts. The SFU forwards what it can't open, as it
@@ -41,35 +41,35 @@ type call struct {
 	sock  atomic.Pointer[socket]
 	staff bool // whether the member is staff, which a held call can't ask its socket
 	peer  *sfu.Peer
-	// The member's own marks: muted, and deafened, hearing nothing (M3.3).
+	// The member's own marks: muted, and deafened, hearing nothing.
 	muted, deafened bool
 	hold            *time.Timer // ends a held call that isn't taken back
 	// sharing is whether the member shares their screen, with sound if
 	// sound, and watching whose shares they watch, in the order they
-	// started (M4.2).
+	// started.
 	sharing, sound bool
 	watching       []int64
 	// talking is whether the member holds push to talk, as the call's
-	// members hear (M11).
+	// members hear.
 	talking bool
 	// sealKey is the member's latest key for the call, as their Dens sent
-	// it (M16.2), which each member it holds a copy for gets as their call
+	// it, which each member it holds a copy for gets as their call
 	// starts or is taken back. It goes with the call.
 	sealKey *denproto.VoiceKey
 	// joined is when the call joined its channel, which a stretch toward a
-	// live event's badge counts from (M17.5); taking a held call back keeps
+	// live event's badge counts from; taking a held call back keeps
 	// it. It goes with the call.
 	joined time.Time
 }
 
 // callRoom is a voice channel's call, and the sound that plays in it, if
-// any (M14.3).
+// any.
 type callRoom struct {
 	staffOnly bool
 	members   []*call // in the order they joined
 	sound     *sounding
 	// began is when the call's first member joined, and record its
-	// channel's longest call then, in milliseconds, 0 for none (M21.2).
+	// channel's longest call then, in milliseconds, 0 for none.
 	// kept is the longest the den has decided to write for the channel
 	// since, and counts is false once staff reset the record, after which
 	// the call writes none.
@@ -86,7 +86,7 @@ type sounding struct {
 	stop   func()
 }
 
-// pendingMove is a move staff made of a member's call (M17.2): the
+// pendingMove is a move staff made of a member's call: the
 // channel their page was told to join, and until when its join doesn't
 // count toward their limit on joining.
 type pendingMove struct {
@@ -120,13 +120,13 @@ type callRegistry struct {
 	// ended remembers, by device, why a held call ended.
 	ended map[string]endedCall
 	// waits holds, by member, when they may next play a sound, once their
-	// last ended (M14.3), across calls.
+	// last ended, across calls.
 	waits map[int64]time.Time
 	// moves holds, by member, the move staff made of their call whose join
-	// hasn't come yet (M17.2).
+	// hasn't come yet.
 	moves map[int64]pendingMove
 	// records holds each voice channel's record as this process last
-	// decided it (M21.2), which the database may not hold yet; writes,
+	// decided it, which the database may not hold yet; writes,
 	// the records decided and not yet written, in order. writing orders
 	// the writes: it's taken before mu is let go, so a record lands in the
 	// order it was decided.
@@ -221,21 +221,21 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		sock.voice(denproto.EventVoiceEnded, denproto.VoiceEnded{ChannelID: req.ChannelID, Reason: reason})
 	}
 	// A page that doesn't seal would send in the clear what every other
-	// page drops, and hear nothing (M16.2). A resume takes back only a call
+	// page drops, and hear nothing. A resume takes back only a call
 	// the den holds, which was joined sealed.
 	if !req.Sealed && !req.Resume {
 		refuse(denproto.VoiceUpdateNeeded)
 		return
 	}
 	// A resume makes no peer, so only joins count against the limit, and
-	// not the join a move asked for (M17.2).
+	// not the join a move asked for.
 	if !req.Resume && !d.takeMove(s.MemberID, req.ChannelID) && d.Allow(LimitCall, strconv.FormatInt(s.MemberID, 10)) != nil {
 		refuse(denproto.VoiceRateLimited)
 		return
 	}
 	// A call that starts may earn a live event's badge once it's lasted a
-	// stretch (M17.5), and a room that starts writes its length a minute
-	// past its record (M21.2): the den's timer looks then, its lock taken
+	// stretch, and a room that starts writes its length a minute
+	// past its record: the den's timer looks then, its lock taken
 	// once the registry's is let go.
 	var awardBy, markAt time.Time
 	defer func() {
@@ -336,7 +336,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 	d.publishTalkingLocked(cid, sock)
 	d.publishSoundingLocked(cid, sock)
 	// As when they move their call to another device, the others' keys may
-	// hold a copy for them already (M16.2).
+	// hold a copy for them already.
 	d.passKeysLocked(nc)
 	awardBy = nc.joined
 	d.log.Infof("Member %d joined the call in channel %d", s.MemberID, cid)
@@ -378,7 +378,7 @@ func (d *Den) resumeCall(sock *socket, cid int64, channel string) {
 		sock.voice(denproto.EventVoiceResumed, denproto.VoiceResumed{ChannelID: channel})
 		c.peer.Resume()
 		// Who held push to talk, and what sound plays, may have changed
-		// while the socket was away, and the others' keys (M16.2).
+		// while the socket was away, and the others' keys.
 		d.publishTalkingLocked(c.channel, sock)
 		d.publishSoundingLocked(c.channel, sock)
 		d.passKeysLocked(c)
@@ -437,7 +437,7 @@ func (d *Den) muteCall(sock *socket, marks denproto.VoiceMute) {
 }
 
 // talkCall lights the push-to-talk ring of the member whose call this
-// socket holds, for the call's members, or puts it out (M11). A press while
+// socket holds, for the call's members, or puts it out. A press while
 // the member is muted or staff muted, or past TalksPerSecond, lights
 // nothing; a release always puts a lit ring out.
 func (d *Den) talkCall(sock *socket, req denproto.VoiceTalk) {
@@ -470,7 +470,7 @@ func (d *Den) stopTalkingLocked(c *call) {
 }
 
 // publishTalkingLocked tells the members of a channel's call who holds push
-// to talk in it (M11): on every socket that holds a call in it, or only on
+// to talk in it: on every socket that holds a call in it, or only on
 // to. Only the call's members hear, as only their pages ring for speech.
 // The caller holds the registry's lock.
 func (d *Den) publishTalkingLocked(cid int64, to *socket) {
@@ -498,7 +498,7 @@ func (d *Den) publishTalkingLocked(cid int64, to *socket) {
 
 // relayKey passes a member's key for their call to each other member of
 // it the key holds a copy for, each their copy alone, and keeps it as the
-// member's latest while the call lasts (M16.2). A key for a call the
+// member's latest while the call lasts. A key for a call the
 // socket doesn't hold, or past the member's limit, goes nowhere. The den
 // checks its shape alone: each member's Dens checks the rest against the
 // identity it kept.
@@ -645,7 +645,7 @@ func (d *Den) endCallLocked(c *call, reason string) {
 
 // dropCallLocked takes a call out and hangs up its peer, which retires
 // its sections in the others' calls, its share's among them. A sound the
-// member played ends as they leave (M14.3). The caller holds the
+// member played ends as they leave. The caller holds the
 // registry's lock, and publishes the change.
 func (d *Den) dropCallLocked(c *call) {
 	r := &d.calls
@@ -668,7 +668,7 @@ func (d *Den) dropCallLocked(c *call) {
 }
 
 // shareCall starts or ends the share of the member whose call this socket
-// holds (M4.2), within the den's limits, or tells the socket why not.
+// holds, within the den's limits, or tells the socket why not.
 func (d *Den) shareCall(s *Session, sock *socket, req denproto.VoiceShare) {
 	limited := d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) != nil
 	r := &d.calls
@@ -717,7 +717,7 @@ func (d *Den) shareCall(s *Session, sock *socket, req denproto.VoiceShare) {
 }
 
 // watchCall starts or stops this socket's member watching another
-// member's share in their call (M4.2), within the den's limits, or tells
+// member's share in their call, within the den's limits, or tells
 // the socket why not.
 func (d *Den) watchCall(s *Session, sock *socket, req denproto.VoiceWatch) {
 	limited := d.Allow(LimitWrite, strconv.FormatInt(s.MemberID, 10)) != nil
@@ -815,8 +815,8 @@ func (r *callRegistry) viewersLocked(sharer *call) int {
 	return n
 }
 
-// soundCall plays one of the den's sounds in the call this socket holds
-// (M14.3), or tells the socket why not: the soundboard is off, staff muted
+// soundCall plays one of the den's sounds in the call this socket holds,
+// or tells the socket why not: the soundboard is off, staff muted
 // the member, a sound plays in the call, or the member's wait after their
 // last hasn't passed. One sound plays in a call at a time, since mixing
 // two would take re-encoding, and plays to its end, unless its player
@@ -938,7 +938,7 @@ func (d *Den) endSoundLocked(cid int64, room *callRoom) {
 }
 
 // publishSoundingLocked tells the members of a channel's call whose sound
-// plays in it, or that none does (M14.3): on every socket that holds a call
+// plays in it, or that none does: on every socket that holds a call
 // in it, or only on to, as publishTalkingLocked does. The caller holds the
 // registry's lock.
 func (d *Den) publishSoundingLocked(cid int64, to *socket) {
@@ -965,7 +965,7 @@ func (d *Den) publishSoundingLocked(cid int64, to *socket) {
 }
 
 // callBitrateChanged has the call in a voice channel go at the channel's
-// new bitrate, from each member's next offer, which goes now (M4.2).
+// new bitrate, from each member's next offer, which goes now.
 func (d *Den) callBitrateChanged(c denproto.Channel) {
 	cid, err := denproto.ParseID(c.ID)
 	if err != nil || c.Bitrate == 0 {
@@ -1147,7 +1147,7 @@ func (d *Den) staffMove(ctx context.Context, s *Session, id string) (int64, erro
 }
 
 // MoveMember moves a member's call to another voice channel at staff's
-// word (M17.2). The den checks that staff may move them, and what joining
+// word. The den checks that staff may move them, and what joining
 // checks, that the member sees the channel and its call has room; then it
 // tells the socket holding their call, whose page joins the channel as if
 // they'd picked it, which ends the old call. A call held while its socket
@@ -1223,8 +1223,8 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 		c.peer.SetMuted(muted)
 		if muted {
 			// The den forwards nothing from a muted member, their screen
-			// included, so their share ends rather than freezing (M4.2),
-			// and so does a sound they played (M14.3).
+			// included, so their share ends rather than freezing,
+			// and so does a sound they played.
 			d.endShareLocked(c)
 			d.stopTalkingLocked(c)
 			if room := r.rooms[c.channel]; room != nil && room.sound != nil && room.sound.member == mid {
@@ -1239,7 +1239,7 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 
 // publishCallsLocked tells everyone who can see each of the channels who
 // is in its call now: no one, for a call that ended, whose length becomes
-// its channel's record if it's longer (M21.2).
+// its channel's record if it's longer.
 func (d *Den) publishCallsLocked(channels ...int64) {
 	r := &d.calls
 	now := d.now()

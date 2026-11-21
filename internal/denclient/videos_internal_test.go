@@ -9,8 +9,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/media/ffmpeg"
 )
 
-// A video over a den's limit that can't go says why, in the page's words
-// (M5.4).
+// A video over a den's limit that can't go says why, in the page's words.
 func TestTooLargeVideo(t *testing.T) {
 	cases := []struct {
 		err  error

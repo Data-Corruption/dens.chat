@@ -1,4 +1,4 @@
-// Relay's sound in the page (M20.2): listening to another of the member's
+// Relay's sound in the page: listening to another of the member's
 // devices' sound, which starts at a click, as a browser needs before it
 // plays anything, belongs to the page that clicked, as a call does, and
 // ends with Stop or with the page; and this computer's own, which the

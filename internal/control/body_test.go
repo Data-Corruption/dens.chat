@@ -116,7 +116,7 @@ func TestOpenRefusesTheBody(t *testing.T) {
 	}
 }
 
-// A service before M10 sent a body raw, to the end of the stream, where one
+// A service older than v1.3.0 sent a body raw, to the end of the stream, where one
 // cut short looks whole, so the client refuses it before taking any.
 func TestRawBodyIsRefused(t *testing.T) {
 	me, err := host.CurrentUser()

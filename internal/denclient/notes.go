@@ -8,7 +8,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Notes to self (M17.3). A member's notes in a den are a channel only they
+// Notes to self. A member's notes in a den are a channel only they
 // see, which the den makes as they first open it. Its messages and files
 // are sealed here as a DM's are, under a key this service makes from the
 // member's seal, so every device holding the seal reads them and the den

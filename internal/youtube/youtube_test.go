@@ -135,7 +135,7 @@ func TestACoverShowsTheTitleAndChannelAsNames(t *testing.T) {
 	}
 }
 
-// The cover links a channel's name to its address (M14.1), which opens in
+// The cover links a channel's name to its address, which opens in
 // the member's browser, so it's kept only on YouTube's own site.
 func TestAChannelsAddressIsKeptOnlyOnYouTube(t *testing.T) {
 	for _, c := range []struct{ name, address, want string }{

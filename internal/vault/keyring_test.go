@@ -8,8 +8,7 @@ import (
 
 // The Flatpak's remembered copy opens with the keyring's secret and nothing
 // else: another secret, as a reset keyring's or the random one KWallet
-// answers a cancelled prompt with, fails rather than yielding a wrong key
-// (M9.3).
+// answers a cancelled prompt with, fails rather than yielding a wrong key.
 func TestKeyringWrapOpensOnlyWithItsSecret(t *testing.T) {
 	v, _ := testVault(t)
 	secret := bytes.Repeat([]byte{7}, 64)

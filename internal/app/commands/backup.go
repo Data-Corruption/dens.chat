@@ -54,7 +54,7 @@ func archiveFlags() []cli.Flag {
 }
 
 // saveArchive has the service write an archive, a backup or the den's
-// export (M10), as op asks and what names it, to the file --output names
+// export, as op asks and what names it, to the file --output names
 // or under the service's name in the current directory, and returns its
 // path.
 func saveArchive(bi build.BuildInfo, cmd *cli.Command, op, what string) (string, error) {
@@ -97,7 +97,7 @@ var freeSpace = host.FreeSpace
 // writeBackup has the service write an archive into dir, as output or under
 // the name the service gives it, and keeps it only once it has come whole.
 // It refuses before the archive comes when dir hasn't room for it. what
-// names the archive: a backup, or the den's export (M10).
+// names the archive: a backup, or the den's export.
 func writeBackup(client control.Client, req control.Request, dir, output, what string) (string, error) {
 	temp, err := os.CreateTemp(dir, ".dens-backup-*.tmp")
 	if err != nil {

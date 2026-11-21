@@ -175,7 +175,7 @@ func TestClientSessionsSlideAndExpire(t *testing.T) {
 	}
 }
 
-// A den's export holds the den alone (M10): every den table as it is, the
+// A den's export holds the den alone: every den table as it is, the
 // data key's check value and its password wrap, and none of the client,
 // whose rows leave no trace in the file. It's one file, which an older
 // release's restore opens as it does a backup's.

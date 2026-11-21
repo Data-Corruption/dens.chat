@@ -1,7 +1,7 @@
 // Stands between the members' clients and the den, as Caddy would, and
 // writes the SDP of each call answer a client sends the den to a log, one
 // JSON line each: what the den learns of a member's computer from their
-// answers (M8). The answers check reads the log.
+// answers. The answers check reads the log.
 //
 //   ./node browser/den-proxy.mjs LISTEN_PORT DEN_PORT LOG
 //

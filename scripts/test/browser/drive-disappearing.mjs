@@ -1,4 +1,4 @@
-// The M16.4 check of disappearing messages: alice, who hosts the den, in
+// The disappearing check: alice, who hosts the den, in
 // Chromium, and bob in the browser named; carol through her page's API.
 // Bob sets the DM's time from the profile beside it, which both pages show
 // as a line and in the header. Under a time of seconds, which a
@@ -7,7 +7,7 @@
 // as its time passes, into the den's change log. Alice sets a group's time
 // from its members, and bob's message there goes from both pages too. And
 // with the den stopped, a message goes from bob's page and his cache all
-// the same. From M21.1 alice writes either side of a change of the time, a
+// the same. Then alice writes either side of a change of the time, a
 // moment apart, and both messages show their clocks.
 //
 //   run.sh disappearing chromium|firefox

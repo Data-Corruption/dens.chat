@@ -7,7 +7,7 @@ import (
 
 // Events about a member's own devices, which only their sessions get.
 // device.connected is a device the den let in by approval opening its
-// first socket (M22.6), which the device that approved it stops showing
+// first socket, which the device that approved it stops showing
 // its digits on.
 const (
 	EventDeviceAdded     = "device.added"
@@ -17,7 +17,7 @@ const (
 
 // PasswordLoginRequest signs in on a new device with the den password: the
 // member's verifier, and the new device's key with its proof over a nonce.
-// Offer starts the exchange with the device that approves it (M1.7).
+// Offer starts the exchange with the device that approves it.
 type PasswordLoginRequest struct {
 	Username    string        `json:"username"`
 	Verifier    Bytes         `json:"verifier"`

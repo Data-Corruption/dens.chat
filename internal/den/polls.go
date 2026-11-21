@@ -15,7 +15,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Polls (M15.4): a channel's message whose members vote on its choices,
+// Polls: a channel's message whose members vote on its choices,
 // the message's text being the question. The den holds to the poll's two
 // rules, its author's picks as they posted it: who voted for what shows
 // never, once it ends, or with the totals; and the totals show as votes

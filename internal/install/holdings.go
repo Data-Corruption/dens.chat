@@ -13,7 +13,7 @@ import (
 )
 
 // holdings is what an instance's data holds that it would lose to an
-// uninstall, or to a den's export restored over it (M10): the den it
+// uninstall, or to a den's export restored over it: the den it
 // hosts, if any, and how many dens it has joined.
 type holdings struct {
 	den    string // the den's name, "" for none

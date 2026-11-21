@@ -12,7 +12,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Badges (M17.5): staff attach a badge to an event in a voice channel, a
+// Badges: staff attach a badge to an event in a voice channel, a
 // picture checked as an emoji's is and a title. The picture is one of the
 // den's named files, of kind badge, so it stays the den's whoever added it,
 // opening to everyone who sees its event; its name is its file's ID, since
@@ -30,7 +30,7 @@ import (
 // A member's profile carries the badges they earned whose events the asker
 // sees, as it carries their bio, each with its event's name and start,
 // which say what it was for once the event left the list. A member hides
-// any of theirs from their card (M17.6), which only keeps it tidy: the den
+// any of theirs from their card, which only keeps it tidy: the den
 // still knows who earned what, and their own copy of their profile still
 // carries a hidden one, marked, for them to show again.
 
@@ -362,7 +362,7 @@ func (d *Den) awardDue(ctx context.Context) error {
 var errBadgeNotFound = denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such badge")
 
 // SetBadgeHidden hides a badge the member earned from their profile card,
-// or shows it again (M17.6). One whose event they no longer see, as a
+// or shows it again. One whose event they no longer see, as a
 // staff-only event's once they aren't staff, is no such badge, as their
 // profile leaves it out.
 func (d *Den) SetBadgeHidden(ctx context.Context, s *Session, eventID string, hidden bool) error {

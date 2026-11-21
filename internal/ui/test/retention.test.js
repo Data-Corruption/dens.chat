@@ -1,4 +1,4 @@
-// How the page words a den's retention period (M5).
+// How the page words a den's retention period.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

@@ -1,4 +1,4 @@
-// Spoilers (M17.2), checked without a browser: which files waiting to go
+// Spoilers, checked without a browser: which files waiting to go
 // may go as one, a spoiler's photo covered until it's clicked, with
 // nothing of it named, and the viewer leaving out those still covered.
 

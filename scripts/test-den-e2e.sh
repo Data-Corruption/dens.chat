@@ -16,7 +16,7 @@
 # history. The two then call each other in a voice channel, a test binary
 # with Pion standing in for each one's browser, and each must hear the
 # other: over UDP, and with the member's side over TCP alone. Both installs
-# must give the call's length a second apart at most (M21.2). The member's
+# must give the call's length a second apart at most. The member's
 # call must ride out Caddy restarting, and then its own service restarting,
 # the den holding it while the member is away and the member taking it back
 # on the same connection. A staff mute must silence the member, and a staff
@@ -33,13 +33,13 @@
 # AV1 copy that fits, with its preview. The member's cache keeps what they
 # viewed across both restarts, drops what went, and reads with the den
 # stopped. The owner and the member write in a DM at the same moment,
-# neither typing a digit, and compare codes, which asks nothing of the den
-# (M16.1); it carries text, a photo, a photo's and a video's smaller copies
+# neither typing a digit, and compare codes, which asks nothing of the den;
+# it carries text, a photo, a photo's and a video's smaller copies
 # and a video the den stores only sealed. The member opens their notes and
 # writes one, which they read back, the owner can't, and the den holds
-# sealed (M17.3). The owner makes an event in the voice channel, which the
+# sealed. The owner makes an event in the voice channel, which the
 # member marks Interested: as it starts the den tells the member's service,
-# and not the owner's, and End now takes it off (M17.4). The owner shares a
+# and not the owner's, and End now takes it off. The owner shares a
 # checklist with the member, and the two tick different boxes at the same
 # moment, all of which must stay. A second instance on the member's machine
 # stands in for a fresh one: it signs in by the den's address with a
@@ -50,7 +50,7 @@
 # digits, and hands it the seal, with which it reads the DM. Signed out once
 # more from the fresh one's device list, it signs in again the same way,
 # with the digits typed into the fresh one first, which must go on showing
-# its own. With Keybind relay on in both (M20.1), the first install holds a
+# its own. With Keybind relay on in both, the first install holds a
 # call, and the fresh one, which sees it, says hello through Caddy; the
 # first answers, the two link across the member's machine, and push to talk
 # held by the fresh one's stand-in helper reaches the first one's call as a
@@ -61,7 +61,7 @@
 # under a new name, must own the den, with the owner before them a
 # moderator.
 #
-# Before the recovery, the den moves to a server (M10): the host exports it
+# Before the recovery, the den moves to a server: the host exports it
 # from the command line, which refuses while hosting is on, so the host
 # turns hosting off first; a third container, on the den's distro, restores
 # the export, turns hosting on with dens den hosting on and serves it behind
@@ -301,7 +301,7 @@ run() {
     fi
     wait "$owner" || { cat "$RUN_LOG_DIR/call-owner-$network.log" >&2; return 1; }
     # Each probe got the call's keys with the other's, which their services
-    # sealed to each other's identity and passed through the den (M16.2).
+    # sealed to each other's identity and passed through the den.
     local side
     for side in member owner; do
       grep -q "the call's keys: this member's numbered" "$RUN_LOG_DIR/call-$side-$network.log" ||
@@ -325,7 +325,7 @@ run() {
     return 1
   fi
   # Each install gives the call's length from the den's, the member's
-  # through Caddy, on its own clock (M21.2): a second apart at most.
+  # through Caddy, on its own clock: a second apart at most.
   local owner_length member_length owner_after
   owner_length=$(guest "$DEN" call-length "$den_id" "$lounge")
   member_length=$(guest "$CLIENT" call-length "$den_id" "$lounge")
@@ -390,7 +390,7 @@ run() {
 
   # The member shares their screen, with sound, and the owner watches it:
   # Pion's VP9 packets cross the den's media ports, and the den asks the
-  # sharer for a keyframe as the owner's section opens (M4.2).
+  # sharer for a keyframe as the owner's section opens.
   echo ">> The member shares their screen, and the owner watches it"
   guest "$CLIENT" voice-probe "$den_id" "$lounge" "$alice_id" udp share 15 >"$RUN_LOG_DIR/share-member.log" 2>&1 &
   member_probe=$!
@@ -406,7 +406,7 @@ run() {
   echo ">> The owner watched the member's share, its screen and its sound, and the sharer got a keyframe request"
 
   # Staff change the voice channel's bitrate mid-call, and both members'
-  # next offers ask for it (M4.2).
+  # next offers ask for it.
   echo ">> A voice channel's new bitrate reaches the call in progress"
   guest "$DEN" voice-probe "$den_id" "$lounge" "$bob_id" udp bitrate:48000 >"$RUN_LOG_DIR/bitrate-owner.log" 2>&1 &
   owner=$!
@@ -427,7 +427,7 @@ run() {
   echo ">> Both members' next offers asked for the channel's new bitrate"
 
   # Lounge keeps its longest call, which the calls above set, through a
-  # restart of the den (M21.2).
+  # restart of the den.
   echo ">> A voice channel's longest call holds after the den restarts"
   local record
   record=$(guest "$DEN" call-record "$den_id" "$lounge")
@@ -580,7 +580,7 @@ run() {
   "${INCUS[@]}" exec "$CLIENT" -- systemctl start dens@main
   guest "$CLIENT" wait-connected 0 >/dev/null
   guest "$CLIENT" wait-gone "$den_id" "$cached_photo"
-  # The edit and the delete reached the member's history (M6.2).
+  # The edit and the delete reached the member's history.
   for _ in $(seq 20); do
     history=$(guest "$CLIENT" history "$den_id" "$channel")
     [[ "$history" == *"edited while away"* && "$history" != *"to be deleted"* ]] && break
@@ -830,7 +830,7 @@ run() {
   history=$(fresh history "$den_id" "$dm")
   [[ "$history" == *"a private word"* ]] || { echo "error: with the seal typed, the DM reads: $history" >&2; return 1; }
   # The notes' key comes from the seal, so the fresh install reads what the
-  # first wrote, through the server the den moved to (M17.3).
+  # first wrote, through the server the den moved to.
   history=$(fresh history "$den_id" "$notes")
   [[ "$history" == "a note to self" ]] || { echo "error: with the seal typed, the notes read: $history" >&2; return 1; }
   echo ">> The fresh install reads the DM and the member's notes once the member typed their seal"
@@ -890,8 +890,7 @@ run() {
   [[ "$refusal" == *banned* ]] || { echo "error: rejoining after the ban: $refusal" >&2; return 1; }
   echo ">> The banned member can't come back as bob"
 
-  # The den's machine, the server now, has the last word on who owns it
-  # (M8).
+  # The den's machine, the server now, has the last word on who owns it.
   echo ">> The den's machine hands the den on with an owner invite"
   invite=$(guest "$SERVER" owner-invite)
   role=$(guest "$CLIENT" join "$invite" carol Carol)

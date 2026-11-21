@@ -68,13 +68,12 @@ type System interface {
 	ConfigureFirewall(l layout.Layout, cfg *instance.Config) error
 	// RegisterExtras applies machine-wide integration: PATH, crash reporting.
 	RegisterExtras(l layout.Layout) error
-	// RegisterHelper has the shortcut helper start at user's login (M7),
+	// RegisterHelper has the shortcut helper start at user's login,
 	// and returns an undo.
 	RegisterHelper(l layout.Layout, user host.Identity) (undo func() error, err error)
 	// StartHelper starts the shortcut helper in user's session now, if
 	// they're signed in, so nobody signs out after installing. It fails
-	// with errNoDesktop where they have no desktop session, as on a server
-	// (M10).
+	// with errNoDesktop where they have no desktop session, as on a server.
 	StartHelper(l layout.Layout, user host.Identity) error
 
 	ServiceRunning(l layout.Layout) (bool, error)

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Builds RNNoise for the page (M3): the noise suppression a member can turn
+# Builds RNNoise for the page: the noise suppression a member can turn
 # on in a call, which runs in an AudioWorklet. A reactor module with no main
 # and no imports, exporting what the worklet calls, written into the page's
 # assets, which the repository keeps. Every input is pinned in

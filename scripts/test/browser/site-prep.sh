@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# The M17.1 check's site: the public site, which setup.sh built for this
+# What the site check reads: the public site, which setup.sh built for this
 # address and left in tester's home, served on loopback. Its server runs in
 # the background with its PID in ~/site.pid, until the next run's prep.
 set -euo pipefail

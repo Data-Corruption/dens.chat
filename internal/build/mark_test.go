@@ -8,7 +8,7 @@ import (
 )
 
 // The mark's copies outside the binary, the site's icon and the Flatpak's,
-// are the mark (M9.3).
+// are the mark.
 func TestMarkCopiesAreTheMark(t *testing.T) {
 	for _, path := range []string{"docs/static/favicon.svg", "scripts/flatpak/chat.dens.Dens.svg"} {
 		data, err := os.ReadFile(filepath.Join("..", "..", path))
