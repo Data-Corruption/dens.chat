@@ -292,7 +292,7 @@ try {
     await waitFor(() => b.eval(`!!${DIALOG}`), 'the dialog', 5000);
     const whose = await b.eval(`${DIALOG}.innerText`);
     await press('Escape');
-    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy message link', 'Delete']) && whose.includes("This is Bob's message, @bob. It goes for everyone"),
+    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy message link', 'Delete']) && whose.includes("This is @bob's message. It goes for everyone"),
         `bob's message offers alice ${JSON.stringify(hers)}, and its dialog says ${JSON.stringify(whose)}`);
 
     step('the menu by a long press');
