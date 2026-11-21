@@ -7,7 +7,7 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { RelaySettings, SECTIONS, SettingsDialog, onOpenSettings, openSettings, relayState } from '../src/settings.jsx';
+import { RelaySettings, SECTIONS, SettingsDialog, VoiceSettings, onOpenSettings, openSettings, relayState } from '../src/settings.jsx';
 import { keepTheme, ownChoice, setTheme } from '../src/appearance/theme.js';
 import { cleanTheme, variables } from '../src/appearance/themes.js';
 
@@ -15,6 +15,26 @@ import { cleanTheme, variables } from '../src/appearance/themes.js';
 globalThis.window = {
     matchMedia: (q) => ({ matches: q.includes('min-width'), addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {},
     history: { state: null, pushState() {}, replaceState() {}, go() {} }, location: { protocol: 'http:', host: 'localhost', pathname: '/', href: 'http://localhost/' },
+};
+
+// The page's event stream, held here: Node's own WebSocket would reconnect
+// for ever.
+const sockets = [];
+globalThis.WebSocket = class {
+    static CONNECTING = 0;
+    static OPEN = 1;
+    readyState = 1;
+    listeners = {};
+    constructor() {
+        sockets.push(this);
+    }
+    addEventListener(type, fn) {
+        (this.listeners[type] ||= []).push(fn);
+    }
+    send() {}
+    receive(msg) {
+        for (const fn of this.listeners.message || []) fn({ data: JSON.stringify(msg) });
+    }
 };
 
 function all(node, match, found = []) {
@@ -252,4 +272,20 @@ test("a theme of the member's own is listed under My themes in its colors, and w
     assert.deepEqual([render().names, render().worn], [['DuskIn use'], 1], 'worn, marked so');
     assert.deepEqual({ ...document.documentElement.style }, variables(cleanTheme(dusk)), 'and the page wears it');
     setTheme('system');
+});
+
+test('Voice shows the keys the service sent between its first render and its effect', async () => {
+    document.addEventListener ||= () => {};
+    document.removeEventListener ||= () => {};
+    globalThis.fetch = async () => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => '{}' });
+    const root = document.createElement('div');
+    mount(h(VoiceSettings, {}), root);
+    try {
+        sockets.at(-1).receive({ t: 'keys', d: { keys: { ptt: { code: 'KeyV', label: 'V' } } } });
+        for (let i = 0; i < 30; i++) await new Promise((r) => setTimeout(r, 5));
+        const shown = all(root, (n) => n.localName === 'kbd').map((k) => k.textContent);
+        assert.deepEqual(shown, ['V'], 'push to talk on V');
+    } finally {
+        mount(null, root);
+    }
 });

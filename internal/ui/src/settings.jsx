@@ -338,7 +338,7 @@ function SoundRow({ name, label, s, volume, busy, onOn, onMove, onVolume, onRepl
 // says there are no keys, and sharing where the browser can't share. Where
 // the page has the call's button, its role takes the place of how the
 // member sends.
-function VoiceSettings() {
+export function VoiceSettings() {
     const [v, setV] = useState(voiceSettings);
     const holds = useHoldsButton();
     const [loud, setLoud] = useState(callVolume);
@@ -352,10 +352,15 @@ function VoiceSettings() {
     const captures = useRef(0);
     const [elsewhere, setElsewhere] = useState(keysElsewhere);
     useEffect(() => onCall((c) => setInCall(!!c.call)), []);
-    useEffect(() => onKeys(() => {
-        setV(voiceSettings());
-        setElsewhere(keysElsewhere());
-    }), []);
+    // What came between the first render and this effect counts too.
+    useEffect(() => {
+        const update = () => {
+            setV(voiceSettings());
+            setElsewhere(keysElsewhere());
+        };
+        update();
+        return onKeys(update);
+    }, []);
     useEffect(() => {
         devices().then(setList, () => setError("Dens couldn't list the microphones and speakers."));
         const off = onVoiceLevel(setReport);

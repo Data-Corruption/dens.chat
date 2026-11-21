@@ -59,6 +59,29 @@ test('a spoiler shows covered until it is clicked, naming nothing of it, and the
     mount(null, root);
 });
 
+test('a spoiler drawn as a card, a photo too large to preview or a sound, shows covered too, naming nothing of it', async () => {
+    const large = { id: 'd', name: 'ending.png', type: 'image/png', size: 9000000, width: 9000, height: 9000, spoiler: true };
+    const sound = { id: 'e', name: 'reveal.ogg', type: 'audio/ogg', size: 2000, spoiler: true };
+    const root = document.createElement('div');
+    mount(h(Attachments, { denID: '1', files: [large, sound], onOpen: () => {} }), root);
+    const cards = () => {
+        const found = [];
+        (function walk(n) {
+            if (n.nodeType === 1 && 'data-spoiler' in n.attributes) found.push(n);
+            for (const c of n.childNodes || []) walk(c);
+        })(root);
+        return found;
+    };
+    assert.equal(cards().length, 2, 'both covered');
+    assert.doesNotMatch(root.textContent + JSON.stringify(cards().map((c) => c.attributes)), /ending|reveal/, 'nothing names them');
+    cards()[0].dispatch('click');
+    await settle();
+    assert.equal(cards().length, 1, 'clicked, the photo shows');
+    assert.match(root.textContent, /ending\.png/);
+    assert.doesNotMatch(root.textContent, /reveal/, 'and the sound stays covered');
+    mount(null, root);
+});
+
 test("the viewer shows a message's images but the spoilers still covered", () => {
     const m = { id: '5', attachments: [photo('a', 'twist.jpg', true), photo('c', 'credits.jpg', false), { id: 'd', name: 'notes.txt', type: 'text/plain' }] };
     assert.deepEqual(viewed(m, m.attachments[1], new Set(['a'])), { message: '5', files: [m.attachments[1]], index: 0 });
