@@ -55,7 +55,7 @@ holds.
 | `internal/platform/http` | Listeners, client and den routers, guards, handlers; `routetest`, which records a router's routes for the tests that fail on one given twice |
 | `internal/platform/release` | Reads the root `version` pointer from the release host, and checks a release's signed checksums where no cosign runs; `sigstoretest`, a Sigstore of the tests' own |
 | `internal/types` | Configuration shape |
-| `internal/ui` | The page: a Preact app (JSX under `assets/js/src/`, tests under `test/`), its shell template and CSS, its workers and worklets, sounds, fonts and emoji |
+| `internal/ui` | The page: a Preact app (JSX under `src/` grouped by area, CSS source at `css/input.css`, tests under `test/`), its shell template, built bundle, workers and worklets, sounds, fonts and emoji |
 | `internal/build` | Values baked in at build time, the third-party notices the binary carries (`notices.txt`, generated and committed), and `winres`, which writes the resource objects in `cmd/` |
 | `pkg/` | Small reusable packages: locks, rotating logs, HTTP helpers, prompts, migrations, sd_notify |
 | `android/` | The Android app's shell: Kotlin with no AndroidX, its manifest and resources, the newer framework calls it makes behind a version check, and the release key's certificate (`release.pem`), which a release's APK must be signed by |
@@ -322,7 +322,7 @@ Never depend on `tools/` contents directly.
 
 Generated and ignored: `internal/ui/assets/{css/output.css,js/output.js,manifest.json,fonts/}`,
 `out/`, `tools/`, `docs/out/`. Edit sources under
-`internal/ui/assets/css/input.css` and `internal/ui/assets/js/src/`. A clone
+`internal/ui/css/input.css` and `internal/ui/src/`. A clone
 builds and tests before the page is built, serving a placeholder page, which
 a binary a script builds refuses.
 
@@ -333,13 +333,16 @@ generated Go (`.gitattributes`, `.ignore`), which a bare `grep -r` reads.
 
 A step is a branch from main, named for it, and a pull request into main;
 [docs/dev/workflow.md](docs/dev/workflow.md) has the loop. Run what the step's
-testing section names, `-lint`, the race suite, and each check whose drivers
-use what changed. Commit by layer, Go, the page, the shell, the checks and the
-docs, each commit that changes Go passing alone; push, and open the pull
-request with `gh`, its text written for the reviewer. It merges with a merge
-commit. Read CI with `gh`: a failure from its job's log (`gh run view RUN
---log-failed`), an e2e's logs from the run's artifacts (`gh run download RUN -n
-NAME`). After the merge, sync main and delete the branch, here and on GitHub.
+testing section names, `-lint`, the Go race suite (or `go test -race
+./internal/ui/...` and `-js` for changes to the page alone), and each matching
+browser check; leave `-android-e2e` for changes to `android/`, Android host
+seams, WebView/shell behavior, or a milestone's end. Commit by layer, Go, the
+page, the shell, the checks and the docs, each commit that changes Go passing
+alone; push, and open the pull request with `gh`, its text written for the
+reviewer. It merges with a merge commit. Read CI with `gh`: a failure from its
+job's log (`gh run view RUN --log-failed`), an e2e's logs from the run's
+artifacts (`gh run download RUN -n NAME`). After the merge, sync main and
+delete the branch, here and on GitHub.
 
 ## Where to add things
 

@@ -353,7 +353,7 @@ artifacts also verify when served from a mirror.
 |---|---|
 | `ci-gate` | Reads the `CI_ENABLED` repository variable; no other job runs unless it's `true` |
 | `release-plan` | Runs `ci.sh --plan` on pushes to `main`; on pull requests, `ci.sh --plan-pr`, which picks the test jobs by the files the PR changes and asks for no release |
-| `linux-tests` | `test.sh -lint` first, in a checkout nothing has written to; then, with the pinned rclone on `PATH`, the Linux Go tests, the third-party notices, the list of emoji, the page's tests and the release tests |
+| `linux-tests` | `test.sh -lint` first, in a checkout nothing has written to; then, with the pinned rclone on `PATH`, the Linux Go tests, the third-party notices, the list of emoji, the page's tests, the release tests and the page's build |
 | `linux-e2e` | The lifecycle e2e across the supported distros, in Incus containers, each installing through this tree's `install.sh` |
 | `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in three Incus containers |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and, on fixture releases, the lifecycle e2e through the exact installer a release would publish and the den e2e behind the pinned Caddy |
@@ -366,11 +366,16 @@ artifacts also verify when served from a mirror.
 
 A pull request's plan reads the files it changes, its merge commit against
 the first parent, renames as both their paths. Docs alone, `docs/` and the
-root's `.md` files but `CHANGELOG.md`, run no test job; the media module's
-inputs (`internal/media/`, `scripts/ffmpeg.sh`, `scripts/rnnoise.sh`,
-`internal/ui/rnnoise/`, RNNoise's module, `scripts/vendor.sh`,
-`scripts/build/common.sh` and `scripts/build/go.sh`) or CI's own files
-(`.github/`, `scripts/ci.sh` and `scripts/ci/`) run every job; anything else runs every job but `media-module`
+root's `.md` files but `CHANGELOG.md`, run no test job; changes to the page's
+own sources, assets and templates (`internal/ui/src/`, `internal/ui/css/`,
+`internal/ui/templates/`, `internal/ui/test/`, workers/worklets, sounds and
+`emoji.json`) or to the browser and Android check drivers
+(`scripts/test/browser/`, `scripts/test/android/`) run `linux-tests` alone
+(`tests_required`); the media module's inputs (`internal/media/`,
+`scripts/ffmpeg.sh`, `scripts/rnnoise.sh`, `internal/ui/rnnoise/`, RNNoise's
+module, `scripts/vendor.sh`, `scripts/build/common.sh` and
+`scripts/build/go.sh`) or CI's own files (`.github/`, `scripts/ci.sh` and
+`scripts/ci/`) run every job; anything else runs every job but `media-module`
 and `media-fuzz` (`media_required`). A list that can't be read, or holds
 nothing, runs every job. A push to `main` plans as before, every test job or
 none, since `release` needs every one to pass or every one skipped. The site
