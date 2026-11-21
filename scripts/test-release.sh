@@ -241,7 +241,7 @@ EOF
     cp -a "$plan_root/remote" "$plan_root/before"
     bash "$plan_root/run" "$BUILD_SCRIPT_DIR/ci.sh" "$plan_root/remote"
     # A push asks for the media module's jobs with the rest.
-    [[ "$(cat "$GITHUB_OUTPUT")" == "$(printf 'e2e_required=%s\nmedia_required=%s\ninstaller_tests_required=%s\nrelease_required=true' "$e2e" "$e2e" "$installers")" ]] ||
+    [[ "$(cat "$GITHUB_OUTPUT")" == "$(printf 'tests_required=%s\ne2e_required=%s\nmedia_required=%s\ninstaller_tests_required=%s\nrelease_required=true' "$e2e" "$e2e" "$e2e" "$installers")" ]] ||
       fail "unexpected planning outputs: $(cat "$GITHUB_OUTPUT")"
     diff -r "$plan_root/before" "$plan_root/remote" || fail "planning changed remote objects"
     rm -rf "$plan_root/before"
@@ -335,7 +335,7 @@ EOF
   : > "$outputs"
   plan -u R2_ACCESS_KEY_ID -u R2_SECRET_ACCESS_KEY -u R2_ACCOUNT_ID -u R2_BUCKET ||
     fail "planning before the first release failed: $(cat "$pre_root/log")"
-  [[ "$(cat "$outputs")" == "$(printf 'e2e_required=true\nmedia_required=true\ninstaller_tests_required=false\nrelease_required=false')" ]] ||
+  [[ "$(cat "$outputs")" == "$(printf 'tests_required=true\ne2e_required=true\nmedia_required=true\ninstaller_tests_required=false\nrelease_required=false')" ]] ||
     fail "unexpected pre-release planning outputs: $(cat "$outputs")"
 
   git tag v0.1.0
@@ -349,42 +349,49 @@ EOF
   [[ ! -s "$outputs" ]] || fail "failed planning emitted scheduling outputs"
 )
 
-# A PR's plan picks its test jobs by the files it changes: none for
-# docs alone, every job for the media module's inputs or CI's own files,
-# and every job but the media module's two for anything else.
+# A PR's plan picks its test jobs by the files it changes: none for docs
+# alone, linux-tests only for the page's own sources/assets or check drivers,
+# every job for the media module's inputs or CI's own files, and every job
+# but the media module's two for anything else.
 (
   outputs="$tmp/pr-outputs"
-  # pr_plan E2E MEDIA [PATH...] checks the jobs a PR changing the PATHs gets.
+  # pr_plan TESTS E2E MEDIA [PATH...] checks the jobs a PR changing the PATHs gets.
   pr_plan() {
-    local e2e=$1 media=$2
-    shift 2
+    local tests=$1 e2e=$2 media=$3
+    shift 3
     : > "$outputs"
     GITHUB_OUTPUT="$outputs" plan_pr_jobs "$@" >/dev/null
-    [[ "$(cat "$outputs")" == "$(printf 'e2e_required=%s\nmedia_required=%s\ninstaller_tests_required=false\nrelease_required=false' "$e2e" "$media")" ]] ||
+    [[ "$(cat "$outputs")" == "$(printf 'tests_required=%s\ne2e_required=%s\nmedia_required=%s\ninstaller_tests_required=false\nrelease_required=false' "$tests" "$e2e" "$media")" ]] ||
       fail "a PR changing ${*:-nothing} got: $(tr '\n' ' ' < "$outputs")"
   }
-  pr_plan false false docs/content/docs/join.md
-  pr_plan false false docs/dev/milestones.md docs/static/favicon.svg docs/hugo.yaml docs/go.sum
-  pr_plan false false README.md AGENTS.md CONTRIBUTING.md LICENSE.md
-  pr_plan true false CHANGELOG.md
-  pr_plan true false internal/den/den.go
-  pr_plan true false internal/ui/assets/js/src/app.jsx scripts/test/browser/drive-site.mjs
-  pr_plan true false go.mod
-  pr_plan true false internal/den/README.md
-  pr_plan true false docs/content/docs/join.md internal/den/den.go
-  pr_plan true false CHANGELOG.md README.md
+  pr_plan false false false docs/content/docs/join.md
+  pr_plan false false false docs/dev/milestones.md docs/static/favicon.svg docs/hugo.yaml docs/go.sum
+  pr_plan false false false README.md AGENTS.md CONTRIBUTING.md LICENSE.md
+  pr_plan true false false internal/ui/src/app.jsx
+  pr_plan true false false internal/ui/src/chat/chat.jsx internal/ui/css/input.css internal/ui/templates/app.html internal/ui/test/chat.test.js
+  pr_plan true false false internal/ui/assets/js/voice.worklet.js internal/ui/assets/js/sframe.worker.js internal/ui/assets/sounds/joined.ogg internal/ui/assets/emoji.json
+  pr_plan true false false scripts/test/browser/drive-site.mjs scripts/test/android/walk.mjs
+  pr_plan true false false docs/content/docs/join.md internal/ui/src/app.jsx scripts/test/browser/drive-site.mjs
+  pr_plan true true false internal/ui/ui.go
+  pr_plan true true false internal/ui/src/app.jsx internal/den/den.go
+  pr_plan true true false CHANGELOG.md
+  pr_plan true true false internal/den/den.go
+  pr_plan true true false go.mod
+  pr_plan true true false internal/den/README.md
+  pr_plan true true false docs/content/docs/join.md internal/den/den.go
+  pr_plan true true false CHANGELOG.md README.md
   for input in internal/media/strip.go internal/media/ffmpeg/driver/driver.c internal/media/ffmpeg/module/module.go \
     scripts/ffmpeg.sh scripts/rnnoise.sh internal/ui/rnnoise/build.c internal/ui/assets/wasm/rnnoise.wasm \
     scripts/vendor.sh scripts/build/common.sh scripts/build/go.sh; do
-    pr_plan true true "$input"
-    pr_plan true true docs/content/docs/join.md internal/den/den.go "$input"
+    pr_plan true true true "$input"
+    pr_plan true true true docs/content/docs/join.md internal/den/den.go "$input"
   done
   for own in .github/workflows/release.yml .github/workflows/docs.yml .github/actions/setup-incus/action.yml \
     scripts/ci.sh scripts/ci/release.sh scripts/ci/flatpak.sh; do
-    pr_plan true true "$own"
+    pr_plan true true true "$own"
   done
   # A list with nothing on it proves nothing.
-  pr_plan true true
+  pr_plan true true true
 )
 
 # The list comes from the PR's merge commit against its first parent, as
@@ -396,9 +403,10 @@ EOF
   cd "$repo"
   outputs="$tmp/pr-merge-outputs"
   commit() { git -c user.name=release-test -c user.email=release-test@example.invalid commit -qm "$1"; }
-  mkdir -p internal docs
+  mkdir -p internal docs internal/ui/src
   printf 'package x\n' > internal/x.go
   printf '# Docs\n' > docs/a.md
+  printf 'export const v = 1;\n' > internal/ui/src/app.jsx
   git add .
   commit base
   git branch -q base
@@ -408,12 +416,12 @@ EOF
     git checkout -q --detach base
     git -c user.name=release-test -c user.email=release-test@example.invalid merge -q --no-ff --no-edit "$1"
   }
-  # pr_plan E2E MEDIA checks the plan for the commit checked out.
+  # pr_plan TESTS E2E MEDIA checks the plan for the commit checked out.
   pr_plan() {
     : > "$outputs"
     GITHUB_OUTPUT="$outputs" bash "$BUILD_SCRIPT_DIR/ci.sh" --plan-pr > "$tmp/pr-merge-log" 2>&1 ||
       fail "planning a PR failed: $(cat "$tmp/pr-merge-log")"
-    [[ "$(cat "$outputs")" == "$(printf 'e2e_required=%s\nmedia_required=%s\ninstaller_tests_required=false\nrelease_required=false' "$1" "$2")" ]] ||
+    [[ "$(cat "$outputs")" == "$(printf 'tests_required=%s\ne2e_required=%s\nmedia_required=%s\ninstaller_tests_required=false\nrelease_required=false' "$1" "$2" "$3")" ]] ||
       fail "the PR at $(git log -1 --format=%s HEAD^2 2>/dev/null || git log -1 --format=%s) got: $(tr '\n' ' ' < "$outputs")"
   }
 
@@ -423,18 +431,25 @@ EOF
   git add .
   commit 'docs only'
   merged docs-only
-  pr_plan false false
+  pr_plan false false false
+
+  git checkout -q -b page-only base
+  printf 'export const v = 2;\n' > internal/ui/src/app.jsx
+  git add .
+  commit 'page only'
+  merged page-only
+  pr_plan true false false
 
   git checkout -q -b moved base
   git mv internal/x.go docs/x.go
   commit 'code moved under docs/'
   merged moved
-  pr_plan true false
+  pr_plan true true false
   [[ "$(cat "$tmp/pr-merge-log")" == *'internal/x.go'* ]] || fail "a rename didn't count its old path: $(cat "$tmp/pr-merge-log")"
 
   # A branch's own commit, not a merge, would show only part of a PR.
   git checkout -q docs-only
-  pr_plan true true
+  pr_plan true true true
 )
 
 # Without a matching staging transaction, an invalid root pair must fail

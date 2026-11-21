@@ -5,11 +5,11 @@ name: Release
 # attempt, in the android environment, whose key signs the Android app's APK,
 # and then ci.sh --flatpak publishes the promoted release's Flatpak, in the
 # flatpak environment. On PRs, ci.sh --plan-pr picks the test jobs by the
-# files the PR changes: none for docs alone, every job for the media
-# module's inputs or CI's own files, and all but the media module's two for
-# anything else. PRs never publish. Before the first release (no
-# CHANGELOG.md heading and no version tag), pushes to main get every test job
-# and publish nothing.
+# files the PR changes: none for docs alone, linux-tests only for changes to
+# the page or check drivers alone, every job for the media module's inputs or
+# CI's own files, and all but the media module's two for anything else. PRs
+# never publish. Before the first release (no CHANGELOG.md heading and no
+# version tag), pushes to main get every test job and publish nothing.
 #
 # A version that already has a Git tag skips the broad test suites. Changed
 # installers still get tested before publication. Retrying an older release
@@ -77,6 +77,7 @@ jobs:
     permissions:
       contents: read
     outputs:
+      tests_required: ${{ steps.plan.outputs.tests_required }}
       e2e_required: ${{ steps.plan.outputs.e2e_required }}
       media_required: ${{ steps.plan.outputs.media_required }}
       installer_tests_required: ${{ steps.plan.outputs.installer_tests_required }}
@@ -192,11 +193,12 @@ jobs:
   # The Linux checks that need no containers: lint, first, in a checkout
   # nothing has written to, which also shows a clone builds as it comes; the
   # Go suite, which the release job's build relies on rather than running it
-  # again; the third-party notices, the list of emoji, the page's tests and
-  # the release state machine.
+  # again; the third-party notices, the list of emoji, the page's tests, the
+  # release state machine, and building the page bundle (after Go tests, so
+  # the placeholder-page test still runs on an unbuilt checkout).
   linux-tests:
     needs: release-plan
-    if: ${{ needs.release-plan.outputs.e2e_required == 'true' }}
+    if: ${{ needs.release-plan.outputs.tests_required == 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -238,6 +240,15 @@ jobs:
 
       - name: Test release publication state machine
         run: ./scripts/test.sh -release
+
+      - name: Build the page
+        run: |
+          set -euo pipefail
+          source scripts/build.sh
+          MODE="ci"
+          detect_host_arch
+          frontend_build
+          frontend_hash_assets
 
   # Runs the Linux lifecycle e2e in Incus system containers on every
   # supported distro, from unsigned fixture releases over file:// URLs.
@@ -457,7 +468,8 @@ jobs:
           needs.ci-gate.outputs.enabled == 'true' &&
           needs.release-plan.result == 'success' &&
           needs.release-plan.outputs.release_required == 'true' &&
-          ((needs.release-plan.outputs.e2e_required == 'true' &&
+          ((needs.release-plan.outputs.tests_required == 'true' &&
+            needs.release-plan.outputs.e2e_required == 'true' &&
             !contains(needs.*.result, 'skipped') &&
             needs.windows-e2e.result == 'success' &&
             needs.linux-tests.result == 'success' &&
@@ -467,7 +479,8 @@ jobs:
             needs.media-module.result == 'success' &&
             needs.media-fuzz.result == 'success' &&
             needs.android-build.result == 'success') ||
-           (needs.release-plan.outputs.e2e_required == 'false' &&
+           (needs.release-plan.outputs.tests_required == 'false' &&
+            needs.release-plan.outputs.e2e_required == 'false' &&
             needs.windows-e2e.result == 'skipped' &&
             needs.linux-tests.result == 'skipped' &&
             needs.linux-e2e.result == 'skipped' &&
