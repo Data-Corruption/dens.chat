@@ -104,8 +104,8 @@ globalThis.MessageChannel = class {
     port2 = {};
 };
 
-const { listen, onRelay, setCallContext, stopListening } = await import('../assets/js/src/relay.js');
-const { CallButton } = await import('../assets/js/src/voice.jsx');
+const { listen, onRelay, setCallContext, stopListening } = await import('../src/voice/relay.js');
+const { CallButton } = await import('../src/voice/voice.jsx');
 
 // Without requestAnimationFrame, Preact runs effects 100 ms after a render.
 const settle = () => new Promise((r) => setTimeout(r, 150));

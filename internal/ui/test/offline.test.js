@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { leaveOffer, showsOffline } from '../assets/js/src/offline.js';
+import { leaveOffer, showsOffline } from '../src/core/offline.js';
 
 test('the note shows only while the den failed to connect', () => {
     assert.equal(showsOffline(true, 'offline'), true);

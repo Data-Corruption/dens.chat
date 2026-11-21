@@ -4,7 +4,7 @@ import {
     actionFor, answerFor, applyCalls, applySounds, behindBy, bindingTypes, byName, clampVolume, endedText, gateFor, keyLabel, keyMatches, micProblem,
     playAgain, pressed, readCallVolume, readKeyStatus, readKeys, readSoundLimits, readVoice, readVolumes, released, ringing, rings, rmsDb, rnnoiseChosen,
     sendRate, setVoice, speakingNow, summarize, talking, typesInto, voiceSettings, volumeIn, withVolume,
-} from '../assets/js/src/voice.js';
+} from '../src/voice/voice.js';
 
 const call = (channel, ...members) => ({ channel_id: channel, members: members.map((id) => ({ id })) });
 
@@ -426,7 +426,7 @@ test("a den's sounds follow its events: added, renamed and deleted", () => {
 });
 
 test("a member muted for the member here plays at 0, and unmuted plays at the volume they had, or full", async () => {
-    const { memberMuted, muting } = await import('../assets/js/src/voice.js');
+    const { memberMuted, muting } = await import('../src/voice/voice.js');
     let state = { volumes: withVolume({}, 'den', '2', 1.5), unmuted: {} };
     state = muting(state.volumes, state.unmuted, 'den', '2', true);
     assert.equal(volumeIn(state.volumes, 'den', '2'), 0);

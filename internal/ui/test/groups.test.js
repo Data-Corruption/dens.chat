@@ -2,8 +2,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { changeText, groupGate, groupTitle, isPrivate, placeAt } from '../assets/js/src/private.js';
-import { GroupGate, GroupLine, GroupPanel, memberItems, removerNote } from '../assets/js/src/groups.jsx';
+import { changeText, groupGate, groupTitle, isPrivate, placeAt } from '../src/private/private.js';
+import { GroupGate, GroupLine, GroupPanel, memberItems, removerNote } from '../src/private/groups.jsx';
 
 const members = new Map([
     ['1', { id: '1', display_name: 'Alice', username: 'alice', identity: 'a' }],

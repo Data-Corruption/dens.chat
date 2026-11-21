@@ -2,7 +2,7 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { HOME, createNav, denTrail, holdLayout, paneOf, pathOf, plan, readTrail, trailFor, useNarrow } from '../assets/js/src/nav.js';
+import { HOME, createNav, denTrail, holdLayout, paneOf, pathOf, plan, readTrail, trailFor, useNarrow } from '../src/core/nav.js';
 
 const list = (den) => ({ k: 'list', den });
 const chan = (den, ch) => ({ k: 'chan', den, ch });

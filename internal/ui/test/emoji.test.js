@@ -5,13 +5,13 @@
 import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DenEmoji } from '../assets/js/src/denemoji.jsx';
+import { DenEmoji } from '../src/chat/denemoji.jsx';
 import {
     HALF_LIFE, KEEP, MAX_BIG, QUICK, TONES, cleanName, completeEmoji, completeMember, completeMention, completionAt, denKey, emojiAlone, emojiIn, emojiList,
     inTone, mostUsed, nameAt, nameFromFile, noteSent, noteUses, quickRow, scoreOf, searchDen, searchUnicode, setEmojiList, setSkinTone,
     skinTone, unicodeKey, validName,
-} from '../assets/js/src/emoji.js';
-import { parse, preview } from '../assets/js/src/markdown.jsx';
+} from '../src/chat/emoji.js';
+import { parse, preview } from '../src/chat/markdown.jsx';
 import list from '../assets/emoji.json';
 
 setEmojiList(list);

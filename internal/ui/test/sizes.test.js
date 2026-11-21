@@ -7,9 +7,9 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { Attachments, fitBox } from '../assets/js/src/files.jsx';
-import { MEDIA, PLAYERS, SIZES, mediaBox, playerClass, setSize, size } from '../assets/js/src/sizes.js';
-import { pictureURL } from '../assets/js/src/youtube.jsx';
+import { Attachments, fitBox } from '../src/chat/files.jsx';
+import { MEDIA, PLAYERS, SIZES, mediaBox, playerClass, setSize, size } from '../src/appearance/sizes.js';
+import { pictureURL } from '../src/chat/youtube.jsx';
 
 // A wide window, or with wide false the phone layout.
 const windowOf = (wide) => ({ matchMedia: () => ({ matches: wide, addEventListener() {}, removeEventListener() {} }), addEventListener() {}, removeEventListener() {} });

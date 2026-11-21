@@ -180,7 +180,7 @@ globalThis.Audio = class {
     }
 };
 
-const { boardVolume, joinCall, leaveCall, setBoardVolume, setCallVolume, setDeafened, setVolume } = await import('../assets/js/src/voice.js');
+const { boardVolume, joinCall, leaveCall, setBoardVolume, setCallVolume, setDeafened, setVolume } = await import('../src/voice/voice.js');
 
 // joined joins a call, as the service's form says, and has the den send a
 // member's audio; it returns what the call made of it.

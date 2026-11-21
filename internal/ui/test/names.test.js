@@ -9,15 +9,15 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import cases from '../../denproto/testdata/namestyles.json';
-import { LongName } from '../assets/js/src/components.jsx';
-import { MessageRow } from '../assets/js/src/messages.jsx';
+import { LongName } from '../src/ui/components.jsx';
+import { MessageRow } from '../src/chat/messages.jsx';
 import {
     FONTS, READS, STYLES_ALL, STYLES_COLORS, STYLES_OFF, cleanStyle, fontFamily, nameLook, nameStyles, readable, setNameStyles,
-} from '../assets/js/src/names.js';
-import { Name, nameText } from '../assets/js/src/names.jsx';
-import { EditProfile } from '../assets/js/src/people.jsx';
-import { setTheme } from '../assets/js/src/theme.js';
-import { contrast, oklch } from '../assets/js/src/themes.js';
+} from '../src/appearance/names.js';
+import { Name, nameText } from '../src/appearance/names.jsx';
+import { EditProfile } from '../src/people.jsx';
+import { setTheme } from '../src/appearance/theme.js';
+import { contrast, oklch } from '../src/appearance/themes.js';
 
 // A page to read a theme from: a root with the theme's variables, and a
 // canvas that reads a hex color back as itself.

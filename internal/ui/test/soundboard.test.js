@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import cases from '../../media/testdata/ogg.json';
 import {
     CEILING, RATE, TARGET, boardWhy, even, evenGain, fold, loudness, matching, nameOf, oggOpus, opusSamples, peakOf, preSkipOf, seconds, soundRefusal, tooLong,
-} from '../assets/js/src/soundboard.js';
+} from '../src/voice/soundboard.js';
 
 const bytes = (b64) => new Uint8Array(Buffer.from(b64, 'base64'));
 

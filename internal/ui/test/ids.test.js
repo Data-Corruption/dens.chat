@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { compareIds, newNonce, unread } from '../assets/js/src/ids.js';
+import { compareIds, newNonce, unread } from '../src/core/ids.js';
 
 test('IDs compare as numbers, even past what JavaScript numbers hold', () => {
     assert.ok(compareIds('9', '10') < 0);

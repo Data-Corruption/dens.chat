@@ -191,7 +191,7 @@ globalThis.fetch = async (url, ...rest) => {
     return { ok: true, arrayBuffer: async () => Object.assign(new ArrayBuffer(8), { name: byURL.get(url) }) };
 };
 
-const { joinCall, leaveCall, pressButton, releaseButton, setDeafened, setMuted, setVoice } = await import('../assets/js/src/voice.js');
+const { joinCall, leaveCall, pressButton, releaseButton, setDeafened, setMuted, setVoice } = await import('../src/voice/voice.js');
 
 // heard is what the page played since the last look.
 function heard() {

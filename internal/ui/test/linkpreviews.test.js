@@ -6,7 +6,7 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { ALL_PREVIEWS, LinkPreviews, previewsKept } from '../assets/js/src/linkpreviews.jsx';
+import { ALL_PREVIEWS, LinkPreviews, previewsKept } from '../src/chat/linkpreviews.jsx';
 
 // A new browser's storage, which the page reads as it loads: links.js is
 // imported only once it's in place.
@@ -20,7 +20,7 @@ globalThis.localStorage = {
     setItem: (k, v) => kept.set(k, String(v)),
     removeItem: (k) => kept.delete(k),
 };
-const links = await import('../assets/js/src/links.js');
+const links = await import('../src/chat/links.js');
 
 const storage = (entries) => ({ length: entries.length, key: (i) => entries[i]?.[0] ?? null });
 

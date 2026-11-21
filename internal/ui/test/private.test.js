@@ -2,9 +2,9 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { LOCKED, dividerText, dmGate, keyChanges, keysChangedAt, recoveryFileName, recoveryText, sameDigits } from '../assets/js/src/private.js';
-import { Codes, DMGate, KeysChanged, RecoveryCodes } from '../assets/js/src/private.jsx';
-import { keysChanged } from '../assets/js/src/calllock.jsx';
+import { LOCKED, dividerText, dmGate, keyChanges, keysChangedAt, recoveryFileName, recoveryText, sameDigits } from '../src/private/private.js';
+import { Codes, DMGate, KeysChanged, RecoveryCodes } from '../src/private/private.jsx';
+import { keysChanged } from '../src/voice/calllock.jsx';
 
 const names = (id) => ({ 1: 'Alice', 2: 'Bob' })[id] || 'Unknown member';
 const day = Date.UTC(2026, 8, 1);

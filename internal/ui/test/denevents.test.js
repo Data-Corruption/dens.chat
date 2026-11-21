@@ -12,12 +12,12 @@ import { h, render as mount } from 'preact';
 import {
     EVENTS, LENGTHS, MAX_EVENTS, atZone, badgeProblem, badgeRequest, badgeTip, canMake, cardWhen, current, eventRequest, formOf, formProblem,
     inputsAt, interestedText, lengthsFor, mayChange, newForm, ordered, rowMark, whenText, willHaveBadge, withEvent, zoneParts,
-} from '../assets/js/src/denevents.js';
-import { EventsRow, InterestedButton } from '../assets/js/src/denevents.jsx';
-import { changesOf, draftOf } from '../assets/js/src/dendraft.js';
-import { fileWhere } from '../assets/js/src/files.jsx';
-import { chatRoute } from '../assets/js/src/nav.js';
-import { notifying } from '../assets/js/src/notify.js';
+} from '../src/chat/denevents.js';
+import { EventsRow, InterestedButton } from '../src/chat/denevents.jsx';
+import { changesOf, draftOf } from '../src/dendraft.js';
+import { fileWhere } from '../src/chat/files.jsx';
+import { chatRoute } from '../src/core/nav.js';
+import { notifying } from '../src/core/notify.js';
 
 function find(node, match) {
     if (match(node)) return node;

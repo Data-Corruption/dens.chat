@@ -5,7 +5,7 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { UpdateNotice } from '../assets/js/src/update.jsx';
+import { UpdateNotice } from '../src/update.jsx';
 
 const kept = new Map();
 globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, String(v)) };

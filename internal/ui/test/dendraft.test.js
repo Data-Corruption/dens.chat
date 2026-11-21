@@ -2,9 +2,9 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { day, dayTime } from '../assets/js/src/components.jsx';
-import { callFields, changed, changesOf, draftOf, hasBoard, hasEmoji } from '../assets/js/src/dendraft.js';
-import { CALL_PRESETS } from '../assets/js/src/share.js';
+import { day, dayTime } from '../src/ui/components.jsx';
+import { callFields, changed, changesOf, draftOf, hasBoard, hasEmoji } from '../src/dendraft.js';
+import { CALL_PRESETS } from '../src/voice/share.js';
 
 const MB = 1 << 20;
 const GB = 1 << 30;

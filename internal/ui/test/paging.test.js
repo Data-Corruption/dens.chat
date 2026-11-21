@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import {
     MIN_PAGE, PAGE, PAGE_SCREENS, WINDOW, atTail, cutAbove, cutBelow, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer,
     withOlder, withUpdate,
-} from '../assets/js/src/paging.js';
+} from '../src/core/paging.js';
 
 // IDs grow with time and outgrow JavaScript's numbers, so they compare as
 // decimal strings of any length.

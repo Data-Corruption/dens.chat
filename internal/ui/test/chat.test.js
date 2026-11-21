@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { NO_DM, denChannel, foldedShows, hiddenMarks, lastDM, listed, readFolded, recentDMs } from '../assets/js/src/chat.jsx';
-import { dividerAt } from '../assets/js/src/messages.jsx';
+import { NO_DM, denChannel, foldedShows, hiddenMarks, lastDM, listed, readFolded, recentDMs } from '../src/chat/chat.jsx';
+import { dividerAt } from '../src/chat/messages.jsx';
 
 const view = {
     groups: [{ id: 'g2', name: 'Later', position: 1 }, { id: 'g1', name: 'Games', position: 0 }],
@@ -102,8 +102,8 @@ test('the Direct messages tab opens the DM last open, never another, or none', (
 });
 
 test("the den's name opens Manage for everyone, and staff a new channel or group, every row with its icon", async () => {
-    const { NEW_IN_DEN, denMenu } = await import('../assets/js/src/chat.jsx');
-    const { MENU_ICONS } = await import('../assets/js/src/icons.jsx');
+    const { NEW_IN_DEN, denMenu } = await import('../src/chat/chat.jsx');
+    const { MENU_ICONS } = await import('../src/ui/icons.jsx');
     assert.deepEqual(denMenu(false).map((i) => i.label), ['Manage']);
     assert.deepEqual(denMenu(true).map((i) => i.label), ['Manage', 'New channel', 'New group']);
     assert.deepEqual(NEW_IN_DEN.map((i) => i.key), ['channel', 'group'], "the + and the list's empty space make the same two");
@@ -111,8 +111,8 @@ test("the den's name opens Manage for everyone, and staff a new channel or group
 });
 
 test("a channel's menu edits it and moves it within its list, and a group's makes a channel in it too, the moves stopping at each end", async () => {
-    const { channelMenu, groupMenu } = await import('../assets/js/src/chat.jsx');
-    const { MENU_ICONS } = await import('../assets/js/src/icons.jsx');
+    const { channelMenu, groupMenu } = await import('../src/chat/chat.jsx');
+    const { MENU_ICONS } = await import('../src/ui/icons.jsx');
     const shown = (items) => items.map((i) => `${i.label}${i.disabled ? ' (off)' : ''}`);
     const at = (id) => view.channels.find((c) => c.id === id);
     // hangout and rules are the ungrouped channels, clips and lounge Games'.

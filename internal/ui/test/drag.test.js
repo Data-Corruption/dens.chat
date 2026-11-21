@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, dragged, groupDrop, moveTargets } from '../assets/js/src/drag.js';
+import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, dragged, groupDrop, moveTargets } from '../src/core/drag.js';
 
 // A den's list: general and Lounge in no group, Talk's news and its
 // staff-only Staff, and Games' Raid; and a DM, which no list holds.
@@ -63,7 +63,7 @@ test("a drag says what it carries by its types, and anything else, as files, is 
 });
 
 test("Move up and Move down send a channel's place one up or down in its list, a group's among the groups, and nothing at an end", async () => {
-    const { channelMoves, groupMoves } = await import('../assets/js/src/drag.js');
+    const { channelMoves, groupMoves } = await import('../src/core/drag.js');
     assert.deepEqual(channelMoves(view, '1'), { up: null, down: { position: 1 } }, 'general, first of the ungrouped');
     assert.deepEqual(channelMoves(view, '2'), { up: { position: 0 }, down: null }, 'Lounge, last of them');
     assert.deepEqual(channelMoves(view, '4'), { up: { position: 0 }, down: null }, "Staff, in Talk");

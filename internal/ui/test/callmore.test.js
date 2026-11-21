@@ -6,8 +6,8 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { CallMore } from '../assets/js/src/callmore.jsx';
-import { popupAt } from '../assets/js/src/popup.js';
+import { CallMore } from '../src/voice/callmore.jsx';
+import { popupAt } from '../src/ui/popup.js';
 
 // What a popup asks of the page: the window's size, its button's place,
 // and the presses and keys of the whole document.

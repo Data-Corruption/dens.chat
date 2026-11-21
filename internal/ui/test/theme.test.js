@@ -5,8 +5,8 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { dressTheme, forgetTheme, keepTheme, ownChoice, ownThemes, setTheme, themeChoice } from '../assets/js/src/theme.js';
-import { MOST_THEMES, VARIABLES, variables } from '../assets/js/src/themes.js';
+import { dressTheme, forgetTheme, keepTheme, ownChoice, ownThemes, setTheme, themeChoice } from '../src/appearance/theme.js';
+import { MOST_THEMES, VARIABLES, variables } from '../src/appearance/themes.js';
 
 function root() {
     const props = new Map();

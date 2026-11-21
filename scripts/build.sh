@@ -79,6 +79,8 @@ source "$BUILD_SCRIPT_DIR/vendor.sh"
 
 OUT_DIR="out"
 RELEASE_DIR="$OUT_DIR/release"
+UI_SRC_DIR="./internal/ui/src"
+CSS_INPUT="./internal/ui/css/input.css"
 JS_DIR="./internal/ui/assets/js"
 CSS_DIR="./internal/ui/assets/css"
 ASSETS_DIR="./internal/ui/assets"

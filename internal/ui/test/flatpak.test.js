@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { rememberNote, updateNotice } from '../assets/js/src/flatpak.js';
+import { rememberNote, updateNotice } from '../src/core/flatpak.js';
 
 test("an installed Dens's notice gives the update command, and no update gives none", () => {
     assert.equal(updateNotice({}), null);

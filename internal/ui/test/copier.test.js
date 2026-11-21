@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { canCopy, cropRect, decoderConfig, encoderConfig, keeper, readRecords, supported, writeRecord } from '../assets/js/src/copier.js';
+import { canCopy, cropRect, decoderConfig, encoderConfig, keeper, readRecords, supported, writeRecord } from '../src/chat/copier.js';
 
 const codecs = { VideoEncoder: function VideoEncoder() {}, VideoDecoder: function VideoDecoder() {} };
 const brands = (...names) => ({ userAgentData: { brands: names.map((brand) => ({ brand, version: '154' })) } });

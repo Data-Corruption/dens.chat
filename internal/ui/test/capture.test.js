@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { captureKey } from '../assets/js/src/voice.js';
+import { captureKey } from '../src/voice/voice.js';
 
 // The page's listeners, which captureKey adds to window as it starts.
 const listeners = {};

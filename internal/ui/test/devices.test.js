@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { labelParts } from '../assets/js/src/yourden.jsx';
+import { labelParts } from '../src/yourden.jsx';
 import labelCases from '../../denclient/testdata/labels.json';
 
 // A device's label shows as its name, with what's in the parentheses at its

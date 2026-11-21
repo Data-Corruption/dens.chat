@@ -270,7 +270,7 @@ globalThis.RTCPeerConnection = class {
     close() {}
 };
 
-const voice = await import('../assets/js/src/voice.js');
+const voice = await import('../src/voice/voice.js');
 const {
     SEAL_LEAST, SOUND_TRACK, SCREEN_TRACK, TRACK_NAMES, UNSEALED_AGAIN, UNSEALED_SCREEN, UNSEALED_SOUND, UNSEALED_VOICE, VOICE_TRACK, frameNotes,
     joinCall, leaveCall, onCall, senderSent, sendingTransceivers, sentAround, startShare, stopShare,

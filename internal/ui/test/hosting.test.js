@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { hostingAsk, hostingNote, hostingOnWarning, moving, ownRowNote, setupNeeded } from '../assets/js/src/hosting.js';
+import { hostingAsk, hostingNote, hostingOnWarning, moving, ownRowNote, setupNeeded } from '../src/core/hosting.js';
 
 const ports = { den_port: 8485, media_udp_port: 7881, media_tcp_port: 7882 };
 

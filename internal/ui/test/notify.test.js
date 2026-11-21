@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { askToNotify, heading, mutedIn, notifying, permission, show, whereTheyShow, withdraw } from '../assets/js/src/notify.js';
+import { askToNotify, heading, mutedIn, notifying, permission, show, whereTheyShow, withdraw } from '../src/core/notify.js';
 
 // browser is a window whose Notification starts at permission, answers a
 // request with answer, and keeps what it shows.

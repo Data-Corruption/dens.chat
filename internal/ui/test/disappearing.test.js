@@ -2,9 +2,9 @@ import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { EXPIRY_TIMES, afterText, dueBy, expiryText, nextDue, placeAt, shortAfter } from '../assets/js/src/private.js';
-import { ExpiryBadge, ExpiryLine, ExpirySetting } from '../assets/js/src/disappearing.jsx';
-import { continues } from '../assets/js/src/messages.jsx';
+import { EXPIRY_TIMES, afterText, dueBy, expiryText, nextDue, placeAt, shortAfter } from '../src/private/private.js';
+import { ExpiryBadge, ExpiryLine, ExpirySetting } from '../src/chat/disappearing.jsx';
+import { continues } from '../src/chat/messages.jsx';
 
 const names = new Map([['1', 'Alice'], ['2', 'Bob']]);
 const nameOf = (id) => names.get(id) || 'Unknown member';

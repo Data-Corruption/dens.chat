@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { LONG_PRESS, SLOP, coarse, createHold, createPress, dismisses, tipShift } from '../assets/js/src/touch.js';
+import { LONG_PRESS, SLOP, coarse, createHold, createPress, dismisses, tipShift } from '../src/core/touch.js';
 
 // clock is setTimeout and clearTimeout on a time the test moves on.
 function clock() {
