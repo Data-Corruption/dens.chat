@@ -62,6 +62,7 @@
 
 import { api } from '../core/api.js';
 import { onConnection, onEvent, sendCall } from '../core/events.js';
+import { nav } from '../core/nav.js';
 import { NO_CALLS, NO_SHARING, autoplays, canCall, canSeal, canShare, inApp } from '../core/platform.js';
 import {
     MAX_WATCHING, displayOptions, fitPixels, readShare, readShareLevels, receivingSections, refusalText, screenOwner, shareBlocked, shareLevel,
@@ -273,7 +274,7 @@ function snapshot() {
     return {
         call: call && {
             den: call.den, channel: call.channel, label: call.label, status: call.status, muted: call.muted, deafened: call.deafened,
-            waitingForMic: !!call.waitingForMic, sealed: call.sealed, since: call.since,
+            away: !!call.away, waitingForMic: !!call.waitingForMic, sealed: call.sealed, since: call.since,
         },
         notice,
         speaking,
@@ -300,6 +301,22 @@ export function inCall() {
     return !!call;
 }
 
+// inCallAt says whether the page's call is in a den's voice channel.
+export function inCallAt(den, channel) {
+    return !!call && call.den === den && call.channel === channel;
+}
+
+// openCall joins a voice channel's call, as a click on its row does, and
+// opens its pane, as again for the call the member is in; watch names a
+// share to watch once in. A join the member didn't ask for, a move or the
+// page joining again, goes through joinCall and leaves the page where it
+// is.
+export function openCall(den, channel, label, watch) {
+    if (watch) joinAndWatch(den, channel, label, watch.id, watch.name);
+    else joinCall(den, channel, label);
+    if (inCallAt(den, channel)) nav().call(den, channel);
+}
+
 // callLimits are the limits of the den the page's call is in, once known,
 // or null outside a call, for the share settings to name a den's lower
 // limits while they apply.
@@ -318,8 +335,10 @@ export function onCall(fn) {
 }
 
 // joinCall joins a voice channel's call, leaving any other. label holds
-// the den's and the channel's names, to show while the call lasts.
-export async function joinCall(den, channel, label) {
+// the den's and the channel's names, to show while the call lasts. A
+// move keeps the member away, as carried says; a join of their own
+// ends Away with the call it was set in.
+export async function joinCall(den, channel, label, carried) {
     start();
     if (!canCall()) {
         notice = { text: NO_CALLS };
@@ -327,6 +346,8 @@ export async function joinCall(den, channel, label) {
         return;
     }
     if (call && call.den === den && call.channel === channel && call.status !== 'reconnecting') return;
+    const away = !!carried?.away && !!call?.away;
+    if (!away) dropAway(call);
     clearTimeout(rejoinTimer);
     rejoinTimer = null;
     if (call) clearTimers(call);
@@ -338,8 +359,8 @@ export async function joinCall(den, channel, label) {
     stopMicTest();
     frames?.postMessage({ t: 'end' });
     call = {
-        den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', attempts: 0, connected: false,
-        since: Date.now(),
+        den, channel, label, status: 'joining', muted: stored(MUTED) === '1', deafened: stored(DEAFENED) === '1', away, attempts: 0,
+        connected: false, since: Date.now(),
     };
     const c = call;
     audible = new Set();
@@ -413,13 +434,49 @@ export function setDeafened(deafened) {
 
 let mutedBeforeDeafened = false;
 
+// setAway marks the member away in their call, which mutes them, or back,
+// which puts their microphone back as it was before. Deafened, they
+// stay muted until they hear again.
+export function setAway(on) {
+    if (!call || on === !!call.away) return;
+    const deafened = call.deafened;
+    if (on) {
+        mutedBeforeAway = deafened ? mutedBeforeDeafened : call.muted;
+        if (deafened) mutedBeforeDeafened = true;
+    } else if (deafened) {
+        mutedBeforeDeafened = mutedBeforeAway;
+    }
+    call.away = on;
+    mute(on || deafened || mutedBeforeAway);
+}
+
+let mutedBeforeAway = false;
+
+// dropAway ends Away with the call it was set in, so the next call starts
+// muted only as the member was before it.
+function dropAway(c) {
+    if (!c?.away) return;
+    c.away = false;
+    if (c.deafened) mutedBeforeDeafened = mutedBeforeAway;
+    else store(MUTED, mutedBeforeAway ? '1' : '');
+}
+
+// mute sets the member's microphone. An unmute ends Away, and the den
+// hears it before what's sent changes, since it lights no ring for a
+// press of push to talk from a member it holds muted.
 function mute(muted) {
     store(MUTED, muted ? '1' : '');
     if (!call) return;
     call.muted = muted;
+    if (!muted) call.away = false;
+    sendMarks(call);
     applySending();
-    sendCall('voice.mute', { den: call.den, muted, deafened: call.deafened });
     notify();
+}
+
+// sendMarks tells the den the member's marks in their call.
+function sendMarks(c) {
+    sendCall('voice.mute', { den: c.den, muted: c.muted, deafened: c.deafened, away: !!c.away });
 }
 
 function hear(on) {
@@ -492,7 +549,7 @@ async function connect() {
     };
     clearInterval(statsTimer);
     statsTimer = setInterval(noteStats, STATS_EVERY);
-    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened, sealed: !!c.sealed })) {
+    if (!sendCall('voice.join', { den: c.den, channel: c.channel, muted: c.muted, deafened: c.deafened, away: !!c.away, sealed: !!c.sealed })) {
         dropped('disconnected', 'stream');
         return;
     }
@@ -1094,7 +1151,8 @@ export function released(action, s) {
     return s;
 }
 
-// A press of push to talk within its release delay keeps it held.
+// A press of push to talk within its release delay keeps it held, and one
+// while the member is away ends Away: a member who talks is back.
 function pressAction(action) {
     if (action === 'toggleDeafen') {
         setDeafened(!isDeafened());
@@ -1103,6 +1161,7 @@ function pressAction(action) {
     if (action === 'ptt') {
         clearTimeout(letGo);
         letGo = null;
+        if (call?.away) setAway(false);
     }
     sendAs(pressed(action, sending()));
 }
@@ -1382,8 +1441,8 @@ function handle(msg) {
 }
 
 // moved joins the voice channel staff moved the member to, as if
-// they'd picked it: sealed, as every join is, muted and deafened as they
-// were, which ends this call. The channel's name is the den's, for the
+// they'd picked it: sealed, as every join is, muted, deafened and away as
+// they were, which ends this call. The channel's name is the den's, for the
 // call's label.
 async function moved(to) {
     const c = call;
@@ -1395,7 +1454,7 @@ async function moved(to) {
         // The label goes without it.
     }
     if (call !== c) return;
-    joinCall(c.den, to, { ...c.label, channel: name || 'Voice channel' });
+    joinCall(c.den, to, { ...c.label, channel: name || 'Voice channel' }, { away: c.away });
 }
 
 // answerFor decides what an offer gets: an answer to a new one, the same
@@ -1715,7 +1774,7 @@ function resumed() {
     }
     // A mark changed while the den was away goes now, and push to talk the
     // den let go of as the socket closed.
-    sendCall('voice.mute', { den: c.den, muted: c.muted, deafened: c.deafened });
+    sendMarks(c);
     c.talkSent = false;
     tellTalking();
     notify();
@@ -1795,6 +1854,7 @@ function closePeer() {
 // with it.
 function finish(why) {
     const left = !!call?.heard?.in && !call.deafened;
+    dropAway(call);
     clearTimeout(rejoinTimer);
     rejoinTimer = null;
     if (call) clearTimers(call);
@@ -2256,6 +2316,7 @@ async function loadDen(c) {
             sealed: !!v.sealed_calls,
             seal: !!v.seal,
             identities: v.identities || {},
+            away: !!v.away,
         };
         followDen();
     } catch {
@@ -2270,7 +2331,10 @@ function denEvents(events) {
         if (e.t === 'voice.state') denView = { ...denView, calls: applyCalls(denView.calls, e.d) };
         else if (e.t === 'identities') denView = { ...denView, identities: e.d || {} };
         else if (e.t === 'den.updated') {
-            denView = { ...denView, limits: e.d.call_limits || denView.limits, soundLimits: readSoundLimits(e.d.sound_limits), sealed: !!e.d.sealed_calls };
+            denView = {
+                ...denView, limits: e.d.call_limits || denView.limits, soundLimits: readSoundLimits(e.d.sound_limits), sealed: !!e.d.sealed_calls,
+                away: !!e.d.away,
+            };
         } else if (e.t === 'member.joined' || e.t === 'member.updated') {
             denView = { ...denView, names: new Map(denView.names).set(e.d.id, e.d.display_name) };
             if (e.d.id === denView.me) denView.role = e.d.role;

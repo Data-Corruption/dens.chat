@@ -1,8 +1,8 @@
-// A den's chat: the sidebar of channels and DMs, the open channel, and the
-// member list. Below 768 pixels they're three panes in a row, one on screen
-// at a time: the list, the channel, and the members or a DM's
-// profile, which the browser's own scrolling swipes between, snapping to
-// each, and the page's history walks.
+// A den's chat: the sidebar of channels and DMs, the open channel, or the
+// pane of the page's call, and the member list. Below 768 pixels they're
+// three panes in a row, one on screen at a time: the list, the channel,
+// and the members or a DM's profile, which the browser's own scrolling
+// swipes between, snapping to each, and the page's history walks.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../core/api.js';
@@ -36,9 +36,11 @@ import { RelayBar } from '../voice/relay.jsx';
 import { createPress, useCoarse } from '../core/touch.js';
 import { DockedPlayer } from '../voice/player.jsx';
 import { UpdateNotice } from '../update.jsx';
-import { applyCalls, joinCall } from '../voice/voice.js';
+import { applyCalls, openCall } from '../voice/voice.js';
 import { DRAG_CHANNEL, DRAG_GROUP, DRAG_MEMBER, channelDrop, channelMoves, groupDrop, groupMoves, moveTargets } from '../core/drag.js';
-import { CallBar, CallBlock, CallMembers, callState, useCall, useCallButton } from '../voice/voice.jsx';
+import { CallBar, CallBlock, CallMembers, CallNotice, callState, useCall, useCallButton } from '../voice/voice.jsx';
+import { CallPane } from '../voice/callpane.jsx';
+import { setPaneShown } from '../voice/pane.js';
 import { CallLength } from '../voice/calltimer.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
@@ -368,7 +370,14 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
         return () => clearInterval(tick);
     }, [anyTyping]);
 
-    const channel = pick(view, denID, channelID);
+    // The page's call shows its pane at its voice channel's address while
+    // it's there; otherwise the address shows the channel last shown.
+    const callChannel = view && myCall?.den === denID && myCall.channel === channelID
+        ? view.channels.find((c) => c.id === channelID && c.kind === 'voice') : null;
+    const channel = callChannel ? null : pick(view, denID, channelID);
+    // The players show nothing while the pane's stage holds the shares.
+    useEffect(() => setPaneShown(!!callChannel), [!!callChannel]);
+    useEffect(() => () => setPaneShown(false), []);
     // noDM is the Direct messages tab open with no DM, as the address says,
     // or the phone layout's list, at its own address, left it.
     const noDM = channelID === NO_DM || (!channelID && !!view && stored(LAST_CHANNEL + denID) === NO_DM);
@@ -389,21 +398,21 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     useEffect(() => {
         if (openKind) setTab(isPrivate({ kind: openKind }) ? 'dms' : 'den');
         else if (noDM) setTab('dms');
-        else if (eventsOpen) setTab('den');
-    }, [channel?.id, channelID, noDM, eventsOpen]);
-    // shownID is the channel shown, for the page's history: its ID, NO_DM,
-    // EVENTS, or '' for none.
-    const shownID = channel ? channel.id : noDM ? NO_DM : eventsOpen ? EVENTS : '';
+        else if (eventsOpen || callChannel) setTab('den');
+    }, [channel?.id, channelID, noDM, eventsOpen, !!callChannel]);
+    // shownID is the channel shown, for the page's history: its ID, the
+    // call's voice channel's, NO_DM, EVENTS, or '' for none.
+    const shownID = channel ? channel.id : callChannel ? callChannel.id : noDM ? NO_DM : eventsOpen ? EVENTS : '';
     // The member's notes, which have nobody else to show beside
     // them.
     const notes = isNotes(channel);
     // The members' place: the member list, or beside a DM the other
-    // member's profile; with no DM open, the notes or the events,
-    // there's none.
-    const hasSide = !noDM && !notes && !eventsOpen;
+    // member's profile; with no DM open, the notes, the events or the
+    // call's pane, there's none.
+    const hasSide = !noDM && !notes && !eventsOpen && !callChannel;
     // at is the pane on screen on the phone layout, '' in a wider window.
     const at = !narrow ? '' : pane === 'side' && hasSide ? 'side' : pane === 'list' || (!pane && !channelID) ? 'list' : 'chan';
-    const toPane = (next) => nav().den(denID, shownID, next);
+    const toPane = (next) => nav().den(denID, shownID, next, !!callChannel);
     // A swipe that settles on another pane goes there in the history too.
     const row = usePaneRow(at, !!view, (near) => near !== at && toPane(near));
     // The den's emoji, for every text the den's page shows.
@@ -538,12 +547,15 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     };
     // On the phone layout the call shows across the top of the channel's
     // pane, under its header, with the shares the member watches docked
-    // under it; a wider window has them beside the channel.
+    // under it; a wider window has them beside the channel. The call's
+    // pane is the call, and its stage holds the shares. Why a call ended,
+    // or didn't start, shows here too, as a join's click opens its pane.
     const callTop = narrow && (
         <>
-            <CallBar denID={denID} />
+            <CallNotice denID={denID} />
+            {!callChannel && <CallBar denID={denID} />}
             <RelayBar look="bar" />
-            <DockedPlayer />
+            {!callChannel && <DockedPlayer />}
         </>
     );
     // What waits on this device shows above the channel, and on the phone
@@ -660,7 +672,14 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                 </Actions>
                             </Notice>
                         )}
-                        {channel ? (
+                        {callChannel ? (
+                            <>
+                                {narrow && <RelayBar look="bar" />}
+                                <CallPane denID={denID} view={view} members={members} channel={callChannel} staffMuted={staffMuted(view, myCall)}
+                                    lead={<ChannelsButton elsewhere={elsewhere} onChannels={() => toPane('list')} />} onProfile={openProfile}
+                                    moving={staff && !gone && view.move_members ? { targets: (member) => moveTargets(view, member, callChannel.id) } : null} />
+                            </>
+                        ) : channel ? (
                             <>
                                 <ChannelHeader key={channel.id} channel={channel} dm={dm} groupTitle={group ? title(channel) : ''} me={view.me} elsewhere={elsewhere}
                                     verified={!!(dm && view.identities?.[dm.id]?.verified)} onCompare={() => dm && setDialog({ kind: 'codes', member: dm })}
@@ -1302,7 +1321,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     <button
                         type="button"
                         class={ROW_BUTTON}
-                        onClick={() => (voice ? joinCall(denID, c.id, label) : onOpen(c.id))}
+                        onClick={() => (voice ? openCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
                         title={voice ? (canCall() ? 'Join the call' : NO_CALLS) : undefined}
                         aria-label={rowLabel(c.name, state, c.staff_only && 'staff only', isMuted && 'muted', mentions && `${mentions} mentions`)}
@@ -1478,6 +1497,24 @@ function PeopleIcon() {
     );
 }
 
+// ChannelsButton is the phone layout's way from the channel's pane to the
+// list, marked with what waits elsewhere in the den.
+function ChannelsButton({ elsewhere, onChannels }) {
+    return (
+        <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-square relative md:hidden"
+            onClick={onChannels}
+            aria-label={elsewhere.mentions ? `Channels, ${elsewhere.mentions} unread mentions` : 'Channels'}
+        >
+            <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+                <path d="M2 4h12M2 8h12M2 12h12" />
+            </svg>
+            <Marks mentions={elsewhere.mentions} unread={elsewhere.unread} />
+        </button>
+    );
+}
+
 // ChannelHeader names the channel or the DM's other member. A channel's
 // description shows its first line, which opens the rest when there is
 // more than fits. Its bell mutes the channel's notifications, once the
@@ -1491,17 +1528,7 @@ export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere,
     return (
         <header class="border-b border-base-300 px-4 py-2">
             <div class="flex min-w-0 items-center gap-2">
-                <button
-                    type="button"
-                    class="btn btn-ghost btn-sm btn-square relative md:hidden"
-                    onClick={onChannels}
-                    aria-label={elsewhere.mentions ? `Channels, ${elsewhere.mentions} unread mentions` : 'Channels'}
-                >
-                    <svg viewBox="0 0 16 16" class="h-4 w-4" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
-                        <path d="M2 4h12M2 8h12M2 12h12" />
-                    </svg>
-                    <Marks mentions={elsewhere.mentions} unread={elsewhere.unread} />
-                </button>
+                <ChannelsButton elsewhere={elsewhere} onChannels={onChannels} />
                 {dm !== null && channel.kind === 'dm' ? (
                     <>
                         {/* The member and their verified mark are one row, which

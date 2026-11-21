@@ -182,6 +182,50 @@ test('in a wider window a den is one level, and its channels take turns in it', 
     assert.deepEqual(nav.trail, [HOME]);
 });
 
+test("a call's pane opens above the channel shown, so Back returns to it, and takes another call's pane's place", async () => {
+    for (const wide of [false, true]) {
+        const layout = wide ? 'a wider window' : 'the phone layout';
+        const win = fakeWindow('/den/a/1', { wide });
+        const nav = createNav(win);
+        nav.start();
+        nav.call('a', '9');
+        await settle();
+        assert.equal(pathOf(nav.trail), '/den/a/9', layout);
+        assert.equal(paneOf(nav.trail), 'chan', layout);
+        const at = win.at;
+        nav.call('a', '9');
+        await settle();
+        assert.equal(win.at, at, `${layout}: its own call's pane again stays`);
+        nav.call('a', '8');
+        await settle();
+        assert.equal(win.at, at, `${layout}: another call's pane takes its place`);
+        assert.equal(pathOf(nav.trail), '/den/a/8', layout);
+        win.back();
+        await settle();
+        assert.equal(pathOf(nav.trail), '/den/a/1', `${layout}: Back returns to the channel`);
+    }
+    // From the phone layout's list it goes above the list, as a channel
+    // does, and from another den above that den's list.
+    const win = fakeWindow('/den/a');
+    const nav = createNav(win);
+    nav.start();
+    nav.call('a', '9');
+    await settle();
+    assert.deepEqual(win.paths(), ['/', '/den/a', '/den/a/9']);
+    nav.call('b', '5');
+    await settle();
+    assert.deepEqual(win.paths(), ['/', '/den/b', '/den/b/5']);
+    // The phone's panes keep it the call's pane, which the next call's
+    // takes the place of.
+    nav.den('b', '5', 'list', true);
+    await settle();
+    nav.den('b', '5', 'chan', true);
+    await settle();
+    nav.call('b', '6');
+    await settle();
+    assert.deepEqual(win.paths(), ['/', '/den/b', '/den/b/6']);
+});
+
 test('a swipe up a level goes back where the entry beneath is that level, and replaces where it is not', async () => {
     const win = fakeWindow('/den/a/1', { wide: true });
     const nav = createNav(win);

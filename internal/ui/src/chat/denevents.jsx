@@ -29,7 +29,7 @@ import { Dialog } from '../manage.jsx';
 import { Markdown, eventsIn } from './markdown.jsx';
 import { BadgePicture, Banner, isStaff } from '../people.jsx';
 import { NO_CALLS, canCall } from '../core/platform.js';
-import { joinCall } from '../voice/voice.js';
+import { openCall } from '../voice/voice.js';
 import { askToNotify, permission, tell } from '../core/notify.js';
 
 // wanted is the event a notification's tap, or an address, asks its den's
@@ -209,7 +209,7 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                             )}
                             {e.live && channel && (
                                 <Button size="xs" disabled={!canCall()} title={canCall() ? undefined : NO_CALLS}
-                                    data-join-event onClick={() => joinCall(denID, channel.id, { den: view.name, channel: channel.name })}>Join</Button>
+                                    data-join-event onClick={() => openCall(denID, channel.id, { den: view.name, channel: channel.name })}>Join</Button>
                             )}
                         </>
                     ) : (

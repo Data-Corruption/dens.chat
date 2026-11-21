@@ -6,16 +6,16 @@
 import { Tip } from '../ui/components.jsx';
 import { callLength, sparks, useCallClock, useCallTimer } from './calltimer.js';
 
-// CallLength is a call's length for its channel's row, where the member's
-// Dens gives one and they didn't turn the timer off. It sits in the row,
-// which places the fireworks.
-export function CallLength({ call }) {
+// CallLength is a call's length for its channel's row, or for the call's
+// pane's header, as where says, where the member's Dens gives one and they
+// didn't turn the timer off. What it sits in places the fireworks.
+export function CallLength({ call, where = '' }) {
     const on = useCallTimer();
     if (!on || !call?.started_at) return null;
-    return <Length call={call} />;
+    return <Length call={call} where={where} />;
 }
 
-function Length({ call }) {
+function Length({ call, where }) {
     const clock = useCallClock(call);
     const record = call.record_ms > 0 ? `Longest call: ${callLength(call.record_ms)}` : 'No longest call yet';
     const figures = (
@@ -26,7 +26,7 @@ function Length({ call }) {
     );
     return (
         <>
-            <Tip id={`call-length-${call.channel_id}`} label={`Call length ${clock.text}`} trigger={figures}>{record}</Tip>
+            <Tip id={`${where}call-length-${call.channel_id}`} label={`Call length ${clock.text}`} trigger={figures}>{record}</Tip>
             {clock.burst > 0 && <Fireworks key={clock.burst} />}
         </>
     );

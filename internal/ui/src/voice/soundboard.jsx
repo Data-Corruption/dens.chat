@@ -51,14 +51,18 @@ export function SoundboardButton({ call, den, board, sounding, where }) {
 export function SoundboardKey({ den, open, where, many, onClick }) {
     const empty = den.sounds.length === 0;
     const label = empty ? 'Add sounds to the soundboard' : 'Soundboard';
+    // The call's pane labels its foot's buttons, as its FootButton does.
+    const look = where === 'pane' ? 'btn btn-ghost h-auto min-h-12 min-w-16 flex-col gap-0.5 px-2 py-1 text-xs font-normal'
+        : `${buttonClass('quiet')} btn-square ${many ? 'pointer-coarse:btn-md' : ''}`;
     return (
-        <button type="button" class={`${buttonClass('quiet')} btn-square ${many ? 'pointer-coarse:btn-md' : ''} ${open ? 'text-success' : ''}`} aria-label={label}
+        <button type="button" class={`${look} ${open ? 'text-success' : ''}`} aria-label={label}
             title={label} aria-haspopup="dialog" aria-expanded={!!open} data-soundboard-button={where}
             onClick={() => {
                 if (empty) openManage(den.den, 'soundboard');
                 onClick(empty);
             }}>
             <SoundboardIcon />
+            {where === 'pane' && <span aria-hidden="true">Soundboard</span>}
         </button>
     );
 }

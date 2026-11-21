@@ -35,6 +35,15 @@ export function SpeakerIcon({ size = 'h-[18px] w-[18px]' }) {
     );
 }
 
+// AwayIcon is a member away from their call: z's, as of someone asleep.
+export function AwayIcon({ size = 'h-[18px] w-[18px]' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M2.5 3.5h5l-5 6h5M9.5 8.5h4l-4 4.5h4" />
+        </svg>
+    );
+}
+
 // LockIcon marks end-to-end encryption: a DM's, a group's and a call's;
 // open, a call that isn't.
 export function LockIcon({ size = 'h-3.5 w-3.5', open = false }) {

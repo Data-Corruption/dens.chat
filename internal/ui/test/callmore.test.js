@@ -1,6 +1,6 @@
 // The rest of the call's controls: the arrow in the call's block,
-// the grid it opens, with the soundboard where the den has one and the
-// call's lock, and where a popup stands by its button.
+// the grid it opens, with the soundboard where the den has one, Away where
+// it keeps it, and the call's lock, and where a popup stands by its button.
 
 import './dom.js';
 import assert from 'node:assert/strict';
@@ -75,6 +75,29 @@ test("the arrow opens the lock, and the soundboard where the den has one, and cl
 
         show({ ...call, sealed: false }, quiet);
         assert.match(root.find(marked('data-call-more-button')).attributes.class, /text-warning/, "a call that isn't sealed marks the arrow");
+    } finally {
+        mount(null, root);
+    }
+});
+
+test('the grid holds Away where the den keeps it, lit while the member is away', async () => {
+    const root = document.createElement('div');
+    const show = (c, den) => mount(h(CallMore, { call: c, den, board, sounding: null }), root);
+    try {
+        show({ ...call, sealed: undefined }, { ...quiet, away: true });
+        press(root.find(marked('data-call-more-button')));
+        await wait();
+        const key = root.find(marked('data-away-button'));
+        assert.ok(key, 'an arrow for Away alone');
+        assert.equal(key.attributes['aria-pressed'], 'false');
+        show({ ...call, away: true }, { ...quiet, away: true });
+        await wait();
+        assert.equal(root.find(marked('data-away-button')).attributes['aria-pressed'], 'true');
+        mount(null, root);
+        show(call, quiet);
+        press(root.find(marked('data-call-more-button')));
+        await wait();
+        assert.equal(root.find(marked('data-away-button')), null, "none where the den doesn't keep it");
     } finally {
         mount(null, root);
     }
