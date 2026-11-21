@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
@@ -297,5 +298,40 @@ func TestGroupAfterStartingOver(t *testing.T) {
 	}
 	if got := history(t, laptop, denID, g); len(got) != 1 || got[0].Text != "after starting over" || got[0].Locked != "" {
 		t.Errorf("bob's laptop reads %+v", got)
+	}
+}
+
+// A group holds as a DM does where another member's Dens made its new
+// key: nothing goes under it until the member sends anyway.
+func TestGroupHoldOverTheirKey(t *testing.T) {
+	_, ms, ids, denID := groupDen(t)
+	alice, bob := ms[0], ms[1]
+	ctx := context.Background()
+	g, err := alice.MakeGroup(ctx, denID, []string{ids[1], ids[2]}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms[:3] {
+		groupOf(t, m, denID, g, ids[:3])
+	}
+	if _, err := alice.Compare(ctx, denID, ids[1], codeOf(t, bob, denID, ids[0]).Mine); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bob.StartOver(ctx, denID, "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	theirs := sendDM(t, bob, denID, g, "a new key")
+	viewOf(t, alice, denID, "bob's keys changed, and his key", func(v denclient.View) bool {
+		return v.Identities[ids[1]].Held && slices.ContainsFunc(v.DMKeys, func(k denclient.PageKey) bool { return k.ID == theirs.KeyID })
+	})
+	if _, err := alice.Send(ctx, denID, g, denproto.SendRequest{Nonce: denproto.Random(16), Text: "held"}); !isInput(err) ||
+		!strings.Contains(err.Error(), "keys changed") {
+		t.Fatalf("sending while the group holds: %v", err)
+	}
+	if err := alice.SendAnyway(ctx, denID, ids[1]); err != nil {
+		t.Fatal(err)
+	}
+	if after := sendDM(t, alice, denID, g, "after"); after.KeyID != theirs.KeyID {
+		t.Fatalf("sent anyway under %s, not bob's key %s", after.KeyID, theirs.KeyID)
 	}
 }

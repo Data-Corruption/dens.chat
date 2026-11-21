@@ -111,11 +111,29 @@ func (c *conn) isGroup(channel string) bool {
 }
 
 // private reports whether a channel is one of this member's DMs or group
-// DMs, or their notes, whose messages and files are sealed here.
+// DMs, or their notes, whose messages and files are sealed here, or was:
+// what's sent to one the den deleted fails for want of a key, where it
+// would otherwise go unsealed.
 func (c *conn) private(channel string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.den != nil && isSealed(c.den.channels[channel])
+	return c.den != nil && (isSealed(c.den.channels[channel]) || isSealed(denproto.Channel{Kind: c.den.kinds[channel]}))
+}
+
+// holdKind keeps the kind of a channel the den just answered with, a DM
+// opened, the notes or a group reserved, ahead of its event, and refuses
+// one this Dens held as another kind (see keepsKind).
+func (c *conn) holdKind(id, kind string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil {
+		return ErrNotStarted
+	}
+	if !c.den.keepsKind(denproto.Channel{ID: id, Kind: kind}) {
+		return errMalformed
+	}
+	c.stateDirty = true
+	return nil
 }
 
 // isNotes reports whether a channel is this member's notes.
@@ -793,6 +811,9 @@ func (m *Manager) MakeGroup(ctx context.Context, denID string, members []string,
 	cid, err := denproto.ParseID(reserved.ID)
 	if err != nil {
 		return "", errMalformed
+	}
+	if err := c.holdKind(reserved.ID, denproto.KindGroupDM); err != nil {
+		return "", err
 	}
 	me := c.memberID()
 	ch := denproto.GroupChange{N: 1, Prev: denproto.FirstPrev(), Kind: denproto.ChangeMade, By: me,

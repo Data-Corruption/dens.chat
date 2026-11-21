@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"net/http"
 	"net/url"
@@ -665,17 +666,18 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// Only the members changed since the list this socket named, and
 		// the calls' starts as they were, which a call going on keeps.
 		var prev map[string]denproto.Member
+		var kinds map[string]string
 		var starts map[string]int64
 		c.mu.Lock()
 		if since := r.Sync.MembersSince; since != nil && c.den != nil && c.sentMembers != nil && *since == c.sentMembers.version {
 			prev = c.den.members
 		}
 		if c.den != nil {
-			starts = c.den.starts
+			kinds, starts = maps.Clone(c.den.kinds), c.den.starts
 		}
 		c.mu.Unlock()
 		state := newState()
-		if err := state.load(c.j.denID, r, prev, starts, c.m.wall()); err != nil {
+		if err := state.load(c.j.denID, r, prev, kinds, starts, c.m.wall()); err != nil {
 			return e, false, err
 		}
 		state.groupDMs, state.notes = c.speaking >= denproto.GroupsVersion, c.speaking >= denproto.NotesVersion

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
@@ -87,9 +88,10 @@ func TestMeetingIdentities(t *testing.T) {
 
 // A record past the most it holds drops the oldest of what it kept before
 // and the oldest changes, then members kept longest ago who aren't
-// verified, never one who is.
+// verified, never one who is, and keeps the member's own identities
+// from before they started over, which signed their groups' changes.
 func TestRecordFits(t *testing.T) {
-	r := identityRecord{Members: map[string]*keptIdentity{}}
+	r := identityRecord{Members: map[string]*keptIdentity{}, Own: []denproto.Bytes{denproto.Random(32), denproto.Random(32)}}
 	for i := range 4000 {
 		k := &keptIdentity{Hash: denproto.Random(denproto.IdentityHashSize), KeptAt: int64(i), Changes: []int64{1, 2, 3, 4},
 			Past: []denproto.Bytes{denproto.Random(32), denproto.Random(32)}}
@@ -108,6 +110,9 @@ func TestRecordFits(t *testing.T) {
 		if k.Verified && back.Members[id] == nil {
 			t.Fatalf("verified member %s went", id)
 		}
+	}
+	if len(back.Own) != len(r.Own) || !bytes.Equal(back.Own[0], r.Own[0]) {
+		t.Fatalf("own identities from before: %d of %d kept", len(back.Own), len(r.Own))
 	}
 	if len(back.Members) >= len(r.Members) || back.Members["4000"] == nil || back.Members["2"] != nil {
 		t.Fatalf("kept %d of %d members, the newest %v, an old one %v", len(back.Members), len(r.Members), back.Members["4000"] != nil, back.Members["2"] != nil)
@@ -255,5 +260,21 @@ func TestRecordKeepsOwnPast(t *testing.T) {
 	}
 	if len(ours.Own) != maxPast || !bytes.Equal(ours.Own[maxPast-1], hashOf(19)) {
 		t.Errorf("own identities after ten more: %d, the last %x", len(ours.Own), ours.Own[len(ours.Own)-1])
+	}
+}
+
+// A channel the den answered with keeps its kind before its event comes:
+// a DM just opened can't arrive as a text channel.
+func TestAnAnswersKindHolds(t *testing.T) {
+	c, _, _ := testConn(t)
+	if err := c.holdKind("9", denproto.KindDM); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.holdKind("9", denproto.KindNotes); err == nil {
+		t.Error("the DM answered again as notes")
+	}
+	e, _ := denproto.NewEvent(denproto.EventChannelCreated, 1, denproto.Channel{ID: "9", Kind: denproto.KindText, Name: "general"})
+	if _, _, err := c.den.applyEvent(nil, e, denproto.Member{ID: "1"}, time.Now()); err != errMalformed {
+		t.Errorf("a DM just opened, coming as a text channel: %v", err)
 	}
 }

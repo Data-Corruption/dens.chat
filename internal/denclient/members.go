@@ -250,6 +250,9 @@ func (m *Manager) OpenDM(ctx context.Context, denID, memberID string) (denproto.
 	if !ok || ch.Kind != denproto.KindDM || !slices.Contains(ch.Members, memberID) {
 		return denproto.Channel{}, errors.New("the den's answer is malformed")
 	}
+	if err := c.holdKind(ch.ID, ch.Kind); err != nil {
+		return denproto.Channel{}, err
+	}
 	return ch, nil
 }
 

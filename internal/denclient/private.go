@@ -281,6 +281,10 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			return k.ID, key, nil
 		}
 		if k, ok := c.den.liveSigned(channel); ok && c.checkSignedLocked(k, true) == "" {
+			if err := c.heldLocked(channel); err != nil {
+				c.mu.Unlock()
+				return "", nil, err
+			}
 			key, locked := c.signedKeyLocked(k)
 			c.mu.Unlock()
 			if locked != "" {

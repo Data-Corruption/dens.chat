@@ -216,6 +216,27 @@ func TestKeyStatements(t *testing.T) {
 	}
 }
 
+// A key's maker's keys are the identity its statement names for its
+// maker, so a den can't pair a key with keys of its own choosing.
+func TestSignedKeyMaker(t *testing.T) {
+	den := bytes.Repeat([]byte{9}, IDSize)
+	alice, _ := DeriveIdentity(fixedSeal(7), den)
+	bob, _ := DeriveIdentity(fixedSeal(8), den)
+	defer alice.Close()
+	defer bob.Close()
+	kid := Random(KIDSize)
+	members := []KeyMember{{MemberID: "1", Identity: alice.Public().Hash()}, {MemberID: "2", Identity: bob.Public().Hash()}}
+	k := SignedKey{ID: "3", ChannelID: "5", MadeBy: "1", MadeAt: 1, KID: kid, Commit: KeyCommit(kid, Random(DMKeySize)), Members: members,
+		Maker: alice.Maker(), Signature: Random(SignatureSize)}
+	if err := CheckSignedKey(den, k); err != nil {
+		t.Fatal(err)
+	}
+	k.Maker = bob.Maker()
+	if CheckSignedKey(den, k) == nil {
+		t.Error("a key made by alice checks with bob's keys as its maker's")
+	}
+}
+
 // A record is padded to a power of four from 16 KiB, and opens only for
 // the den, the member and the revision it was written at.
 func TestRecords(t *testing.T) {

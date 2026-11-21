@@ -78,7 +78,7 @@ func TestCallStartsOnThisClock(t *testing.T) {
 		DenStorage: denproto.DefaultDenStorage}, CallLimits: denproto.DefaultCallLimits}, Sync: denproto.Sync{Epoch: denproto.Random(denproto.SyncEpochSize)},
 		SealCheck: denproto.Random(denproto.SealCheckSize), Calls: []denproto.Call{call("20", ms(10000), 0), call("21", ms(10000), 0)}}
 	next := newState()
-	if err := next.load(nil, ready, nil, map[string]int64{"20": t0 - 10100, "21": t0 - 20000}, time.UnixMilli(t0)); err != nil {
+	if err := next.load(nil, ready, nil, nil, map[string]int64{"20": t0 - 10100, "21": t0 - 20000}, time.UnixMilli(t0)); err != nil {
 		t.Fatal(err)
 	}
 	if next.starts["20"] != t0-10100 || next.starts["21"] != t0-10000 {

@@ -19,9 +19,12 @@ type denState struct {
 	members  map[string]denproto.Member
 	groups   map[string]denproto.Group
 	channels map[string]denproto.Channel
-	reads    map[string]denproto.ReadState
-	online   map[string]bool
-	limits   denproto.Limits
+	// kinds holds the kind of every channel this Dens ever held, by ID,
+	// those since deleted too (see keepsKind).
+	kinds  map[string]string
+	reads  map[string]denproto.ReadState
+	online map[string]bool
+	limits denproto.Limits
 	// callLimits are the den's limits for calls and shares, and
 	// retention the days it keeps a message, 0 for ever.
 	callLimits denproto.CallLimits
@@ -181,7 +184,7 @@ func (s *denState) timeCall(c denproto.Call, kept map[string]int64, now time.Tim
 
 func newState() *denState {
 	return &denState{members: map[string]denproto.Member{}, groups: map[string]denproto.Group{},
-		channels: map[string]denproto.Channel{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
+		channels: map[string]denproto.Channel{}, kinds: map[string]string{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
 		signed: map[string]denproto.SignedKey{}, calls: map[string]denproto.Call{}, starts: map[string]int64{}, sounds: map[string]denproto.Sound{},
 		emoji: map[string]denproto.Emoji{}, events: map[string]denproto.DenEvent{}}
@@ -328,6 +331,18 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	return c, true
 }
 
+// keepsKind reports whether a channel has the kind this Dens ever held
+// its ID as, and holds it to that kind from here on. A den never gives an
+// ID out twice, and a DM taken for a text channel, relabeled or deleted
+// and made again, would have the member's next message there go unsealed.
+func (s *denState) keepsKind(c denproto.Channel) bool {
+	if kind, ok := s.kinds[c.ID]; ok && kind != c.Kind {
+		return false
+	}
+	s.kinds[c.ID] = c.Kind
+	return true
+}
+
 // cleanExpiry checks a DM's or a group's time: up to four weeks, in
 // any whole number of seconds, which a development instance's den takes,
 // and who set it, and when.
@@ -429,10 +444,13 @@ func cleanSounds(list []denproto.Sound) (map[string]denproto.Sound, bool) {
 // arrived at now. Anything malformed in it is a protocol violation. A
 // snapshot that sends only the members changed since the client's list
 // changes that list, prev, which the client named on the socket's
-// upgrade; starts are when the calls the state held before began, which a
-// call going on keeps.
-func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto.Member, starts map[string]int64, now time.Time) error {
+// upgrade; kinds are those of the channels this Dens held before, which
+// hold; starts are when the calls it held began, which a call going on
+// keeps.
+func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto.Member, kinds map[string]string, starts map[string]int64,
+	now time.Time) error {
 	next := newState()
+	maps.Copy(next.kinds, kinds)
 	if !cleanLimits(r.Den) || denproto.CheckSync(r.Sync) != nil {
 		return errMalformed
 	}
@@ -477,7 +495,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	}
 	for _, c := range r.Channels {
 		c, ok := cleanChannel(c)
-		if !ok {
+		if !ok || !next.keepsKind(c) {
 			return errMalformed
 		}
 		next.channels[c.ID] = c
@@ -581,6 +599,9 @@ type keptState struct {
 	GroupDMs    bool                   `json:"group_dms,omitempty"`
 	// Whether the den has notes to self for this Dens.
 	Notes bool `json:"notes,omitempty"`
+	// The kind of every channel this Dens ever held, by ID, which a cache
+	// from before v1.14.1 lacks.
+	Kinds map[string]string `json:"kinds,omitempty"`
 	// The den's events to come and live that the member saw, each
 	// with their own mark, as the connection last knew them.
 	Events []denproto.DenEvent `json:"events,omitempty"`
@@ -595,7 +616,7 @@ func (s *denState) kept() (keptState, []denproto.Member) {
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
 		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, GroupDMs: s.groupDMs, Notes: s.notes,
-		Events: sortedEvents(s.events)}
+		Events: sortedEvents(s.events), Kinds: maps.Clone(s.kinds)}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
@@ -662,9 +683,15 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 		}
 		s.groups[g.ID] = g
 	}
+	for id, kind := range k.Kinds {
+		if !validID(id) {
+			return nil, errMalformed
+		}
+		s.kinds[id] = kind
+	}
 	for _, c := range k.Channels {
 		c, ok := cleanChannel(c)
-		if !ok {
+		if !ok || !s.keepsKind(c) {
 			return nil, errMalformed
 		}
 		s.channels[c.ID] = c
@@ -828,7 +855,7 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 			return e, false, errMalformed
 		}
 		c, ok := cleanChannel(c)
-		if !ok {
+		if !ok || !s.keepsKind(c) {
 			return e, false, errMalformed
 		}
 		// The member's own notes alone, and one.

@@ -41,5 +41,8 @@ func (m *Manager) OpenNotes(ctx context.Context, denID string) (denproto.Channel
 	if !ok || ch.Kind != denproto.KindNotes || ch.Members[0] != me {
 		return denproto.Channel{}, errors.New("the den's answer is malformed")
 	}
+	if err := c.holdKind(ch.ID, ch.Kind); err != nil {
+		return denproto.Channel{}, err
+	}
 	return ch, nil
 }

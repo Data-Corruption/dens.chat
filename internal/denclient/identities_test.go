@@ -2,6 +2,7 @@ package denclient_test
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -155,6 +156,46 @@ func TestKeysChangedHold(t *testing.T) {
 	// Comparing his new code marks him again.
 	if got, err := owner.Compare(ctx, denID, bob, codeOf(t, member, denID, alice).Mine); err != nil || !got.Verified {
 		t.Fatalf("comparing again: %+v %v", got, err)
+	}
+}
+
+// The hold stands where the other member's Dens made the DM's new key:
+// nothing goes under it, a message, an edit or a reaction, until the
+// member sends anyway.
+func TestHoldOverTheirKey(t *testing.T) {
+	_, owner, member, denID, _ := chatDen(t)
+	ctx := context.Background()
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	mine := sendDM(t, owner, denID, dm, "before")
+	if _, err := owner.Compare(ctx, denID, bob, codeOf(t, member, denID, alice).Mine); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := member.StartOver(ctx, denID, "correct horse"); err != nil {
+		t.Fatal(err)
+	}
+	theirs := sendDM(t, member, denID, dm, "a new key")
+	viewOf(t, owner, denID, "bob's keys changed, and his key", func(v denclient.View) bool {
+		return v.Identities[bob].Held && slices.ContainsFunc(v.DMKeys, func(k denclient.PageKey) bool { return k.ID == theirs.KeyID })
+	})
+	held := func(what string, err error) {
+		t.Helper()
+		if !isInput(err) || !strings.Contains(err.Error(), "keys changed") {
+			t.Fatalf("%s while the DM holds: %v", what, err)
+		}
+	}
+	_, err := owner.Send(ctx, denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Text: "held"})
+	held("sending", err)
+	_, err = owner.Edit(ctx, denID, dm, mine.ID, denproto.EditRequest{Revision: mine.Revision, Text: "held too"})
+	held("editing", err)
+	_, err = owner.React(ctx, denID, dm, theirs.ID, denclient.PageReaction{Emoji: "👍", On: true})
+	held("reacting", err)
+	if err := owner.SendAnyway(ctx, denID, bob); err != nil {
+		t.Fatal(err)
+	}
+	if after := sendDM(t, owner, denID, dm, "after"); after.KeyID != theirs.KeyID {
+		t.Fatalf("sent anyway under %s, not bob's key %s", after.KeyID, theirs.KeyID)
 	}
 }
 
