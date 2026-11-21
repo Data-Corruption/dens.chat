@@ -144,11 +144,13 @@ const (
 // VoiceJoin starts a call, or with Resume takes back the call the den holds
 // for this device. Sealed says the member's page seals what it sends,
 // frame by frame, under keys their Dens makes and seals to the call's
-// other members: a den that seals calls takes no join without it.
+// other members: a den that seals calls takes no join without it. The
+// marks are VoiceMute's, from the start.
 type VoiceJoin struct {
 	ChannelID string `json:"channel_id"`
 	Muted     bool   `json:"muted,omitempty"`
 	Deafened  bool   `json:"deafened,omitempty"`
+	Away      bool   `json:"away,omitempty"`
 	Resume    bool   `json:"resume,omitempty"`
 	Sealed    bool   `json:"sealed,omitempty"`
 }
@@ -260,11 +262,13 @@ type VoiceAnswer struct {
 	SDP     string `json:"sdp"`
 }
 
-// VoiceMute sets the member's own marks in their call: muted, and deafened,
-// which says they hear nothing of it either.
+// VoiceMute sets the member's own marks in their call: muted; deafened,
+// which says they hear nothing of it either; and away, which the den takes
+// only with muted.
 type VoiceMute struct {
 	Muted    bool `json:"muted"`
 	Deafened bool `json:"deafened,omitempty"`
+	Away     bool `json:"away,omitempty"`
 }
 
 // VoiceOffer is the den's offer for a call. Its SDP carries no
@@ -304,14 +308,15 @@ type CallRecord struct {
 	RecordMS int64 `json:"record_ms"`
 }
 
-// CallMember is one member of a call: Muted is their own mark, and
-// StaffMuted staff's, which the den enforces. Sharing says they share
-// their screen, Sound that the share has sound, and Watching lists the
-// members whose shares they watch.
+// CallMember is one member of a call: Muted, Deafened and Away are their
+// own marks, and StaffMuted staff's, which the den enforces. Sharing says
+// they share their screen, Sound that the share has sound, and Watching
+// lists the members whose shares they watch.
 type CallMember struct {
 	ID         string   `json:"id"`
 	Muted      bool     `json:"muted,omitempty"`
 	Deafened   bool     `json:"deafened,omitempty"`
+	Away       bool     `json:"away,omitempty"`
 	StaffMuted bool     `json:"staff_muted,omitempty"`
 	Sharing    bool     `json:"sharing,omitempty"`
 	Sound      bool     `json:"sound,omitempty"`

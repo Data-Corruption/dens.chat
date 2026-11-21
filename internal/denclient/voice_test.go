@@ -122,7 +122,13 @@ func (p *page) run() {
 
 func (p *page) join(denID, channel string) {
 	p.t.Helper()
-	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denclient.JoinOptions{Sealed: true}, p.deliver); err != nil {
+	p.joinAs(denID, channel, denproto.VoiceMute{})
+}
+
+// joinAs joins with the member's marks, as the page does after a move.
+func (p *page) joinAs(denID, channel string, marks denproto.VoiceMute) {
+	p.t.Helper()
+	if err := p.m.JoinCall(context.Background(), p.id, denID, channel, denclient.JoinOptions{Marks: marks, Sealed: true}, p.deliver); err != nil {
 		p.t.Fatal(err)
 	}
 }
@@ -182,7 +188,7 @@ func (p *page) hears(member string) {
 }
 
 // inCall reads who a view shows in a channel's call; a member ending in
-// "*" is muted, and "~" after it deafened.
+// "*" is muted, "~" after it deafened, and "z" after that away.
 func inCall(v denclient.View, channel string) []string {
 	got := []string{}
 	for _, c := range v.Calls {
@@ -194,6 +200,9 @@ func inCall(v denclient.View, channel string) []string {
 				}
 				if m.Deafened {
 					id += "~"
+				}
+				if m.Away {
+					id += "z"
 				}
 				got = append(got, id)
 			}
@@ -265,6 +274,8 @@ func TestCallThroughTheClient(t *testing.T) {
 	viewOf(t, owner, denID, "bob muted", showsCall(lounge, alice, bob+"*"))
 	member.MuteCall("page-b", denID, denproto.VoiceMute{Muted: true, Deafened: true})
 	viewOf(t, owner, denID, "bob deafened", showsCall(lounge, alice, bob+"*~"))
+	member.MuteCall("page-b", denID, denproto.VoiceMute{Muted: true, Deafened: true, Away: true})
+	viewOf(t, owner, denID, "bob away", showsCall(lounge, alice, bob+"*~z"))
 
 	// Another page on the member's install takes the call over.
 	c := newPage(t, member, "page-c")
@@ -455,12 +466,15 @@ func TestMovesThroughTheClient(t *testing.T) {
 		return id
 	}
 	lounge, games := voice("Lounge"), voice("Games")
-	viewOf(t, member, denID, "the den's word that it moves members and keeps spoilers",
-		func(v denclient.View) bool { return v.MoveMembers && v.Spoilers })
+	viewOf(t, member, denID, "the den's word that it moves members, keeps spoilers and keeps Away",
+		func(v denclient.View) bool { return v.MoveMembers && v.Spoilers && v.Away })
 	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
 	b := newPage(t, member, "page-b")
-	b.join(denID, lounge)
-	viewOf(t, owner, denID, "bob in the call", showsCall(lounge, bob))
+	// A member away stays away through a move, which the page joins with
+	// the marks it had.
+	away := denproto.VoiceMute{Muted: true, Away: true}
+	b.joinAs(denID, lounge, away)
+	viewOf(t, owner, denID, "bob in the call", showsCall(lounge, bob+"*z"))
 	if err := owner.MoveMember(ctx, denID, bob, games); err != nil {
 		t.Fatal(err)
 	}
@@ -472,8 +486,8 @@ func TestMovesThroughTheClient(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("bob's page never heard of the move")
 	}
-	b.join(denID, games)
-	viewOf(t, owner, denID, "bob in the other call", showsCall(games, bob))
+	b.joinAs(denID, games, away)
+	viewOf(t, owner, denID, "bob in the other call", showsCall(games, bob+"*z"))
 	viewOf(t, owner, denID, "the first call empty", showsCall(lounge))
 	if err := member.MoveMember(ctx, denID, alice, lounge); !denproto.IsCode(err, denproto.CodeForbidden) {
 		t.Fatalf("bob moving the owner: %v", err)

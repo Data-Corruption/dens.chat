@@ -78,10 +78,10 @@ type activeCall struct {
 	keys *callKeys
 }
 
-// JoinOptions are how a page joins a call: its member's marks, muted and
-// deafened; whether it takes back the call the den holds for this device;
-// and whether it seals what it sends, frame by frame, under keys
-// this service makes, as a den that seals calls requires.
+// JoinOptions are how a page joins a call: its member's marks, muted,
+// deafened and away; whether it takes back the call the den holds for
+// this device; and whether it seals what it sends, frame by frame, under
+// keys this service makes, as a den that seals calls requires.
 type JoinOptions struct {
 	Marks  denproto.VoiceMute
 	Resume bool
@@ -151,7 +151,8 @@ func (m *Manager) JoinCall(ctx context.Context, page, denID, channel string, opt
 			}
 		}
 	}
-	join := denproto.VoiceJoin{ChannelID: channel, Muted: opts.Marks.Muted, Deafened: opts.Marks.Deafened, Resume: opts.Resume, Sealed: opts.Sealed}
+	join := denproto.VoiceJoin{ChannelID: channel, Muted: opts.Marks.Muted, Deafened: opts.Marks.Deafened, Away: opts.Marks.Away,
+		Resume: opts.Resume, Sealed: opts.Sealed}
 	if err := c.sendFrame(denproto.EventVoiceJoin, join); err != nil {
 		m.note(call, "couldn't ask to %s it: the den isn't connected", asked)
 		if m.takeCall(func(x *activeCall) bool { return x == call }) != nil {
@@ -209,8 +210,8 @@ func (m *Manager) RestartCall(ctx context.Context, page, denID string) {
 	}
 }
 
-// MuteCall sets the member's marks in the page's call: muted, and
-// deafened.
+// MuteCall sets the member's marks in the page's call: muted, deafened
+// and away.
 func (m *Manager) MuteCall(page, denID string, marks denproto.VoiceMute) {
 	if m.currentCall(page, denID) == nil {
 		return
