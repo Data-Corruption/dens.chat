@@ -19,7 +19,7 @@
 //   run.sh soundboard chromium|firefox
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, DEN_NAME, HOME, MANAGE, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, DEN_NAME, HOME, MANAGE, backFromPane, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, BOB_ID: bobID } = process.env;
@@ -350,6 +350,8 @@ try {
     await pair(B.b, B);
     await B.b.go(`http://localhost:${B.port}/den/${den}`);
     await joinLounge(B);
+    // The join opened the call's pane; the bar shows over a text channel.
+    await backFromPane(B.b, 'bob');
     await B.b.eval(`document.querySelector('[data-pane=chan]')?.scrollIntoView(), true`);
     await waitFor(() => B.b.eval(`!!document.querySelector('[data-call-bar]')`), "the call's bar");
     const bar = await B.b.eval(`[...document.querySelector('[data-call-bar]').querySelectorAll('button')].map((b) => b.getAttribute('aria-label') || '').join('|')`);
@@ -380,6 +382,8 @@ try {
     report(rest && hers === true, `bob, joining partway, receives the rest and lights alice's ring: ${JSON.stringify(rest)}`);
 
     step("bob's slider at 0 mutes it");
+    await backFromPane(B.b, 'bob');
+    await B.b.eval(`document.querySelector('[data-pane=chan]')?.scrollIntoView(), true`);
     await waitFor(() => B.b.eval(`!!document.querySelector('[data-call-bar] [data-soundboard-button=bar]')`), "bob's bar", 5000);
     await click(B, `document.querySelector('[data-call-bar] [data-soundboard-button=bar]')`);
     await waitFor(() => B.b.eval(`!!document.querySelector('[data-sheet] [data-board-volume]')`), "bob's sheet");

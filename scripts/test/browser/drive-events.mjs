@@ -34,7 +34,7 @@
 //   run.sh events chromium|firefox
 import { execFileSync } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, CLOSE_CARD, HOME, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CLOSE_CARD, HOME, backFromPane, checks, launch, lib, manageFromName, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, LOUNGE: lounge, BACKSTAGE: backstage, DM: dm } = process.env;
@@ -318,6 +318,11 @@ try {
     const alice = state('alice').me.id;
     const bob = state('bob').me.id;
     await waitFor(() => inCall().includes(alice), 'alice in the call', 30000);
+    // The Join opened the call's pane, as the row's click does; Back
+    // returns to the events, the call going on.
+    await backFromPane(A.b, 'alice');
+    report(await may(waitFor(() => A.b.eval(`!!${card('Game night')}`), "alice's events again", 5000)),
+        "the card's Join opened the call's pane, and Back returned to the events");
     await openChannel(B, general);
     await waitFor(() => B.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), "bob's Join the call");
     await B.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`);

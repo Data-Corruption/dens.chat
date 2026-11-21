@@ -16,7 +16,7 @@
 //   run.sh pictures chromium|firefox
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, CLOSE_CARD, HOME, checks, closeSettings, launch, openAppearance, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CLOSE_CARD, HOME, backFromPane, checks, closeSettings, launch, openAppearance, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, GENERAL: general, ALICE_MSG: aliceMsg, BOB_MSG: bobMsg } = process.env;
@@ -301,6 +301,9 @@ try {
         await waitFor(() => s.b.eval(`!!document.querySelector('button[title^="Join the call"]')`), `${s.name}'s voice channel`);
         await s.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
         await waitFor(() => s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), `${s.name} in the call`, 30000);
+        // The join opened the call's pane; the messages are in the channel
+        // before it.
+        await backFromPane(s.b, s.name);
     }
     for (const s of [A, B]) {
         if (!(await s.b.eval(`!!document.querySelector('nav[aria-label=Members]')`))) {

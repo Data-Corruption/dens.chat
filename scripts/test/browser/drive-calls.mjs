@@ -14,13 +14,17 @@
 // packets and hears nothing. A short call of alice's alone sets
 // the channel's record, and the call after it shows its length on both
 // pages a second apart, in the rainbow past the record, with fireworks as
-// it passes, and none of it for bob once he turns Call timer off.
+// it passes, and none of it for bob once he turns Call timer off. The
+// click that joins opens the call's pane: a tile for each member, ringing
+// as they talk, and the controls along its foot; Away, from the pane's
+// foot and from the block, shows on both pages; and Back from the pane
+// returns to the text channel, the call going on.
 //
 //   run.sh calls chromium|firefox chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
-import { HOME, checks, launch, lib, openAppearance, paired, token, waitFor } from './browsers.mjs';
+import { HOME, backFromPane, checks, launch, lib, openAppearance, paired, tileMenu, token, waitFor } from './browsers.mjs';
 
 const PRELOAD = `() => {
     const Orig = window.RTCPeerConnection;
@@ -183,6 +187,67 @@ try {
             `${s.browser}'s rings are round and apart: ${ring}, gaps ${JSON.stringify(gaps)}`);
         await s.b.shot(`${HOME}/shot-calls-${s.browser}-call.png`).catch((e) => console.log('shot', e.message));
     }
+
+    // The click that joined opened the call's pane at the voice channel's
+    // address: a tile for each member, the other's ringing while they
+    // talk, and the call's controls along its foot, labeled.
+    const PANE_READ = `(() => {
+        const pane = document.querySelector('[data-call-pane]');
+        if (!pane) return 'null';
+        const tiles = [...pane.querySelectorAll('[data-call-tile]')];
+        return JSON.stringify({
+            address: location.pathname,
+            tiles: tiles.map((t) => t.querySelector('[data-name]')?.textContent.trim()),
+            ringing: tiles.filter((t) => t.dataset.talking).map((t) => t.querySelector('[data-name]')?.textContent.trim()),
+            foot: [...pane.querySelectorAll('[data-call-foot] button')].map((b) => b.getAttribute('aria-label')).filter((l) => !/soundboard/i.test(l)).join('|'),
+            labeled: [...pane.querySelectorAll('[data-call-foot] button')].every((b) => b.textContent.trim().length > 0),
+            menus: pane.querySelectorAll('[data-call-tile] button[data-call-menu]').length,
+        });
+    })()`;
+    for (const [s, other] of [[A, 'Bob'], [B, 'Alice']]) {
+        const pane = await waitFor(async () => {
+            const p = JSON.parse(await s.b.eval(PANE_READ));
+            return p?.ringing.includes(other) ? p : null;
+        }, `${s.browser}'s pane ringing ${other}`, 20000).catch(async () => JSON.parse(await s.b.eval(PANE_READ)));
+        report(pane?.address === `/den/${den}/${loungeID}` && pane.tiles.length === 2 && pane.tiles.includes(other) && pane.ringing.includes(other)
+            && pane.foot === 'Share your screen|Mute|Deafen|Away|Voice settings|Leave the call' && pane.labeled && pane.menus === 1,
+            `${s.browser}'s call's pane: ${JSON.stringify(pane)}`);
+        await s.b.shot(`${HOME}/shot-calls-${s.browser}-pane.png`).catch((e) => console.log('shot', e.message));
+        const menu = await tileMenu(s.b, other);
+        report(menu.within && menu.reached, `${s.browser}: ${other}'s tile's menu shows its volume within the window, in reach: ${JSON.stringify(menu)}`);
+    }
+
+    // Away: alice marks herself away from the pane's foot, which mutes
+    // her, and both pages show her z's on her row and her tile; her unmute
+    // brings her back. Bob marks himself away from the block's grid, and
+    // back, which alice's page shows.
+    const AWAY_OF = (name) => `(() => {
+        const row = [...document.querySelectorAll('ul[aria-label="In the call"] li')].find((li) => li.textContent.includes(${JSON.stringify(name)}));
+        const tile = [...document.querySelectorAll('[data-call-tile]')].find((t) => t.textContent.includes(${JSON.stringify(name)}));
+        return JSON.stringify({ row: !!row?.querySelector('[data-away]'), tile: !!tile?.querySelector('[data-away]') });
+    })()`;
+    const away = async (s, name, want) => waitFor(async () => {
+        const v = JSON.parse(await s.b.eval(AWAY_OF(name)));
+        return v.row === want && v.tile === want ? v : null;
+    }, `${s.browser} to show ${name} ${want ? 'away' : 'back'}`, 10000).then(() => true, () => false);
+    await click(A, `document.querySelector('[data-away-button=pane]')`);
+    const aliceAway = {
+        bob: await away(B, 'Alice', true),
+        own: await away(A, 'Alice', true),
+        muted: await A.b.eval(`document.querySelector('[data-call-foot] button[aria-label=Unmute]')?.getAttribute('aria-pressed') === 'true'`),
+        pressed: await A.b.eval(`document.querySelector('[data-away-button=pane]')?.getAttribute('aria-pressed') === 'true'`),
+    };
+    await click(A, `document.querySelector('[data-call-foot] button[aria-label=Unmute]')`);
+    const aliceBack = { bob: await away(B, 'Alice', false), own: await away(A, 'Alice', false) };
+    await A.b.shot(`${HOME}/shot-calls-${A.browser}-away.png`).catch((e) => console.log('shot', e.message));
+    await openMore(B.b);
+    await click(B, `document.querySelector('[data-call-more] [data-away-button=block]')`);
+    const bobAway = await away(A, 'Bob', true);
+    await openMore(B.b);
+    await click(B, `document.querySelector('[data-call-more] [data-away-button=block]')`);
+    const bobBack = await away(A, 'Bob', false);
+    report(aliceAway.bob && aliceAway.own && aliceAway.muted && aliceAway.pressed && aliceBack.bob && aliceBack.own && bobAway && bobBack,
+        `Away on both pages: alice away ${JSON.stringify(aliceAway)}, back on unmuting ${JSON.stringify(aliceBack)}; bob away from the block ${bobAway}, back ${bobBack}`);
 
     // The call timer: both pages show the call's length on its row,
     // a second apart at most, in the rainbow once it passed the record
@@ -722,6 +787,9 @@ try {
     const outOfCall = JSON.parse(await B.b.eval(LINE_UP));
     await B.b.eval(`(document.querySelector('button[title^="Join the call"]').click(), true)`);
     await waitFor(async () => (await B.b.eval(STATS)).includes('Connected'), `${B.browser} back in the call`, 30000);
+    // Back from the pane returns to the text channel, the call going on.
+    await backFromPane(B.b, B.browser);
+    await waitFor(() => B.b.eval(`!!document.querySelector('textarea')`), `${B.browser} message box beside the call`);
     await sleep(500);
     const inCall = JSON.parse(await B.b.eval(LINE_UP));
     const loungeName = await B.b.eval(`(async () => ((await (await fetch('/api/dens/${den}/state')).json()).channels.find((c) => c.kind === 'voice') || {}).name)()`);
@@ -780,7 +848,7 @@ try {
         return JSON.stringify({ home: !!home && home.getAttribute('href') === '/', homeFirst: home?.nextElementSibling?.textContent.trim(), dot: !!aside.querySelector('.badge-xs.badge-warning, .badge-xs.badge-success'), header: !!document.querySelector('header.navbar') });
     })()`));
     report(outOfCall.panel === outOfCall.bar && inCall.panel === inCall.bar && inCall.avatar === outOfCall.avatar && outOfCall.avatar >= 32
-        && row.labels === "More|Share your screen|Mute|Deafen|Voice settings|Leave the call" && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
+        && row.labels === "More|Share your screen|Mute|Deafen|Leave the call" && row.even && row.lines === 1 && row.height <= 48 && row.above === 0
         && row.status === lounge && row.said && !row.line && row.shade && row.standsOut >= 15
         && speaker.state === 'connected' && speaker.green && speaker.label === `${loungeName}, connected` && edit === true && cog === 'Chat'
         && head.home && !head.dot && !head.header,

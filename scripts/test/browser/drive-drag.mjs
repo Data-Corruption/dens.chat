@@ -227,6 +227,10 @@ try {
     await dragOnto(alice, member, row(games), 'middle');
     await waitFor(() => callOf(games).some((m) => m.id === bobID && m.muted) && callOf(lounge).length === 0, 'bob in Games, muted, and Lounge empty', 30000);
     await waitFor(() => bob.eval(`!!${row(games)}.querySelector('[data-call-state="connected"]')`), "bob's page connected in Games", 30000);
+    // His click opened Lounge's call's pane; the move he didn't ask for
+    // leaves his page where it was, which shows the channel before it.
+    const stayed = await bob.eval(`location.pathname.endsWith('/${lounge}') && !document.querySelector('[data-call-pane]')`);
+    c.report(stayed, `${bobBrowser}: the move left bob's page where it was, the call's pane closed with Lounge's call`);
     // The lock is among the rest of the call's controls, behind the block's arrow.
     await bob.eval(`document.querySelector('[data-call-more-button]').click(), true`);
     const lock = await waitFor(() => bob.eval(`document.querySelector('[data-call-more] [data-call-lock]')?.dataset.callLock || ''`), "bob's lock", 5000).catch(() => '');
