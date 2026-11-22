@@ -175,6 +175,7 @@ Before the first release an audit checked every item here against the code (2026
 - [x] Notifications stay off until the member turns a kind on, and the settings are the service's, which only a paired browser changes.
 - [x] A notification's text is plain text from the start of the message: no markup reaches a notification service, whose markup a member's text is escaped for, a spoiler never shows, and control and format characters go; the member can leave the text out.
 - [x] Nothing about a notification is logged but its IDs.
+- [x] A channel's level, a mute and Do not disturb stay on the install, and the den hears nothing of them; a level or a mute is kept only for a channel the member's view holds, and a level only for a text channel's.
 - [x] A click opens only the page, at an address the service builds from IDs the den gave it; the Android shell loads only a path of the page's form, and a pairing link is made at the click, never kept in a notification.
 
 ### Sounds
