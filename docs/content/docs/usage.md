@@ -246,7 +246,7 @@ and the keys. What's different:
 - **Mentions**: `@` and a username tells someone, if they can see the
   channel; inside code or a link it's only text. Staff write `@everyone` to
   tell everyone who can see the channel, which anyone turns off under
-  **Settings** → **Notifications**, or by muting the channel.
+  **Settings** → **Notifications**, or by setting the channel to **Nothing**.
 - **Boxes to tick**: a line that starts with `[ ]` or `[x]` is a box that
   anyone who may edit the message can tick, two people at once included.
 - **Let others edit** names up to 20 people who can see the channel to edit
@@ -259,10 +259,17 @@ and the keys. What's different:
 
 Nothing notifies you until you turn it on: in **Settings**, under
 **Notifications**, turn on **Direct messages**, **Mentions**, or
-both. The bell beside a den's name mutes the den, and the bell at the top of a
-channel or DM mutes just that one. A notification shows the start of the
-message to anyone who can see your screen; turn off **Show the message** and
-it says only who sent one.
+both. A channel's **Notifications**, in its **⋯** or from the bell at its
+top, sets it to **All messages**, which notifies you of every message there,
+even with Mentions off; **Mentions**; or **Nothing**. The bell beside a den's
+name mutes the den, and the bell at the top of a DM mutes just that one. A
+notification shows the start of the message to anyone who can see your
+screen; turn off **Show the message** and it says only who sent one.
+
+**Do not disturb**, from the moon beside the cog, holds every notification
+and its sound for an hour, until 8:00, or until you turn it off. Unread marks
+still show, and what came in meanwhile doesn't notify you afterwards. It's
+set for this computer: your phone notifies as it's set.
 
 {{% details title="Where they show" closed="true" %}}
 

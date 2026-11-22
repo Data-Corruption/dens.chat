@@ -24,7 +24,8 @@ import { hostingAsk, hostingNote, hostingOnWarning, moving } from './core/hostin
 import { oldReddit, setOldReddit, setSteamCards, setYouTubePlayers, steamCards, youTubePlayers } from './chat/links.js';
 import { PlayIcon } from './ui/icons.jsx';
 import { useLayer, useNarrow } from './core/nav.js';
-import { askToNotify, notifying, permission, tell, whereTheyShow } from './core/notify.js';
+import { askToNotify, notifying, permission, setQuiet, tell, untilWords, whereTheyShow } from './core/notify.js';
+import { useQuiet } from './ui/quiet.jsx';
 import { NO_CALLS, canCall, canShare, hasKeys, here, inApp } from './core/platform.js';
 import { HEIGHTS, RATES, shareAudio } from './voice/share.js';
 import { GROUPS, SOUNDS, checkSound, playSound, soundSettings, uploadSound } from './voice/sounds.js';
@@ -169,13 +170,14 @@ function ChatSettings() {
     );
 }
 
-// NotificationSettings turns each kind of notification on or off, and the
-// message's start in them. The service keeps them, so every browser
-// paired with it shares them; turning a kind on asks this browser to let
-// the page notify, where it hasn't asked, and the card says where they
-// show, by what this browser, the desktop's helper and Android allow.
+// NotificationSettings holds Do not disturb's switch, on until it's turned
+// off, and turns each kind of notification on or off, and the message's
+// start in them. The service keeps them, so every browser paired with it shares
+// them; turning a kind on asks this browser to let the page notify, where
+// it hasn't asked, and the card says where they show, by what this
+// browser, the desktop's helper and Android allow.
 function NotificationSettings() {
-    const status = useNotifications();
+    const { status, on: quiet, until } = useQuiet();
     const [browser, setBrowser] = useState(permission);
     const [elsewhere, setElsewhere] = useState(keysElsewhere);
     const act = useAction();
@@ -200,7 +202,9 @@ function NotificationSettings() {
     if (!status) return null;
     return (
         <Card title={<>Notifications <DocsTip id="docs-notifications" page="usage/#notifications" side="right">
-            Where they show, and muting a den or a channel from the bell beside its name.</DocsTip></>}>
+            Where they show, a channel's levels, and muting a den or a DM from the bell beside its name.</DocsTip></>}>
+            <Toggle id="notify-dnd" label="Do not disturb" hint={quiet ? `Holds every notification ${untilWords(until)}.` : 'Holds every notification and its sound.'}
+                checked={quiet} disabled={act.busy} onChange={(on) => act.run(() => setQuiet(on ? 'manual' : null))} />
             <Toggle id="notify-dms" label="Direct messages" checked={!!status.dms} disabled={act.busy} onChange={(on) => change('dms', on)} />
             <Toggle id="notify-mentions" label="Mentions" hint="Messages in channels that mention your username."
                 checked={!!status.mentions} disabled={act.busy} onChange={(on) => change('mentions', on)} />

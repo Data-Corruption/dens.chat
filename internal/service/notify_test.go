@@ -134,4 +134,33 @@ func TestPagesShowNotifications(t *testing.T) {
 	if code, body := b.do("POST", "/api/dens/d1/notifications", map[string]any{"muted": true}); code != http.StatusNotFound {
 		t.Fatalf("muting a den this install hasn't joined: %d %s", code, body)
 	}
+	if code, body := b.do("POST", "/api/dens/d1/notifications", map[string]any{"channel": "5", "level": "all"}); code != http.StatusNotFound {
+		t.Fatalf("a level in a den this install hasn't joined: %d %s", code, body)
+	}
+
+	// Do not disturb ends at the time the page sends, which the settings
+	// keep and every page hears; an end gone by, or one without it on,
+	// is refused.
+	for what, n := range map[string]map[string]any{
+		"an end gone by":     {"dnd": true, "dndUntil": time.Now().Add(-time.Minute).Format(time.RFC3339)},
+		"an end, turned off": {"dnd": false, "dndUntil": time.Now().Add(time.Hour).Format(time.RFC3339)},
+		"an end alone":       {"dndUntil": time.Now().Add(time.Hour).Format(time.RFC3339)},
+	} {
+		if code, body := b.do("POST", "/api/settings", map[string]any{"notifications": n}); code != http.StatusBadRequest {
+			t.Errorf("Do not disturb with %s: %d %s", what, code, body)
+		}
+	}
+	end := time.Now().Add(time.Hour).Truncate(time.Second)
+	b.expect(http.StatusOK, "Do not disturb for an hour", "POST", "/api/settings",
+		map[string]any{"notifications": map[string]any{"dnd": true, "dndUntil": end.Format(time.RFC3339)}})
+	if err := json.Unmarshal(shown.next("notifications"), &st); err != nil || !st.DoNotDisturb || !st.DoNotDisturbUntil.Equal(end) {
+		t.Fatalf("under Do not disturb, a page heard %+v, %v", st, err)
+	}
+	if cfg, err := config.View(a.DB); err != nil || !cfg.Notifications.DoNotDisturb || !cfg.Notifications.DoNotDisturbUntil.Equal(end) {
+		t.Fatalf("Do not disturb kept as %+v, %v", cfg.Notifications, err)
+	}
+	b.expect(http.StatusOK, "Do not disturb off", "POST", "/api/settings", map[string]any{"notifications": map[string]any{"dnd": false}})
+	if cfg, err := config.View(a.DB); err != nil || cfg.Notifications.DoNotDisturb || !cfg.Notifications.DoNotDisturbUntil.IsZero() {
+		t.Fatalf("Do not disturb off kept as %+v, %v", cfg.Notifications, err)
+	}
 }

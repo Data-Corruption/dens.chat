@@ -68,15 +68,32 @@ export function InfoIcon({ size = 'h-3.5 w-3.5' }) {
 
 // BellIcon is notifications: a den's, a channel's or a DM's bell,
 // struck through where the member muted them.
-export function BellIcon({ off, size = 'h-4 w-4' }) {
+export function BellIcon({ off, ring, size = 'h-4 w-4' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
             <path d="M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1H3z" />
             <path d="M6.75 14a1.5 1.5 0 0 0 2.5 0" />
             {off && <path d="M2.5 2.5l11 11" />}
+            {ring && <path d={RING} />}
         </svg>
     );
 }
+
+// BELL and RING draw a bell and the strokes either side that ring it, for
+// a channel at All messages.
+const BELL = 'M4 11.5V7a4 4 0 0 1 8 0v4.5l1 1H3zM6.75 14a1.5 1.5 0 0 0 2.5 0';
+const RING = 'M1.75 6.25a6.5 6.5 0 0 1 1.5-3.5M14.25 6.25a6.5 6.5 0 0 0-1.5-3.5';
+
+// MoonIcon is a crescent, for Do not disturb, filled while it's on.
+export function MoonIcon({ on, size = 'h-[18px] w-[18px]' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d={MOON} fill={on ? 'currentColor' : 'none'} />
+        </svg>
+    );
+}
+
+const MOON = 'M13.5 9.75A5.75 5.75 0 1 1 6.25 2.5a4.5 4.5 0 0 0 7.25 7.25z';
 
 // BackIcon is ←, a page's way back to the one it opened from.
 export function BackIcon({ size = 'h-5 w-5' }) {
@@ -234,6 +251,13 @@ export const MENU_ICONS = {
     themes: 'M2.5 2.5h4.25v4.25H2.5zM9.25 2.5h4.25v4.25H9.25zM2.5 9.25h4.25v4.25H2.5zM9.25 9.25h4.25v4.25H9.25z',
     brush: 'M13.75 2.25 8 8M8 8l-1.5 1.5M6.5 9.5c-1.5 0-2.75 1-2.75 2.5 0 .9-.5 1.5-1.5 1.75 1 .5 2.25.75 3.25.75 2 0 3.25-1.25 3.25-3a2 2 0 0 0-2.25-2z',
     onward: 'M6 3.5 10.5 8 6 12.5',
+    bell: BELL,
+    bellring: BELL + RING,
+    belloff: BELL + 'M2.5 2.5l11 11',
+    at: 'M10.5 8a2.5 2.5 0 1 1-5 0 2.5 2.5 0 0 1 5 0zM10.5 8v1.25a1.75 1.75 0 0 0 3.5 0V8a6 6 0 1 0-2.5 4.9',
+    moon: MOON,
+    clock: 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0zM8 4.5V8l2.5 1.5',
+    sunrise: 'M1.5 12.5h13M4.25 12.5a3.75 3.75 0 0 1 7.5 0M8 2.5v3.25M3 6.5l1.5 1.25M13 6.5l-1.5 1.25',
 };
 
 // MenuIcon is a menu item's icon by name, or nothing for a name it lacks.

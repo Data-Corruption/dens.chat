@@ -186,8 +186,8 @@ export function DenPreview({ theme, builtIn = '' }) {
                     </div>
                     <div class="flex min-h-0 min-w-0 flex-col">
                         <ChannelHeader channel={{ id: 'preview', kind: 'text', name: 'general', description: 'Say hi' }} dm={null} me={YOU}
-                            elsewhere={{ mentions: 0, unread: false }} verified={false} online={false} membersOpen={false} muted={false}
-                            onCompare={none} onMute={none} onChannels={none} onMembers={none} onProfile={none} />
+                            elsewhere={{ mentions: 0, unread: false }} verified={false} online={false} membersOpen={false} muted={null} level="mentions"
+                            onCompare={none} onMute={none} onLevel={none} onChannels={none} onMembers={none} onProfile={none} />
                         <div class="min-h-0 flex-1 overflow-hidden"><ChatSample at={at} /></div>
                         <Composer denID="preview" limits={null} placeholder="Message #general" typing={[]} files={[]} candidates={[]} mentionable={null}
                             everyone={false} polls={false} shares={false} editors={[]} onEditors={none} onAddFiles={none} onRemoveFile={none} canSpoil={false}

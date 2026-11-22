@@ -628,6 +628,11 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			// Events the events the member is interested in.
 			Everyone *bool `json:"everyone"`
 			Events   *bool `json:"events"`
+			// DoNotDisturb turns Do not disturb on until
+			// DoNotDisturbUntil, or without it until it's turned off,
+			// or turns it off.
+			DoNotDisturb      *bool      `json:"dnd"`
+			DoNotDisturbUntil *time.Time `json:"dndUntil"`
 		} `json:"notifications"`
 		// Sounds turns each of the page's sounds off or on, and sets its
 		// volume in percent, as given.
@@ -657,10 +662,26 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n := body.Notifications; n != nil {
-		if err := rt.a.Notify.SetKinds(notify.Kinds{DMs: n.DMs, Mentions: n.Mentions, HideText: n.HideText, Everyone: n.Everyone,
-			Events: n.Events}); err != nil {
-			xhttp.Error(r.Context(), w, err)
+		if u := n.DoNotDisturbUntil; u != nil && (n.DoNotDisturb == nil || !*n.DoNotDisturb || !u.After(time.Now())) {
+			http.Error(w, "Do not disturb ends after now, and only while it's on", http.StatusBadRequest)
 			return
+		}
+		kinds := notify.Kinds{DMs: n.DMs, Mentions: n.Mentions, HideText: n.HideText, Everyone: n.Everyone, Events: n.Events}
+		if kinds != (notify.Kinds{}) {
+			if err := rt.a.Notify.SetKinds(kinds); err != nil {
+				xhttp.Error(r.Context(), w, err)
+				return
+			}
+		}
+		if n.DoNotDisturb != nil {
+			var until time.Time
+			if n.DoNotDisturbUntil != nil {
+				until = *n.DoNotDisturbUntil
+			}
+			if err := rt.a.Notify.SetDoNotDisturb(*n.DoNotDisturb, until); err != nil {
+				xhttp.Error(r.Context(), w, err)
+				return
+			}
 		}
 	}
 	if len(body.Sounds) > 0 {

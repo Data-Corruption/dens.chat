@@ -212,6 +212,15 @@ func TestTheShellPostsNotifications(t *testing.T) {
 	if err := stream.Send("notifies", map[string]bool{"on": true}); err != nil {
 		t.Fatal(err)
 	}
+	// A channel at All messages asks, as a kind turned on does.
+	for _, level := range []notify.Level{notify.LevelAll, notify.LevelMentions} {
+		if err := a.Notify.SetLevel("d1", "5", level); err != nil {
+			t.Fatal(err)
+		}
+		if msg, want := next(t, stream), fmt.Sprintf(`{"on":%v}`, level == notify.LevelAll); msg.T != "notifying" || string(msg.D) != want {
+			t.Fatalf("with a channel at %s: %s %s, want %s", level, msg.T, msg.D, want)
+		}
+	}
 	if err := a.Notify.SetKinds(notify.Kinds{DMs: new(true)}); err != nil {
 		t.Fatal(err)
 	}

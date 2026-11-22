@@ -7,8 +7,13 @@
 // shows. With mentions turned on, staff's @everyone in a channel shows, as
 // bob, a moderator, writes it; the @everyone switch under Mentions,
 // on by default, silences it, though it still counts among her mentions;
-// and on again, a mute of the channel silences it too. Then with no tab
-// open, Dens's helper, dens shortcuts, shows a DM
+// and on again, the channel at Nothing from its bell silences it too.
+// With mentions off, #general at All messages from its menu shows a
+// message that mentions nobody, a level for the DM is refused, and back at
+// Mentions from its bell #general shows nothing. Do not disturb from the moon in her panel lights it, for an
+// hour; with an end a few seconds off, a DM shows nothing but the tab's
+// dot, and once the end passes the next DM shows and the moon goes out.
+// Then with no tab open, Dens's helper, dens shortcuts, shows a DM
 // through the desktop's notification service, dunst here, as Dens's, and
 // its click opens the page at the message, paired as dens open pairs it;
 // read elsewhere, it's taken back from the desktop too. Then the
@@ -60,6 +65,21 @@ const settings = () => JSON.parse(lib('api', 'alice', 'GET', '/api/settings')).n
 const lastLine = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').trim().split('\n').at(-1) : '');
 const displayed = () => Number(execFileSync('dunstctl', ['count', 'displayed'], { env: BUS }).toString().trim());
 const may = (p) => p.catch(() => false);
+const howMany = async () => (await notes()).length;
+// newest waits for the notification after the first count shown, and
+// gives it.
+const newest = (count, what) => may(waitFor(async () => {
+    const n = await notes();
+    return n.length === count + 1 && n[count];
+}, what));
+// level picks a level from the open channel's bell.
+const BELL = `document.querySelector('[data-levels]')`;
+async function level(key) {
+    await waitFor(() => b.eval(`!!${BELL}`), "the channel's bell");
+    await b.eval(`${BELL}.click(), true`);
+    await waitFor(() => b.eval(`!!document.querySelector('[data-menu-item=${key}]')`), `the bell's ${key}`);
+    await b.eval(`document.querySelector('[data-menu-item=${key}]').click(), true`);
+}
 
 // hide puts another tab in front of alice's, and front brings hers back.
 let other = null;
@@ -197,16 +217,15 @@ try {
     c.report(silenced && counts, `with @everyone off, nothing showed (${silenced}), and both counted among her mentions (${counted} to ${count()})`);
     await front();
 
-    step('@everyone on again, its channel muted from its bell, nothing shows');
+    step('@everyone on again, its channel at Nothing from its bell, nothing shows');
     await openSettings(b, 'Notifications');
     await waitFor(() => b.eval(`!!document.getElementById('notify-everyone')`), 'the @everyone switch');
     await b.eval(`document.getElementById('notify-everyone').click(), true`, true);
     await waitFor(() => !settings().everyoneOff, '@everyone on again');
     await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
     await b.go(`http://localhost:18484/den/${den}/${general}`);
-    await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Mute #general"]')`), "#general's bell");
-    await b.eval(`document.querySelector('button[aria-label="Mute #general"]').click(), true`);
-    await waitFor(() => settings().muted?.[den]?.channels?.includes(general), '#general muted');
+    await level('nothing');
+    await waitFor(() => settings().muted?.[den]?.channels?.includes(general), '#general at Nothing');
     // A page loaded anew keeps what it notified of from then on.
     await b.go(`http://localhost:18484/den/${den}/${dm}`);
     await waitFor(() => b.eval(`!!document.querySelector('textarea')`), 'the DM');
@@ -217,10 +236,105 @@ try {
     const muted = (await notes()).length === before;
     await front();
     await b.go(`http://localhost:18484/den/${den}/${general}`);
-    await waitFor(() => b.eval(`!!document.querySelector('button[aria-label="Unmute #general"]')`), "#general's struck bell");
-    await b.eval(`document.querySelector('button[aria-label="Unmute #general"]').click(), true`);
-    const unmutedGeneral = await may(waitFor(() => !settings().muted?.[den], '#general unmuted', 5000));
-    c.report(muted && unmutedGeneral, `with #general muted, its @everyone showed nothing (${muted}), and it unmuted (${unmutedGeneral})`);
+    const struck = await may(waitFor(() => b.eval(`${BELL}?.dataset.levels === 'nothing'`), "#general's struck bell", 5000));
+    await level('mentions');
+    const unmutedGeneral = await may(waitFor(() => !settings().muted?.[den], '#general at Mentions', 5000));
+    c.report(muted && struck && unmutedGeneral,
+        `with #general at Nothing, its @everyone showed nothing (${muted}), its bell struck (${struck}), and it went back to Mentions (${unmutedGeneral})`);
+
+    step('#general at All messages from its menu, with mentions off');
+    lib('api', 'alice', 'POST', '/api/settings', JSON.stringify({ notifications: { mentions: false } }));
+    await waitFor(() => !settings().mentions, 'mentions off');
+    await b.eval(`document.querySelector('[data-channel-row="${general}"] button[aria-label="Options for general"]').click(), true`);
+    await waitFor(() => b.eval(`!!document.querySelector('[data-menu-item=notifications]')`), "#general's menu");
+    const rows = await b.eval(`[...document.querySelectorAll('[role=menu][aria-label="Options for general"] [role=menuitem]')].map((x) => x.textContent.trim()).join('|')`);
+    await b.eval(`document.querySelector('[data-menu-item=notifications]').click(), true`);
+    const LEVELS = '[data-flyout=notifications] [role=menuitemradio]';
+    await waitFor(() => b.eval(`document.querySelectorAll('${LEVELS}').length === 3`), 'its levels beside it');
+    const levels = await b.eval(`[...document.querySelectorAll('${LEVELS}')].map((x) => x.textContent.trim() + (x.getAttribute('aria-checked') === 'true' ? '*' : '')).join('|')`);
+    await shot('levels');
+    await b.eval(`document.querySelector('[data-flyout=notifications] [data-menu-item=all]').click(), true`);
+    await waitFor(() => settings().muted?.[den]?.all?.includes(general), '#general at All messages');
+    const ringing = await may(waitFor(() => b.eval(`!!document.querySelector('[data-channel-row="${general}"] button[aria-label*="all messages"]')`),
+        'the ringing bell on its row', 5000));
+    await b.go(`http://localhost:18484/den/${den}/${dm}`);
+    await waitFor(() => b.eval(`!!document.querySelector('textarea')`), 'the DM');
+    let had = await howMany();
+    await hide();
+    const toNoOne = shout('no one in particular');
+    const all = await newest(had, 'the message at All messages');
+    c.report(rows === 'Mark as read|Notifications|Copy link|Edit channel|Move up|Move down' && levels === 'All messages|Mentions*|Nothing' && ringing &&
+        all?.title === 'Bob in #general · Voice Den' && all?.body === 'no one in particular',
+        `#general's menu (${rows}) opens its levels (${levels}); at All messages its row rings (${ringing}), and a message to no one shows, with mentions off: ${JSON.stringify(all)}`);
+    await front();
+    // Read while the page that shows it lives, it goes, which a page
+    // loaded anew couldn't do, Firefox keeping it on the desktop.
+    lib('api', 'alice', 'PUT', `/api/dens/${den}/channels/${general}/read`, JSON.stringify({ message_id: toNoOne }));
+    await waitFor(async () => (await notes())[had].shut, '#general read');
+
+    step("a DM's bell stays a mute: the service refuses it a level");
+    let refused = false;
+    try {
+        lib('api', 'alice', 'POST', `/api/dens/${den}/notifications`, JSON.stringify({ channel: dm, level: 'all' }));
+    } catch {
+        refused = true;
+    }
+    const kept = settings().muted?.[den];
+    c.report(refused && !kept?.all?.includes(dm), `a level for the DM was refused (${refused}), the levels left as they were: ${JSON.stringify(kept)}`);
+
+    step('back at Mentions from its bell, a message to no one shows nothing');
+    await b.go(`http://localhost:18484/den/${den}/${general}`);
+    await level('mentions');
+    await waitFor(() => !settings().muted?.[den], '#general at Mentions');
+    await b.go(`http://localhost:18484/den/${den}/${dm}`);
+    await waitFor(() => b.eval(`!!document.querySelector('textarea')`), 'the DM');
+    had = await howMany();
+    await hide();
+    shout('no one, at Mentions');
+    await sleep(3000);
+    const atMentions = (await howMany()) === had;
+    await front();
+    c.report(atMentions, 'back at Mentions, with mentions off, a message to no one showed nothing');
+
+    step('Do not disturb from the moon, for an hour');
+    await b.go(`http://localhost:18484/den/${den}/${general}`);
+    const MOON = `document.querySelector('[data-quiet]')`;
+    await waitFor(() => b.eval(`!!${MOON}`), 'the moon');
+    const unlit = await b.eval(`${MOON}.dataset.quiet`);
+    await b.eval(`${MOON}.click(), true`);
+    await waitFor(() => b.eval(`!!document.querySelector('[data-menu-item=hour]')`), "the moon's ends");
+    const ends = await b.eval(`[...document.querySelectorAll('[role=menu][aria-label="Do not disturb"] [role=menuitem]')].map((x) => x.textContent.trim()).join('|')`);
+    await shot('moon-ends');
+    await b.eval(`document.querySelector('[data-menu-item=hour]').click(), true`);
+    await waitFor(() => settings().dnd, 'Do not disturb on');
+    const hour = Date.parse(settings().dndUntil) - Date.now();
+    const moonLit = await may(waitFor(() => b.eval(`${MOON}.dataset.quiet === 'on' && ${MOON}.title.startsWith('Do not disturb until ')`), 'the moon lit', 5000));
+    const tip = await b.eval(`${MOON}.title`);
+    await shot('moon');
+    c.report(unlit === 'off' && ends === 'For an hour|Until tomorrow|Until I turn it off' && hour > 3590000 && hour <= 3600000 && moonLit,
+        `the moon (${unlit}) opens its ends (${ends}); For an hour ends in ${Math.round(hour / 1000)} s, and lights it: "${tip}"`);
+
+    step('Do not disturb until a few seconds off: a DM shows nothing until its end');
+    const end = new Date(Date.now() + 8000);
+    lib('api', 'alice', 'POST', '/api/settings', JSON.stringify({ notifications: { dnd: true, dndUntil: end.toISOString() } }));
+    await waitFor(() => Date.parse(settings().dndUntil) === end.getTime(), 'the end a few seconds off');
+    had = await howMany();
+    await hide();
+    send('held under Do not disturb');
+    const dottedHeld = await may(waitFor(async () => (await b.eval(ICON)) === 'dotted', 'the dot on the tab', 5000));
+    await sleep(2000);
+    const held = (await howMany()) === had;
+    await sleep(Math.max(0, end.getTime() - Date.now()) + 1000);
+    const after = send('after Do not disturb');
+    const past = await newest(had, 'the DM after its end');
+    await front();
+    const out = await may(waitFor(() => b.eval(`${MOON}.dataset.quiet === 'off'`), 'the moon out', 5000));
+    c.report(dottedHeld && held && past?.body === 'after Do not disturb' && out,
+        `under Do not disturb a DM took the tab's dot (${dottedHeld}) and showed nothing (${held}); past its end the next showed alone (${JSON.stringify(past)}), and the moon went out (${out})`);
+    // Read, it goes, so the helper's are the desktop's only notifications,
+    // Firefox showing a page's there too.
+    read(after);
+    await waitFor(async () => (await notes())[had].shut, 'the DM read');
 
     step("Dens's helper, with no tab open");
     helper = spawn(`${HOME}/dens-dev`, ['shortcuts'], {

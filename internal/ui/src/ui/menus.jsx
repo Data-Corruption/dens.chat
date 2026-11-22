@@ -92,7 +92,7 @@ export function usePlaced(at, menu) {
 /** menuKeys moves the focus through list's own items, not a flyout's, by
     the arrow keys, Home and End; Escape runs close, and Tab tabbed */
 export function menuKeys(e, list, close, tabbed) {
-    const all = [...list.querySelectorAll('[role="menuitem"]:not(:disabled)')].filter((el) => el.closest('[role="menu"]') === list);
+    const all = [...list.querySelectorAll('[role^="menuitem"]:not(:disabled)')].filter((el) => el.closest('[role="menu"]') === list);
     const at = all.indexOf(document.activeElement);
     const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: all.length - 1 }[e.key];
     if (to !== undefined && all.length) {
@@ -109,7 +109,8 @@ export function menuKeys(e, list, close, tabbed) {
 
 /** MenuItems are a menu's rows: items, each a key, a label, an icon of
     icons.jsx's MENU_ICONS, a run, and maybe danger or disabled, or items
-    of its own, which open beside it. picked closes the menu as an item
+    of its own, which open beside it, or checked, for one of a few choices,
+    true for the one that holds. picked closes the menu as an item
     runs, the run getting what picked returned. Rows the arrow keys move
     through are out of the Tab order, but in a menu that opens with the
     focus elsewhere, tabbable. */
@@ -120,14 +121,19 @@ export function MenuItems({ items, picked, tabbable = false }) {
         <Flyout key={a.key} item={a} open={sub === a.key} onOpen={(on) => setSub(on ? a.key : '')} picked={picked} tab={tab} />
     ) : (
         <li key={a.key} role="none">
-            <button type="button" role="menuitem" tabIndex={tab} disabled={a.disabled} data-menu-item={a.key}
-                class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}
+            <button type="button" role={a.checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={a.checked} tabIndex={tab}
+                disabled={a.disabled} data-menu-item={a.key} class={`pointer-coarse:min-h-11 ${a.danger ? 'text-error' : ''}`}
                 onClick={() => a.run(picked())}>
                 <MenuIcon name={a.icon} />
-                {a.label}
+                {a.checked === undefined ? a.label : <><span class="flex-1">{a.label}</span><Check on={a.checked} /></>}
             </button>
         </li>
     )));
+}
+
+// Check marks the choice that holds among a menu's few.
+function Check({ on }) {
+    return <span class={`h-3.5 w-3.5 ${on ? '' : 'invisible'}`}><MenuIcon name="read" size="h-3.5 w-3.5" /></span>;
 }
 
 /** flyoutAt is where a flyout of size opens beside its item's box, row,
@@ -160,11 +166,11 @@ function Flyout({ item, open, onOpen, picked, tab }) {
         style.top = `${Math.round(at.top)}px`;
         style.paddingLeft = at.toLeft ? '0' : '4px';
         style.paddingRight = at.toLeft ? '4px' : '0';
-        if (keyed.current) list.current.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+        if (keyed.current) list.current.querySelector('[role^="menuitem"]:not(:disabled)')?.focus();
     }, [open]);
     function back() {
         onOpen(false);
-        row.current?.querySelector('[role="menuitem"]')?.focus();
+        row.current?.querySelector('[role^="menuitem"]')?.focus();
     }
     return (
         <li ref={row} role="none"
@@ -227,10 +233,11 @@ export function SheetItems({ items, picked }) {
         );
     }
     return items.map((a) => (
-        <SheetRow key={a.key} danger={a.danger} disabled={a.disabled} item={a.key} onClick={() => (a.items ? setSub(a) : a.run(picked()))}>
+        <SheetRow key={a.key} danger={a.danger} disabled={a.disabled} checked={a.checked} item={a.key} onClick={() => (a.items ? setSub(a) : a.run(picked()))}>
             <MenuIcon name={a.icon} />
             <span class="flex-1">{a.label}</span>
             {a.items && <OnwardIcon size="h-3.5 w-3.5" />}
+            {a.checked !== undefined && <Check on={a.checked} />}
         </SheetRow>
     ));
 }
@@ -245,7 +252,7 @@ export function PointerMenu({ at, label, items, back, onClose }) {
     const closing = useRef(onClose);
     closing.current = onClose;
     useEffect(() => {
-        list.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+        list.current?.querySelector('[role^="menuitem"]:not(:disabled)')?.focus();
         const away = (e) => !list.current?.contains(e.target) && closing.current();
         document.addEventListener('pointerdown', away);
         return () => document.removeEventListener('pointerdown', away);
@@ -306,7 +313,7 @@ export function MenuButton({ label, items, button, align = 'right', title, box: 
     }, [dropdown]);
     useEffect(() => {
         if (!dropdown) return undefined;
-        list.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus();
+        list.current?.querySelector('[role^="menuitem"]:not(:disabled)')?.focus();
         const away = (e) => !box.current?.contains(e.target) && setOpen(false);
         document.addEventListener('pointerdown', away);
         return () => document.removeEventListener('pointerdown', away);

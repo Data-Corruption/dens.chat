@@ -151,7 +151,7 @@ try {
     const offered = await b.eval(`[...document.querySelectorAll('[role=menu][aria-label="Options for random"] [role=menuitem]')].map((x) => x.textContent.trim()).join('|')`);
     await b.eval(`document.querySelector('[data-menu-item=link]').click(), true`);
     const copied = await may(waitFor(async () => (await b.eval('window.copied'))?.includes(linkTo(random)), 'the link copied', 5000));
-    c.report(offered === 'Mark as read|Copy link' && copied, `bob, a member, gets random's menu (${offered}), and Copy link copies ${linkTo(random)} (${copied})`);
+    c.report(offered === 'Mark as read|Notifications|Copy link' && copied, `bob, a member, gets random's menu (${offered}), and Copy link copies ${linkTo(random)} (${copied})`);
 
     step("a channel's link, completed from #");
     await open(b, BOB, den, general);

@@ -114,24 +114,27 @@ test("the den's name opens Mark all as read where the den does it, Manage for ev
     for (const item of [...denMenu({ staff: true, readAll: true }), ...NEW_IN_DEN]) assert.ok(MENU_ICONS[item.icon], `${item.label} has an icon`);
 });
 
-test("a text channel's menu marks it read and copies its link for everyone, and staff's edits it and moves it within its list, and a group's makes a channel in it too, the moves stopping at each end", async () => {
+test("a text channel's menu marks it read, sets its notifications and copies its link for everyone, and staff's edits it and moves it within its list, and a group's makes a channel in it too, the moves stopping at each end", async () => {
     const { channelMenu, dmMenu, groupMenu } = await import('../src/chat/chat.jsx');
     const { MENU_ICONS } = await import('../src/ui/icons.jsx');
     const shown = (items) => items.map((i) => `${i.label}${i.disabled ? ' (off)' : ''}`);
     const at = (id) => view.channels.find((c) => c.id === id);
     const staff = { staff: true };
     // hangout and rules are the ungrouped channels, clips and lounge Games'.
-    assert.deepEqual(shown(channelMenu(view, at('11'), { unread: true })), ['Mark as read', 'Copy link']);
-    assert.deepEqual(shown(channelMenu(view, at('11'))), ['Mark as read (off)', 'Copy link'], 'with nothing unread');
+    assert.deepEqual(shown(channelMenu(view, at('11'), { unread: true })), ['Mark as read', 'Notifications', 'Copy link']);
+    assert.deepEqual(shown(channelMenu(view, at('11'))), ['Mark as read (off)', 'Notifications', 'Copy link'], 'with nothing unread');
     assert.deepEqual(shown(channelMenu(view, at('11'), { read: false })), ['Copy link'], 'in a den that no longer takes this device');
+    const levels = channelMenu(view, at('11'), { level: 'nothing' })[1].items;
+    assert.deepEqual(levels.map((i) => `${i.key}${i.checked ? ' (checked)' : ''}`), ['all', 'mentions', 'nothing (checked)'], 'its levels open beside it');
     assert.deepEqual(shown(channelMenu(view, at('10'))), [], "a voice channel's is staff's alone");
     assert.deepEqual(shown(channelMenu(view, at('10'), staff)), ['Edit channel', 'Move up (off)', 'Move down']);
     assert.deepEqual(channelMenu(view, at('10'), staff)[2].body, { position: 1 });
-    assert.deepEqual(shown(channelMenu(view, at('11'), staff)), ['Mark as read (off)', 'Copy link', 'Edit channel', 'Move up', 'Move down (off)']);
+    assert.deepEqual(shown(channelMenu(view, at('11'), staff)), ['Mark as read (off)', 'Notifications', 'Copy link', 'Edit channel', 'Move up', 'Move down (off)']);
     assert.deepEqual(channelMenu(view, at('20'), staff)[1].body, { position: 0 }, "lounge moves up past clips in its group");
     assert.deepEqual(shown(dmMenu({ unread: true })), ['Mark as read', 'Copy link']);
     const games = view.groups.find((g) => g.id === 'g1');
     assert.deepEqual(shown(groupMenu(view, games)), ['New channel', 'Edit group', 'Move up (off)', 'Move down']);
     assert.deepEqual(shown(groupMenu(view, view.groups.find((g) => g.id === 'g2'))), ['New channel', 'Edit group', 'Move up', 'Move down (off)']);
-    for (const item of [...channelMenu(view, at('11'), staff), ...dmMenu(), ...groupMenu(view, games)]) assert.ok(MENU_ICONS[item.icon], `${item.label} has an icon`);
+    const items = [...channelMenu(view, at('11'), staff), ...dmMenu(), ...groupMenu(view, games)];
+    for (const item of [...items, ...items.flatMap((i) => i.items || [])]) assert.ok(MENU_ICONS[item.icon], `${item.label} has an icon`);
 });

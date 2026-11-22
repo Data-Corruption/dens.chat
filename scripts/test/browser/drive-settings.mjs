@@ -487,6 +487,24 @@ try {
             c.report(wrapped.length === 0, `${name}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
             frame(name, await b.eval(FRAME));
         }
+        // Do not disturb's switch, atop Notifications, holds every
+        // notification until it's turned off, and lights Home's moon
+        // behind the settings.
+        await openSettings(b, 'Notifications');
+        await waitFor(() => b.eval(`!!document.getElementById('notify-dnd')`), 'the Do not disturb switch');
+        const atop = await b.eval(`${PANEL}.querySelector('input[type=checkbox]')?.id`);
+        const quiet = () => JSON.parse(lib('api', 'alice', 'GET', '/api/settings')).notifications;
+        await b.eval(`document.getElementById('notify-dnd').click(), true`);
+        const on = await waitFor(() => quiet().dnd && !quiet().dndUntil, 'Do not disturb on', 5000).catch(() => false);
+        const said = await waitFor(() => b.eval(`(() => { const p = document.getElementById('notify-dnd').parentElement.querySelector('p')?.textContent || '';
+            return p.includes('until you turn it off') && p; })()`), 'its hint', 5000).catch(() => '');
+        const lit = await b.eval(`document.querySelector('[data-quiet]')?.dataset.quiet === 'on'`);
+        const dndWrapped = await b.eval(WRAPPED);
+        await b.eval(`document.getElementById('notify-dnd').click(), true`);
+        const off = await waitFor(() => !quiet().dnd, 'Do not disturb off', 5000).catch(() => false);
+        c.report(atop === 'notify-dnd' && on && said && lit && dndWrapped.length === 0 && off,
+            `Do not disturb's switch is atop Notifications (${atop}), on until turned off (${on}), saying so in a line (${said}${dndWrapped.length ? `; wrapped: ${dndWrapped.join('; ')}` : ''}), Home's moon lit behind (${lit}), and off again (${off})`);
+
         // Push to talk shows its release delay in Voice, which the audit and
         // the hints' measure take too.
         await openSettings(b, 'Voice');

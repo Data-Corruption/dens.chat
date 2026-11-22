@@ -76,13 +76,13 @@ export function Sheet({ label, title, onClose, children }) {
     });
     useEffect(() => {
         const opener = document.activeElement;
-        panel.current?.querySelector('[role="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
+        panel.current?.querySelector('[role^="menuitem"]:not(:disabled)')?.focus({ preventScroll: true });
         return () => {
             if (opener?.isConnected) opener.focus({ preventScroll: true });
         };
     }, []);
     function keys(e) {
-        const items = [...panel.current.querySelectorAll('[role="menuitem"]:not(:disabled)')];
+        const items = [...panel.current.querySelectorAll('[role^="menuitem"]:not(:disabled)')];
         const at = items.indexOf(document.activeElement);
         const to = { ArrowDown: at + 1, ArrowUp: at - 1, Home: 0, End: items.length - 1 }[e.key];
         if (to !== undefined && items.length) {
@@ -125,10 +125,12 @@ export function Handle() {
 }
 
 // SheetRow is a sheet's row, 48 pixels tall, for an action, whose onClick
-// closes the sheet as it runs it.
-export function SheetRow({ danger, disabled, item, onClick, children }) {
+// closes the sheet as it runs it, or with checked for one of a few
+// choices.
+export function SheetRow({ danger, disabled, checked, item, onClick, children }) {
     return (
-        <button type="button" role="menuitem" disabled={disabled} data-menu-item={item} onClick={onClick}
+        <button type="button" role={checked === undefined ? 'menuitem' : 'menuitemradio'} aria-checked={checked} disabled={disabled}
+            data-menu-item={item} onClick={onClick}
             class={`flex h-12 w-full shrink-0 items-center gap-3 px-4 text-left hover:bg-base-200 focus-visible:bg-base-200 focus-visible:outline-none active:bg-base-300 disabled:opacity-50 ${danger ? 'text-error' : ''}`}>
             {children}
         </button>

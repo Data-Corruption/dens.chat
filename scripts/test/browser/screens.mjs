@@ -1168,7 +1168,7 @@ export async function staffPress(h, ctx, d, report) {
     const rows = await waitFor(async () => (await sheet()) && h.ev(`[...document.querySelectorAll('[data-sheet] [data-menu-item]')].map((r) => r.textContent.trim()).join(' | ')`),
         "general's menu", 5000).catch(() => '');
     await h.snap('staff-press-channel');
-    did(rows === 'Mark as read | Copy link | Edit channel | Move up | Move down', `a long press on a channel's row opens its menu: ${rows || 'nothing'}`);
+    did(rows === 'Mark as read | Notifications | Copy link | Edit channel | Move up | Move down', `a long press on a channel's row opens its menu: ${rows || 'nothing'}`);
     await d.tap(MENU_ROW('edit'));
     const channel = await waitFor(dialog, "general's settings", 5000).catch(() => '');
     did(channel === '#general', `whose Edit channel opens its settings: ${channel || 'nothing'}`);
@@ -1190,7 +1190,8 @@ export async function staffPress(h, ctx, d, report) {
 // switching opens the quick switcher from the magnifier atop the den's
 // list, a touch screen having no Ctrl, and a channel in it by a few
 // letters and a tap; and with a finger, as a member, a channel's menu by a
-// long press on its row.
+// long press on its row, whose Notifications opens its levels in the
+// sheet, where a tap sets one.
 export async function switching(h, ctx, d, report) {
     const { den, random } = ctx;
     const did = (good, what) => report(good, `${d.name}: ${what}`);
@@ -1214,9 +1215,55 @@ export async function switching(h, ctx, d, report) {
     const rows = await waitFor(async () => (await h.has(`document.querySelector('[data-sheet]')`)) &&
         h.ev(`[...document.querySelectorAll('[data-sheet] [data-menu-item]')].map((r) => r.textContent.trim()).join(' | ')`), "general's menu", 5000).catch(() => '');
     await h.snap('member-press-channel');
-    did(rows === 'Mark as read | Copy link', `a member's long press on a channel's row opens its menu: ${rows || 'nothing'}`);
-    await d.back();
+    did(rows === 'Mark as read | Notifications | Copy link', `a member's long press on a channel's row opens its menu: ${rows || 'nothing'}`);
+    await d.tap(MENU_ROW('notifications'));
+    const levels = await waitFor(() => h.ev(`[...document.querySelectorAll('[data-sheet] [data-flyout=notifications] [role=menuitemradio]')]
+        .map((r) => r.textContent.trim() + (r.getAttribute('aria-checked') === 'true' ? '*' : '')).join(' | ')`), "general's levels", 5000).catch(() => '');
+    await h.snap('member-press-levels');
+    await d.tap(MENU_ROW('all'));
+    const level = () => h.ev(`fetch('/api/settings').then((r) => r.json()).then((s) => (s.notifications.muted?.[${JSON.stringify(den)}]?.all || []).length)`);
+    const all = await waitFor(async () => (await level()) === 1, 'general at All messages', 5000).catch(() => false);
+    did(levels === 'All messages | Mentions* | Nothing' && all, `its Notifications opens its levels in the sheet (${levels || 'nothing'}), and a tap sets All messages (${all})`);
+    // The next mode finds general at Mentions.
+    await h.ev(`fetch('/api/dens/${den}/notifications', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ channel: ${JSON.stringify(ctx.general)}, level: 'mentions' }) }).then((r) => r.ok)`);
     await waitFor(async () => !(await h.has(`document.querySelector('[data-sheet]')`)), 'the menu closed', 5000).catch(() => false);
+}
+
+// quieting turns Do not disturb on from the moon in the member's panel,
+// whose ends open in a sheet on the phone layout, Until I turn it off,
+// which lights it; then Home's moon, lit too, turns it off.
+export async function quieting(h, ctx, d, report) {
+    const { den } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const quiet = () => h.ev(`fetch('/api/settings').then((r) => r.json()).then((s) => ({ on: !!s.notifications.dnd, end: s.notifications.dndUntil || '' }))`);
+    const MOON = `document.querySelector('[data-pane=list] [data-quiet]')`;
+    await h.go(`/den/${den}`);
+    if (!(await h.has(IN_LIST('general')))) await h.click(h.byText('[role=tab]', 'Den'));
+    await h.wait(MOON, "the moon in the member's panel");
+    await d.tap(MOON);
+    await h.wait(MENU_ROW('manual'), "the moon's ends", 5000);
+    const ends = await h.ev(`[...document.querySelectorAll('[data-sheet] [data-menu-item]')].map((r) => r.textContent.trim()).join(' | ')`);
+    await h.snap('moon-ends');
+    await d.tap(MENU_ROW('manual'));
+    const on = await waitFor(async () => {
+        const q = await quiet();
+        return q.on && !q.end;
+    }, 'Do not disturb on', 5000).catch(() => false);
+    const lit = await waitFor(() => h.ev(`${MOON}?.dataset.quiet === 'on'`), 'the moon lit', 5000).catch(() => false);
+    did(ends === 'For an hour | Until tomorrow | Until I turn it off' && on && lit,
+        `the moon in the member's panel opens its ends in a sheet (${ends}), whose Until I turn it off turns Do not disturb on (${on}) and lights it (${lit})`);
+    await h.go('/');
+    const HOME_MOON = `document.querySelector('[data-quiet]')`;
+    await h.wait(HOME_MOON, "the moon in Home's header");
+    const homeLit = await h.ev(`${HOME_MOON}.dataset.quiet === 'on'`);
+    await d.tap(HOME_MOON);
+    await h.wait(MENU_ROW('none'), 'Turn off', 5000);
+    await h.snap('moon-home');
+    await d.tap(MENU_ROW('none'));
+    const off = await waitFor(async () => !(await quiet()).on, 'Do not disturb off', 5000).catch(() => false);
+    const out = await waitFor(() => h.ev(`${HOME_MOON}?.dataset.quiet === 'off'`), 'the moon out', 5000).catch(() => false);
+    did(homeLit && off && out, `Home's moon is lit too (${homeLit}), and its Turn off turns Do not disturb off (${off}) and puts it out (${out})`);
 }
 
 // typeIn sets a field's value as typing does, for the page's onInput.
