@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
@@ -785,5 +786,115 @@ func TestEventsStart(t *testing.T) {
 	h5.Started(start("14"))
 	if alone, _ := sounds(p); len(alone) != 1 {
 		t.Fatalf("with nothing to show it, the event played %v", alone)
+	}
+}
+
+func plain(id string) Message {
+	return Message{Den: "d1", DenName: "Den", Channel: "5", ChannelName: "general", ID: id, Author: "Bob", Text: "no one in particular"}
+}
+
+// TestLevels checks a channel's levels: at All messages a message that
+// mentions nobody notifies, as a mention would, with Mentions off, and
+// what it showed stays as Mentions goes off; with the text hidden, it
+// says only that a message came; at Nothing it's muted, as v1.14.0's
+// mutes are; a channel holds one level; and a channel deleted or a den
+// left forgets its level.
+func TestLevels(t *testing.T) {
+	helper := &place{can: true}
+	h, _ := newHub(t, types.Notifications{Mentions: true}, helper, false)
+	h.Message(plain("10"))
+	if err := h.SetLevel("d1", "5", LevelAll); err != nil {
+		t.Fatal(err)
+	}
+	if m := h.Muted("d1"); !slices.Equal(m.All, []string{"5"}) || m.Channels != nil {
+		t.Fatalf("at All messages, the den's levels are %+v", m)
+	}
+	h.Message(plain("11"))
+	if err := h.SetKinds(Kinds{Mentions: ptr(false)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(helper.withdrawn) != 0 {
+		t.Fatalf("Mentions off took back %v from a channel at All messages", helper.withdrawn)
+	}
+	h.Message(mention("12"))
+	h.SetKinds(Kinds{HideText: ptr(true)})
+	h.Message(plain("13"))
+	var got [][2]string
+	for _, n := range helper.shown {
+		got = append(got, [2]string{n.Message, n.Text})
+	}
+	want := [][2]string{{"11", "no one in particular"}, {"12", "@me look"}, {"13", "Sent a message"}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("at All messages, shown %q, want %q", got, want)
+	}
+
+	if err := h.SetLevel("d1", "5", LevelNothing); err != nil {
+		t.Fatal(err)
+	}
+	if m := h.Muted("d1"); m.All != nil || !slices.Equal(m.Channels, []string{"5"}) || !slices.Equal(helper.withdrawn, []string{"d1/5"}) {
+		t.Fatalf("at Nothing, the den's levels are %+v, and it took back %v", m, helper.withdrawn)
+	}
+	h.SetKinds(Kinds{Mentions: ptr(true)})
+	h.Message(mention("14"))
+	if err := h.SetLevel("d1", "5", LevelMentions); err != nil {
+		t.Fatal(err)
+	}
+	if s := h.Settings(); s.Muted != nil {
+		t.Fatalf("back at Mentions, the levels are %v", s.Muted)
+	}
+	h.Message(mention("15"))
+	if got := helper.messages(); !slices.Equal(got, []string{"11", "12", "13", "15"}) {
+		t.Fatalf("shown %v, want 11, 12, 13 and 15", got)
+	}
+	if err := h.SetLevel("d1", "5", Level("loud")); err == nil {
+		t.Fatal("a level that isn't one was kept")
+	}
+
+	h.SetLevel("d1", "5", LevelAll)
+	h.SetLevel("d1", "6", LevelAll)
+	h.ChannelGone("d1", "5")
+	if m := h.Muted("d1"); !slices.Equal(m.All, []string{"6"}) {
+		t.Fatalf("a deleted channel left the levels %+v", m)
+	}
+	h.Forgot("d1")
+	if s := h.Settings(); s.Muted != nil {
+		t.Fatalf("a den left kept the levels %v", s.Muted)
+	}
+}
+
+// TestDoNotDisturbHoldsAResend checks that what Do not disturb held stays
+// held once it ends, though the den sends it again, and that reading
+// takes back what showed before it, past a message it held.
+func TestDoNotDisturbHoldsAResend(t *testing.T) {
+	helper := &place{can: true}
+	h, _ := newHub(t, types.Notifications{DMs: true}, helper, false)
+	now := time.Date(2026, 11, 21, 22, 0, 0, 0, time.UTC)
+	h.Now = func() time.Time { return now }
+	h.Message(dm("10"))
+	if err := h.SetDoNotDisturb(true, now.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	h.Message(dm("11"))
+	h.Started(start("e1"))
+	now = now.Add(2 * time.Hour)
+	h.Message(dm("11"))
+	h.Started(start("e1"))
+	if got := helper.messages(); !slices.Equal(got, []string{"10"}) {
+		t.Fatalf("what Do not disturb held showed once it ended: %v", got)
+	}
+	h.Cleared("d1", "7", "11")
+	if !slices.Equal(helper.withdrawn, []string{"d1/7"}) {
+		t.Fatalf("reading past a held message took back %v", helper.withdrawn)
+	}
+	h.Message(dm("12"))
+	if got := helper.messages(); !slices.Equal(got, []string{"10", "12"}) {
+		t.Fatalf("after its end, shown %v, want 10 and 12", got)
+	}
+	if err := h.SetDoNotDisturb(true, now.Add(-time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	h.Message(dm("13"))
+	if got := helper.messages(); !slices.Equal(got, []string{"10", "12", "13"}) {
+		t.Fatalf("with an end gone by, shown %v, want 13 too", got)
 	}
 }

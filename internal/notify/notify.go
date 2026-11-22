@@ -1,8 +1,10 @@
 // Package notify decides what notifies the member, and where it shows. The
-// service decides, since a page may be hidden, frozen or closed: a DM, or
-// a message that mentions the member, in a den and channel they haven't
-// muted, notifies them unless a page shows that channel on screen. Staff's
-// @everyone notifies as a mention does, unless the member turns it off.
+// service decides, since a page may be hidden, frozen or closed: a DM, a
+// message that mentions the member, or any message in a channel they set
+// to All messages, in a den and channel they haven't muted, notifies them
+// unless a page shows that channel on screen. Staff's @everyone notifies
+// as a mention does, unless the member turns it off. Do not disturb holds
+// all of it, sound and all, until its end passes by the wall clock.
 // Each channel's newest such message shows in one place: a page that may
 // notify, the one on screen most lately, which shows it through the
 // browser; with none, the desktop's helper; and on Android, the app's
@@ -23,11 +25,13 @@
 package notify
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/types"
@@ -168,6 +172,10 @@ type ShellStatus struct {
 // Hub is the service's: the member's settings, the pages and what each
 // shows, the places, and what shows where.
 type Hub struct {
+	// Now is the wall clock, which a test may replace before the hub is
+	// used.
+	Now func() time.Time
+
 	log *xlog.Logger
 	// helper is the desktop's helper, whose Show fails while none can
 	// show a notification.
@@ -216,16 +224,27 @@ type shown struct {
 	den, channel, message string
 	event                 string
 	dm                    bool
-	// everyone is a notification staff's @everyone made alone,
-	// which turning @everyone off takes back.
-	everyone bool
-	at       string
+	// mention and everyone are what the message was, which a change to
+	// the settings weighs again.
+	mention, everyone bool
+	at                string
+	// held is the channel's newest message Do not disturb held, which
+	// mustn't notify once it ends, though the den sends it again.
+	held string
 }
 
 const (
 	atHelper = "helper"
 	atShell  = "shell"
 )
+
+// newest is the newest message the hub weighed for the channel.
+func (s shown) newest() string {
+	if compareIDs(s.held, s.message) > 0 {
+		return s.held
+	}
+	return s.message
+}
 
 // key is the key a notification shows under: its channel's, or its
 // event's.
@@ -242,14 +261,14 @@ func eventKey(den, event string) string { return den + "/event-" + event }
 // New returns a hub with the member's settings, which keep stores as they
 // change, and the desktop's helper.
 func New(log *xlog.Logger, settings types.Notifications, keep func(types.Notifications) error, helper Place, android bool) *Hub {
-	return &Hub{log: log, settings: clone(settings), keep: keep, helper: helper, android: android,
+	return &Hub{Now: time.Now, log: log, settings: clone(settings), keep: keep, helper: helper, android: android,
 		pages: map[string]*page{}, own: map[string]int64{}, shown: map[string]shown{}}
 }
 
 func clone(s types.Notifications) types.Notifications {
 	s.Muted = maps.Clone(s.Muted)
 	for den, m := range s.Muted {
-		m.Channels = slices.Clone(m.Channels)
+		m.Channels, m.All = slices.Clone(m.Channels), slices.Clone(m.All)
 		s.Muted[den] = m
 	}
 	s.Sounds = maps.Clone(s.Sounds)
@@ -294,12 +313,13 @@ func (h *Hub) broadcastLocked() {
 	}
 }
 
-// Muted returns what the member muted in a den.
+// Muted returns what the member muted in a den, and its channels at All
+// messages.
 func (h *Hub) Muted(den string) types.Muted {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	m := h.settings.Muted[den]
-	m.Channels = slices.Clone(m.Channels)
+	m.Channels, m.All = slices.Clone(m.Channels), slices.Clone(m.All)
 	return m
 }
 
@@ -388,26 +408,85 @@ func (h *Hub) SetOwn(name string, version int64) {
 	h.broadcastLocked()
 }
 
+// Level is how much of a channel notifies: every message, those that
+// mention the member, as until they choose, or none.
+type Level string
+
+const (
+	LevelAll      Level = "all"
+	LevelMentions Level = "mentions"
+	LevelNothing  Level = "nothing"
+)
+
+// SetLevel sets a channel's level, and takes back what it no longer
+// notifies of.
+func (h *Hub) SetLevel(den, channel string, level Level) error {
+	if level != LevelAll && level != LevelMentions && level != LevelNothing {
+		return fmt.Errorf("no level %q", level)
+	}
+	return h.change(func(s *types.Notifications) { setLevel(s, den, channel, level) })
+}
+
+// setLevel puts a channel in the list of its level, out of the other's.
+func setLevel(s *types.Notifications, den, channel string, level Level) {
+	m := s.Muted[den]
+	m.Channels, m.All = without(m.Channels, channel), without(m.All, channel)
+	switch level {
+	case LevelNothing:
+		m.Channels = with(m.Channels, channel)
+	case LevelAll:
+		m.All = with(m.All, channel)
+	}
+	setMuted(s, den, m)
+}
+
+func with(ids []string, id string) []string {
+	ids = append(ids, id)
+	slices.SortFunc(ids, compareIDs)
+	return ids
+}
+
+func without(ids []string, id string) []string {
+	ids = slices.DeleteFunc(ids, func(c string) bool { return c == id })
+	if len(ids) == 0 {
+		return nil
+	}
+	return ids
+}
+
+// SetDoNotDisturb turns Do not disturb on until the wall clock reaches
+// until, or with until zero until it's turned off, or turns it off. What
+// already shows stays.
+func (h *Hub) SetDoNotDisturb(on bool, until time.Time) error {
+	return h.change(func(s *types.Notifications) {
+		s.DoNotDisturb, s.DoNotDisturbUntil = on, time.Time{}
+		if on {
+			// Round drops the monotonic reading, which stops while a
+			// computer sleeps.
+			s.DoNotDisturbUntil = until.Round(0)
+		}
+	})
+}
+
 // Mute mutes a den, or with channel one of its channels, or unmutes it,
-// and takes back what it shows.
+// and takes back what it shows. A channel unmuted is at Mentions.
 func (h *Hub) Mute(den, channel string, on bool) error {
 	return h.change(func(s *types.Notifications) {
 		m := s.Muted[den]
 		switch {
 		case channel == "":
 			m.Den = on
-		case on && !slices.Contains(m.Channels, channel):
-			m.Channels = append(m.Channels, channel)
-			slices.SortFunc(m.Channels, compareIDs)
-		case !on:
-			m.Channels = slices.DeleteFunc(m.Channels, func(c string) bool { return c == channel })
+			setMuted(s, den, m)
+		case on:
+			setLevel(s, den, channel, LevelNothing)
+		case slices.Contains(m.Channels, channel):
+			setLevel(s, den, channel, LevelMentions)
 		}
-		setMuted(s, den, m)
 	})
 }
 
 func setMuted(s *types.Notifications, den string, m types.Muted) {
-	if !m.Den && len(m.Channels) == 0 {
+	if !m.Den && len(m.Channels) == 0 && len(m.All) == 0 {
 		delete(s.Muted, den)
 		if len(s.Muted) == 0 {
 			s.Muted = nil
@@ -434,7 +513,7 @@ func (h *Hub) change(f func(*types.Notifications)) error {
 	var gone []shown
 	for _, key := range slices.Clone(h.order) {
 		s := h.shown[key]
-		still := h.notifiesLocked(Message{Den: s.den, Channel: s.channel, DM: s.dm, Mention: !s.dm && !s.everyone, Everyone: s.everyone})
+		still := h.notifiesLocked(Message{Den: s.den, Channel: s.channel, DM: s.dm, Mention: s.mention, Everyone: s.everyone})
 		if s.event != "" {
 			still = h.eventNotifiesLocked(s.den)
 		}
@@ -454,16 +533,26 @@ func (h *Hub) change(f func(*types.Notifications)) error {
 
 func ptr[T any](v T) *T { return &v }
 
-// notifiesLocked is whether a message in a channel notifies, as a DM or as
-// a mention, by the settings and mutes. Staff's @everyone is a mention the
-// member may silence apart.
+// notifiesLocked is whether a message in a channel notifies, as a DM, as
+// a mention or in a channel at All messages, by the settings and mutes.
+// Staff's @everyone is a mention the member may silence apart. All messages
+// stands without Mentions, since choosing it for a channel asks for it. Do
+// not disturb isn't weighed here, since what it holds stays where it shows.
 func (h *Hub) notifiesLocked(m Message) bool {
 	s := h.settings
 	mention := m.Mention || m.Everyone && !s.EveryoneOff
-	if !(m.DM && s.DMs) && !(mention && !m.DM && s.Mentions) {
+	if !(m.DM && s.DMs) && !(mention && !m.DM && s.Mentions) && !slices.Contains(s.Muted[m.Den].All, m.Channel) {
 		return false
 	}
 	return !h.mutedLocked(m.Den, m.Channel)
+}
+
+// quietLocked is whether Do not disturb holds what would notify now. The
+// wall clock is read as each message comes, since no timer runs while a
+// phone sleeps.
+func (h *Hub) quietLocked() bool {
+	s := h.settings
+	return s.DoNotDisturb && (s.DoNotDisturbUntil.IsZero() || h.Now().Round(0).Before(s.DoNotDisturbUntil))
 }
 
 // eventNotifiesLocked is whether an event's start in a den notifies: unless
@@ -641,8 +730,9 @@ func (h *Hub) soundLocked(rec shown) bool {
 
 // Message notifies the member of a message where it should, and places its
 // sound: a DM, or a message that mentions them, of a kind they
-// turned on, in a den and channel they haven't muted and no page shows on
-// screen, makes one sound. The page showing its notification plays it;
+// turned on, or any message in a channel at All messages, in a den and
+// channel they haven't muted and no page shows on screen, makes one sound,
+// unless Do not disturb holds it. The page showing its notification plays it;
 // the helper's or the shell's notification has the desktop's or Android's
 // own; and where nothing can show one, as when the browser won't let a
 // page notify and no helper runs, the page on screen most lately plays it
@@ -650,22 +740,30 @@ func (h *Hub) soundLocked(rec shown) bool {
 func (h *Hub) Message(m Message) {
 	key := m.Den + "/" + m.Channel
 	h.mu.Lock()
-	if !(m.DM || m.Mention || m.Everyone) || h.mutedLocked(m.Den, m.Channel) || h.onScreenLocked(m.Den, m.Channel) {
+	if !h.notifiesLocked(m) || h.onScreenLocked(m.Den, m.Channel) {
 		h.mu.Unlock()
 		return
 	}
 	// A message notifies, or sounds, once, though the den may send it again
 	// after the connection drops.
 	last, had := h.shown[key]
-	if had && compareIDs(m.ID, last.message) <= 0 {
+	if had && compareIDs(m.ID, last.newest()) <= 0 {
 		h.mu.Unlock()
 		return
 	}
-	if !h.notifiesLocked(m) {
+	if h.quietLocked() {
+		// What showed for the channel before stays, as does where.
+		if had {
+			last.held = m.ID
+			h.shown[key] = last
+		} else {
+			h.rememberLocked(key, shown{den: m.Den, channel: m.Channel, dm: m.DM, mention: m.Mention, everyone: m.Everyone, held: m.ID})
+		}
 		h.mu.Unlock()
+		h.log.Debugf("Do not disturb held message %s in den %s's channel %s", m.ID, m.Den, m.Channel)
 		return
 	}
-	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM, everyone: m.Everyone && !m.Mention}
+	rec := shown{den: m.Den, channel: m.Channel, message: m.ID, dm: m.DM, mention: m.Mention, everyone: m.Everyone}
 	n := compose(m, h.settings.HideText)
 	switch at := h.deliverLocked(key, rec, n, last, had); at {
 	case atSound:
@@ -730,9 +828,9 @@ func (h *Hub) deliverLocked(key string, rec shown, n Notification, last shown, h
 
 // Started notifies the member of an event that started, which they're
 // interested in, where a message would show, unless they turned
-// events off or muted its den. It shows once, though a socket that
-// resumes may hear of it again; a page showing the den doesn't keep it
-// from showing, since the event may be off its screen.
+// events off or muted its den, or Do not disturb holds it. It shows once,
+// though a socket that resumes may hear of it again; a page showing the
+// den doesn't keep it from showing, since the event may be off its screen.
 func (h *Hub) Started(st Start) {
 	key := eventKey(st.Den, st.Event)
 	h.mu.Lock()
@@ -741,6 +839,12 @@ func (h *Hub) Started(st Start) {
 		return
 	}
 	rec := shown{den: st.Den, event: st.Event}
+	if h.quietLocked() {
+		h.rememberLocked(key, rec)
+		h.mu.Unlock()
+		h.log.Debugf("Do not disturb held event %s in den %s starting", st.Event, st.Den)
+		return
+	}
 	n := composeStart(st, h.settings.HideText)
 	switch at := h.deliverLocked(key, rec, n, shown{}, false); at {
 	case atSound:
@@ -864,21 +968,22 @@ func (h *Hub) clear(gone func(shown) bool) {
 }
 
 // ChannelGone takes back a deleted channel's notification, and forgets its
-// mute.
+// level.
 func (h *Hub) ChannelGone(den, channel string) {
 	h.clear(func(s shown) bool { return s.den == den && s.channel == channel })
 	h.mu.Lock()
-	muted := slices.Contains(h.settings.Muted[den].Channels, channel)
+	m := h.settings.Muted[den]
+	set := slices.Contains(m.Channels, channel) || slices.Contains(m.All, channel)
 	h.mu.Unlock()
-	if muted {
-		if err := h.Mute(den, channel, false); err != nil {
-			h.log.Warnf("Couldn't forget a deleted channel's mute: %v", err)
+	if set {
+		if err := h.SetLevel(den, channel, LevelMentions); err != nil {
+			h.log.Warnf("Couldn't forget a deleted channel's level: %v", err)
 		}
 	}
 }
 
 // Forgot takes back what a den this install no longer joins shows, and
-// forgets its mutes.
+// forgets its mutes and levels.
 func (h *Hub) Forgot(den string) {
 	h.clear(func(s shown) bool { return s.den == den })
 	h.mu.Lock()
@@ -916,12 +1021,16 @@ func compose(m Message, hideText bool) Notification {
 		n.Text = "Sent you a message"
 	case hideText && m.Everyone && !m.Mention:
 		n.Text = "Mentioned everyone"
+	case hideText && !m.Mention:
+		n.Text = "Sent a message"
 	case hideText:
 		n.Text = "Mentioned you"
 	case m.Files == 1:
 		n.Text = "Sent a file"
 	case m.Files > 1:
 		n.Text = "Sent " + strconv.Itoa(m.Files) + " files"
+	case !m.DM:
+		n.Text = "Sent a message"
 	default:
 		n.Text = "Sent you a message"
 	}

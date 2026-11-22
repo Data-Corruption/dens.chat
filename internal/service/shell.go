@@ -85,7 +85,7 @@ func (p shellPlace) Withdraw(keys []string) {
 }
 
 func (p shellPlace) Settings(s types.Notifications) {
-	_ = p.s.Send(msgShellNotifying, shellSwitch{On: s.DMs || s.Mentions})
+	_ = p.s.Send(msgShellNotifying, shellSwitch{On: s.DMs || s.Mentions || s.AllMessages()})
 }
 
 // The shell, as the updater tells it of an update.

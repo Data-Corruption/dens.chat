@@ -88,13 +88,29 @@ type Notifications struct {
 	// EventsOff silences the events the member is interested in as they
 	// start, which notify unless the member turns them off.
 	EventsOff bool `json:"eventsOff,omitempty"`
-	// Muted holds what the member muted, by den ID.
+	// Muted holds what the member muted, by den ID, and the channels
+	// they set to All messages.
 	Muted map[string]Muted `json:"muted,omitempty"`
+	// DoNotDisturb holds every notification and the message's sound
+	// until DoNotDisturbUntil, or with that zero until the member turns
+	// it off. A past end reads as off.
+	DoNotDisturb      bool      `json:"dnd,omitempty"`
+	DoNotDisturbUntil time.Time `json:"dndUntil,omitzero"`
 	// Sounds are the member's choices for the page's sounds, by
 	// name: each plays at its default volume, which the page holds, until
 	// they turn it off or set its volume. They're kept beside what
 	// notifies the member, as one tab of the settings holds both.
 	Sounds map[string]Sound `json:"sounds,omitempty"`
+}
+
+// AllMessages is whether any channel is at All messages.
+func (n Notifications) AllMessages() bool {
+	for _, m := range n.Muted {
+		if len(m.All) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // The background's dim is at most BackgroundMaxDim percent, so the
@@ -121,10 +137,12 @@ type Sound struct {
 }
 
 // Muted is what a member muted in one den: the whole den, and channels of
-// it, DMs among them, by ID.
+// it, DMs among them, by ID, at Nothing; and the channels at All
+// messages. A channel in neither is at Mentions.
 type Muted struct {
 	Den      bool     `json:"den,omitempty"`
 	Channels []string `json:"channels,omitempty"`
+	All      []string `json:"all,omitempty"`
 }
 
 // SetHosting turns the hosting switch. Turning it on forgets an export of

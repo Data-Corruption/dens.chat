@@ -2,9 +2,12 @@ package config
 
 import (
 	"path/filepath"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/notify"
 	"github.com/Data-Corruption/dens.chat/internal/platform/database"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
@@ -222,6 +225,88 @@ func TestReadsV1_12_0Configuration(t *testing.T) {
 	}
 	if cfg, err = View(db); err != nil || cfg.BackgroundHover == nil || *cfg.BackgroundHover != 55 || *cfg.BackgroundDim != 40 {
 		t.Errorf("the hover kept as %+v, %v", cfg.BackgroundHover, err)
+	}
+}
+
+// v1_14_0Row is the configuration as v1.14.0 kept it: v1.12.0's, with the
+// hover, and a channel and a DM muted in a second den.
+var v1_14_0Row = strings.Replace(v1_12_0Row[:len(v1_12_0Row)-1], `"muted":{"abc":{"den":true}}`,
+	`"muted":{"abc":{"den":true},"def":{"channels":["11","12"]}}`, 1) + `,"backgroundHover":55}`
+
+// shown keeps the messages a hub showed.
+type shown []string
+
+func (s *shown) Show(n notify.Notification) bool {
+	*s = append(*s, n.Message)
+	return true
+}
+func (*shown) Withdraw([]string)            {}
+func (*shown) Settings(types.Notifications) {}
+
+// The configuration v1.14.0 kept reads as it was: its muted channels
+// stay at Nothing, notifying nothing, with no channel at All messages
+// and Do not disturb off; and a channel set to All messages leaves them
+// as they were.
+func TestReadsV1_14_0Configuration(t *testing.T) {
+	tmp := t.TempDir()
+	logger, err := xlog.New(filepath.Join(tmp, "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.New(filepath.Join(tmp, "db"), logger, build.BuildInfo{DefaultLogLevel: "warn"}, database.ApplyPendingMigrations)
+	if err != nil {
+		logger.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		logger.Close()
+	})
+	if !strings.Contains(v1_14_0Row, `"def":{"channels":["11","12"]}`) {
+		t.Fatal("the v1.14.0 row lost its muted channels")
+	}
+	if _, err := db.Exec(`UPDATE config SET value = ? WHERE key = ?`, v1_14_0Row, database.ConfigDataKey); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := View(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := cfg.Notifications
+	if m := n.Muted["def"]; m.Den || !slices.Equal(m.Channels, []string{"11", "12"}) || m.All != nil || !n.Muted["abc"].Den {
+		t.Errorf("v1.14.0's mutes read as %+v", n.Muted)
+	}
+	if n.DoNotDisturb || !n.DoNotDisturbUntil.IsZero() || cfg.BackgroundHover == nil || *cfg.BackgroundHover != 55 {
+		t.Errorf("v1.14.0's configuration read as %+v", cfg)
+	}
+
+	helper := &shown{}
+	h := notify.New(logger, n, func(n types.Notifications) error {
+		_, err := Update(db, func(c *types.Configuration) error {
+			c.Notifications = n
+			return nil
+		})
+		return err
+	}, helper, false)
+	for _, m := range []notify.Message{
+		{Den: "def", Channel: "11", ID: "100", Author: "Alice", Mention: true, Text: "@bob"},
+		{Den: "def", Channel: "13", ID: "101", Author: "Alice", Mention: true, Text: "@bob"},
+		{Den: "def", Channel: "12", ID: "102", Author: "Alice", DM: true, Text: "hi"},
+	} {
+		h.Message(m)
+	}
+	if !slices.Equal(*helper, []string{"101"}) {
+		t.Errorf("with v1.14.0's mutes, the helper showed %v, want 101 alone", *helper)
+	}
+	if err := h.SetLevel("def", "13", notify.LevelAll); err != nil {
+		t.Fatal(err)
+	}
+	var raw string
+	if err := db.QueryRow(`SELECT value FROM config WHERE key = ?`, database.ConfigDataKey).Scan(&raw); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(raw, `"def":{"channels":["11","12"],"all":["13"]}`) {
+		t.Errorf("a channel set to All messages kept %s", raw)
 	}
 }
 
