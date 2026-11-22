@@ -323,6 +323,9 @@ type Den struct {
 	// Away says the den keeps a member's Away in their call; a den older
 	// than it drops the mark.
 	Away bool `json:"away,omitempty"`
+	// ReadAll says the den marks every channel and DM a member sees read
+	// at once, at POST /api/read; a den older than it has no such route.
+	ReadAll bool `json:"read_all,omitempty"`
 	// Relay says the den passes boxes between a member's devices, so
 	// their installs ask only a den that does.
 	Relay bool `json:"relay,omitempty"`

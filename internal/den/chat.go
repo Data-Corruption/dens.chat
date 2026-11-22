@@ -199,20 +199,26 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 	return r, err
 }
 
-// lastMessages returns the newest message in each channel and DM a member
-// sees that has any, by channel, at a version of the protocol: with
-// groups, in each group DM they're in, of those since they joined,
-// and with notes, in their notes. Each is a lookup of the
-// (channel_id, id) index, where max(id) GROUP BY channel_id would read
+// newestSeen selects each channel and DM a member sees, as id, and its
+// newest message, as newest, at a version of the protocol: with groups,
+// each group DM they're in, of the messages since they joined, and with
+// notes, their notes. ?1 says they're staff, ?2 is the member, and ?3 and
+// ?4 say their Dens speaks groups and notes. Each newest is a lookup of
+// the (channel_id, id) index, where max(id) GROUP BY channel_id would read
 // every message in the den, for each of the hundreds of snapshots a den
 // restart sends at once.
+const newestSeen = `
+	SELECT c.id AS id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id
+		AND m.id > coalesce((SELECT g.since FROM den_group_members g WHERE g.channel_id = c.id AND g.member_id = ?2), 0)) AS newest
+	FROM den_channels c
+	WHERE (c.kind = 'text' AND (c.staff_only = 0 OR ?1)) OR (c.kind = 'dm' AND (c.dm_low = ?2 OR c.dm_high = ?2))
+		OR (?3 AND c.kind = 'group_dm' AND c.id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?2))
+		OR (?4 AND c.kind = 'notes' AND c.notes_of = ?2)`
+
+// lastMessages returns the newest message in each channel and DM a member
+// sees that has any, by channel, as newestSeen finds them.
 func (d *Den) lastMessages(ctx context.Context, member int64, staff bool, version int) (map[string]string, error) {
-	rows, err := d.db.QueryContext(ctx, `
-		SELECT c.id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id
-			AND m.id > coalesce((SELECT g.since FROM den_group_members g WHERE g.channel_id = c.id AND g.member_id = ?2), 0)) FROM den_channels c
-		WHERE (c.kind = 'text' AND (c.staff_only = 0 OR ?1)) OR (c.kind = 'dm' AND (c.dm_low = ?2 OR c.dm_high = ?2))
-			OR (?3 AND c.kind = 'group_dm' AND c.id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?2))
-			OR (?4 AND c.kind = 'notes' AND c.notes_of = ?2)`, staff, member, version >= denproto.GroupsVersion, version >= denproto.NotesVersion)
+	rows, err := d.db.QueryContext(ctx, newestSeen, staff, member, version >= denproto.GroupsVersion, version >= denproto.NotesVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -2024,6 +2030,43 @@ func (d *Den) MarkRead(ctx context.Context, s *Session, channelID string, req de
 		return nil
 	}
 	return d.publishReadState(ctx, s.MemberID, cid)
+}
+
+// MarkAllRead moves the session's member's read position to the newest
+// message in every channel and DM they see, in one write, and tells them
+// of each that moved.
+func (d *Den) MarkAllRead(ctx context.Context, s *Session) error {
+	// The SELECT's WHERE keeps SQLite from reading ON CONFLICT as a join's
+	// ON.
+	rows, err := d.db.QueryContext(ctx, `INSERT INTO den_read_states (member_id, channel_id, message_id)
+		SELECT ?2, id, newest FROM (`+newestSeen+`) WHERE newest IS NOT NULL
+		ON CONFLICT (member_id, channel_id) DO UPDATE SET message_id = excluded.message_id
+		WHERE excluded.message_id > den_read_states.message_id
+		RETURNING channel_id`,
+		IsStaff(s.Role), s.MemberID, s.Version >= denproto.GroupsVersion, s.Version >= denproto.NotesVersion)
+	if err != nil {
+		return err
+	}
+	var moved []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return err
+		}
+		moved = append(moved, id)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var errs []error
+	for _, id := range moved {
+		if err := d.publishReadState(ctx, s.MemberID, id); err != nil && !errors.Is(err, errChannelNotFound) {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
 }
 
 // publishReadState tells a member's sessions where they are in a channel.

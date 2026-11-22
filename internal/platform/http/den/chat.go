@@ -190,6 +190,17 @@ func (h *handler) markRead(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+func (h *handler) markAllRead(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	if err := h.d.MarkAllRead(r.Context(), session(r)); err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *handler) createChannel(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

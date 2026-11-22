@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"testing"
@@ -286,6 +287,17 @@ func TestLinksLoseTheirTracking(t *testing.T) {
 	if err != nil || me.Bio != "me: "+clean {
 		t.Fatalf("bio %q: %v", me.Bio, err)
 	}
+	// A link to a channel keeps its fragment, which names the channel, and
+	// a notification shows it as written.
+	info, _ := f.d.Info()
+	channel := "https://den.test/#c/" + info.ID.String() + "/" + c.ID
+	m, err = f.d.Send(ctx, member, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "in https://den.test/?utm_source=x#c/" + info.ID.String() + "/" + c.ID})
+	if err != nil || m.Text != "in "+channel {
+		t.Fatalf("a channel's link sent as %q: %v", m.Text, err)
+	}
+	if got := denproto.Plain(m.Text, 0); got != "in "+channel {
+		t.Fatalf("a channel's link in a notification: %q", got)
+	}
 
 	// The limits apply to the text the den keeps: one that fits only once
 	// its tracking is out goes through, and one that grows past them
@@ -343,6 +355,143 @@ func TestMentionsAndReadState(t *testing.T) {
 	}
 	if st := state(member, false); st.ReadPosition != last.ID || st.MentionCount != 0 {
 		t.Fatalf("after reading: %+v", st)
+	}
+}
+
+// Mark all as read moves bob's position to the newest message in every
+// channel, DM, group and note he sees, and in none he doesn't: a
+// staff-only channel, another pair's DM, a group he isn't in. He hears a
+// read state for each that moved, once, and nothing for what was read
+// already.
+func TestMarkAllRead(t *testing.T) {
+	f, owner, others := groupFixture(t, "carol", "dave")
+	ctx := context.Background()
+	bob, carol, dave := others[0], others[1], others[2]
+	bob.Version = denproto.Version
+	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
+	staff := f.newChannel(owner, "staff", denproto.ChannelRequest{StaffOnly: ptr(true)})
+	f.newChannel(owner, "empty", denproto.ChannelRequest{})
+	f.newChannel(owner, "voice", denproto.ChannelRequest{Kind: denproto.KindVoice})
+	read := f.newChannel(owner, "read", denproto.ChannelRequest{})
+	f.seed(general, owner, 3)
+	f.seed(staff, owner, 2)
+	f.send(bob, read.ID, "bob's own, read as he sent it")
+	dm, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(bob.MemberID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.send(owner, dm.ID, "to bob")
+	theirs, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(carol.MemberID)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.send(owner, theirs.ID, "to carol")
+	group, err := f.makeGroup(owner, bob, carol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := group.send(carol, "to the group"); err != nil {
+		t.Fatal(err)
+	}
+	without, err := f.makeGroup(owner, carol, dave)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := without.send(carol, "not bob's"); err != nil {
+		t.Fatal(err)
+	}
+	notes, err := f.d.OpenNotes(ctx, bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.note(bob, notes, "a note", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	snap, err := f.d.snapshotAt(ctx, bob.MemberID, false, bob.Version, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string]string{}
+	for _, st := range snap.ReadStates {
+		if st.LastMessage != "" && st.ReadPosition != st.LastMessage {
+			want[st.ChannelID] = st.LastMessage
+		}
+	}
+	for _, id := range []string{general.ID, dm.ID, group.id} {
+		if want[id] == "" {
+			t.Fatalf("channel %s isn't unread for bob before: %v", id, want)
+		}
+	}
+	sub, _, _, _ := f.d.Hub.Subscribe(bob.MemberID, false, "", 0)
+	if err := f.d.MarkAllRead(ctx, bob); err != nil {
+		t.Fatal(err)
+	}
+	heard := map[string]int{}
+	for _, e := range drainEvents(sub) {
+		if e.T != denproto.EventReadStateUpdated {
+			continue
+		}
+		var st denproto.ReadState
+		if err := json.Unmarshal(e.D, &st); err != nil {
+			t.Fatal(err)
+		}
+		heard[st.ChannelID]++
+		if st.ReadPosition != want[st.ChannelID] || st.MentionCount != 0 {
+			t.Errorf("bob heard %+v, want read to %s", st, want[st.ChannelID])
+		}
+	}
+	if len(heard) != len(want) {
+		t.Errorf("bob heard of %v, want each of %v once", heard, want)
+	}
+	for id, n := range heard {
+		if n != 1 {
+			t.Errorf("bob heard of channel %s %d times", id, n)
+		}
+	}
+	snap, err = f.d.snapshotAt(ctx, bob.MemberID, false, bob.Version, 0, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, st := range snap.ReadStates {
+		if st.ReadPosition != st.LastMessage {
+			t.Errorf("channel %s still unread: %+v", st.ChannelID, st)
+		}
+	}
+	// The snapshot leaves out what bob can't see, so the rows are read
+	// for it.
+	for _, id := range []string{staff.ID, theirs.ID, without.id} {
+		cid, _ := denproto.ParseID(id)
+		var n int
+		if err := f.db.QueryRow(`SELECT count(*) FROM den_read_states WHERE member_id = ? AND channel_id = ?`, bob.MemberID, cid).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("bob has a read position in channel %s, which he can't see", id)
+		}
+	}
+	// Again, nothing moves and nobody hears.
+	if err := f.d.MarkAllRead(ctx, bob); err != nil {
+		t.Fatal(err)
+	}
+	if got := drain(sub); len(got) != 0 {
+		t.Errorf("marking a read den read again told bob %v", got)
+	}
+}
+
+// drainEvents takes a subscription's events waiting now.
+func drainEvents(sub *Sub) []denproto.Event {
+	var out []denproto.Event
+	for {
+		select {
+		case e, ok := <-sub.Events:
+			if !ok {
+				return out
+			}
+			out = append(out, e)
+		default:
+			return out
+		}
 	}
 }
 

@@ -74,6 +74,7 @@ func routes(r chi.Router, a *app.App) {
 			r.Get("/changes", h.changes)
 			r.Post("/channels/{id}/messages", h.send)
 			r.Put("/channels/{id}/read", h.markRead)
+			r.Post("/read", h.markAllRead)
 			r.Patch("/messages/{id}", h.editMessage)
 			r.Post("/messages/{id}/tasks/{n}", h.setTask)
 			r.Delete("/messages/{id}", h.deleteMessage)
