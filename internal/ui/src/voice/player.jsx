@@ -5,7 +5,9 @@
 // one makes it fill the player, while the others go on out of sight, and
 // clicking it again puts it back. A share they watch can play in a
 // window of its own, while the player keeps its place. The phone layout
-// docks it instead, across the top of the channel's pane.
+// docks it instead, across the top of the channel's pane. While the call's
+// pane shows, its stage plays the shares, with the player's own tiles, and
+// the player shows nothing.
 
 import { render } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
@@ -17,6 +19,7 @@ import { clampBox, defaultBox, dockedShown, nextShown, readPlayer, resizeBox, ti
 import { onPopOut, popIn, popOut, poppedOut } from './popout.js';
 import { closePlayer, setPreview, setShareVolume, speakerID, toggleShareMute, unwatchShare } from './voice.js';
 import { useCall } from './voice.jsx';
+import { usePaneShown } from './pane.js';
 
 const PLAYER = 'DENS_PLAYER';
 // The bar's height, which the shares' room leaves out.
@@ -50,17 +53,20 @@ const SELF = 'self';
 // tilesOf are the shares the player shows: those the member watches, and
 // their own screen while they share it and show it. Their own plays from
 // the capture, always silent, since they hear its sound already.
-function tilesOf(watched, share) {
+export function tilesOf(watched, share) {
     const own = share?.preview && share.stream ? [{ member: SELF, label: 'Your screen', stream: share.stream, volume: 0, self: true }] : [];
     return [...watched, ...own];
 }
 
 // SharePlayer is the floating player, over every page in a wider window.
 // It stays on the phone layout, showing nothing, for the shares' own
-// windows, which it closes as their shares stop, and with the page.
+// windows, which it closes as their shares stop, and with the page. While
+// the call's pane shows, it fills the shares' own windows alone, since a
+// share's sound plays from its tile and the pane's stage holds the rest.
 export function SharePlayer() {
     const { call, watched, share } = useCall();
     const narrow = useNarrow();
+    const pane = usePaneShown();
     const [box, setBox] = useState(keptBox);
     const [focus, setFocus] = useState('');
     const [windows, setWindows] = useState(poppedOut);
@@ -80,6 +86,15 @@ export function SharePlayer() {
     const tiles = tilesOf(watched, share);
     const own = tiles.filter((w) => w.self);
     if (narrow || !tiles.length) return null;
+    if (pane) {
+        return (
+            <div hidden>
+                {tiles.filter((w) => windows.has(w.member)).map((w) => (
+                    <PoppedOut key={w.member} w={w} win={windows.get(w.member)} deafened={!!call?.deafened} />
+                ))}
+            </div>
+        );
+    }
     const focused = tiles.some((w) => w.member === focus) ? focus : '';
     const shown = focused ? tiles.filter((w) => w.member === focused) : tiles;
     const { cols, rows } = tileLayout(shown.length, box.w, box.h - BAR);
@@ -129,7 +144,7 @@ export function SharePlayer() {
                 <div class="grid min-h-0 flex-1 gap-px bg-base-300"
                     style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))`, gridTemplateRows: `repeat(${rows}, minmax(0, 1fr))` }}>
                     {tiles.map((w) => (windows.has(w.member) ? (
-                        <Away key={w.member} w={w} win={windows.get(w.member)} deafened={!!call?.deafened} hidden={!!focused && w.member !== focused} />
+                        <PoppedOut key={w.member} w={w} win={windows.get(w.member)} deafened={!!call?.deafened} hidden={!!focused && w.member !== focused} />
                     ) : (
                         <Tile key={w.member} w={w} deafened={!!call?.deafened} hidden={!!focused && w.member !== focused} many={tiles.length > 1}
                             focused={w.member === focused} onFocus={() => setFocus(w.member === focused ? '' : w.member)} />
@@ -145,7 +160,7 @@ export function SharePlayer() {
 }
 
 // DockedPlayer is the player on the phone layout: across the top of
-// the channel's pane, under the call's bar, or under Home's call box, at
+// a text channel's pane, under the call's bar, or under Home's call box, at
 // the screen's width and the share's shape, up to half the screen's
 // height. It shows one share at a time, the one the member last began to
 // watch, with a button to the next; a tap on its picture plays it full
@@ -173,7 +188,7 @@ export function DockedPlayer() {
     return (
         <section aria-label="Screen shares" data-docked class="w-full shrink-0 bg-black" style={{ aspectRatio: `${width} / ${height}`, maxHeight: '50vh' }}>
             {windows.has(w.member) ? (
-                <Away key={w.member} w={w} win={windows.get(w.member)} deafened={!!call?.deafened} />
+                <PoppedOut key={w.member} w={w} win={windows.get(w.member)} deafened={!!call?.deafened} />
             ) : (
                 <Tile key={w.member} w={w} deafened={!!call?.deafened} docked place={place} onNext={() => setShown(nextShown(keys, at))}
                     onSize={(x, y) => x > 0 && y > 0 && setSizes((s) => ({ ...s, [w.member]: [x, y] }))} />
@@ -182,13 +197,14 @@ export function DockedPlayer() {
     );
 }
 
-// Away holds the place of a share that plays in a window of its own,
+// PoppedOut holds the place of a share that plays in a window of its own,
 // saying so, with a button that brings it back, and fills that window from
 // the page's own render: Preact makes the window's elements, which its
-// document takes in.
-function Away({ w, win, deafened, hidden }) {
+// document takes in. The call's pane holds its place without filling it,
+// fill unset, since the player fills it while the pane shows.
+export function PoppedOut({ w, win, deafened, hidden, fill = true }) {
     useEffect(() => {
-        if (win.closed) return;
+        if (!fill || win.closed) return;
         try {
             render(<Tile w={w} deafened={deafened} doc={win.document} alone />, win.document.body);
         } catch {
@@ -196,6 +212,7 @@ function Away({ w, win, deafened, hidden }) {
         }
     });
     useEffect(() => () => {
+        if (!fill) return;
         try {
             render(null, win.document.body);
         } catch {
@@ -218,7 +235,7 @@ function Away({ w, win, deafened, hidden }) {
 // fill the docked player, where a tap on the picture plays it full screen
 // and, of several, place says which it is, with a button to the next; and
 // it says its share's size through onSize.
-function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alone, docked, place, onNext, onSize }) {
+export function Tile({ w, deafened, hidden, many, focused, onFocus, doc = document, alone, docked, place, onNext, onSize }) {
     const frame = useRef(null);
     const video = useRef(null);
     const [playing, setPlaying] = useState(false);

@@ -11,7 +11,7 @@
 //
 //   run.sh share
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, CAROL, HOME, MANAGE, SETTINGS, checks, fromMenu, launch, openManage, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CAROL, HOME, MANAGE, SETTINGS, backFromPane, checks, fromMenu, launch, openManage, openSettings, pair, rowMenu, waitFor } from './browsers.mjs';
 
 const { DEN: den } = process.env;
 // The preload keeps each page's peer connections and workers, what it
@@ -149,6 +149,9 @@ try {
         await s.b.eval(`document.querySelector('button[title^="Join the call"]').click(), true`, true);
     }
     for (const s of [A, B, C]) await waitFor(async () => (await s.b.eval(`!!document.querySelector('button[aria-label="Share your screen"]')`)) && (await s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`)), `${s.name} in the call`, 30000);
+    // Their joins opened the call's pane; the player plays shares beside a
+    // text channel, which each goes back to.
+    for (const s of [A, B, C]) await backFromPane(s.b, s.name);
     // The share button sits in the call's row, just before mute, after the
     // soundboard where the member has one.
     const row = await A.b.eval(`(() => { const b = document.querySelector('button[aria-label="Share your screen"]'); const all = [...b.parentElement.children].map((x) => x.getAttribute('aria-label') || x.querySelector('button')?.getAttribute('aria-label') || x.tagName); return JSON.stringify(all); })()`);

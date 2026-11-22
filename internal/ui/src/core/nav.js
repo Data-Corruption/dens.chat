@@ -10,13 +10,16 @@
 // The phone layout's panes, below 768 pixels, are each a level: a den's
 // list, its channel, and the members beside it, or a DM's profile. A wider
 // window shows them together, so a den is one level there, its channel's.
+// A call's pane is a channel's level, which opens above the channel shown,
+// so Back returns to it.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 
 // A screen is one of { k: 'home' }, { k: 'list', den }, { k: 'chan', den,
 // ch }, { k: 'side', den, ch }, { k: 'layer', id }, or { k: 'raw', path },
 // an entry the page didn't make, as a fragment's load makes one. A
-// channel's ch is its ID, '' for the one the den picks, or NO_DM.
+// channel's ch is its ID, '' for the one the den picks, or NO_DM; a call's
+// pane is a chan with call set.
 export const HOME = { k: 'home' };
 
 // Tailwind's md, where the page lays a den's panes side by side.
@@ -54,16 +57,31 @@ export function paneOf(trail) {
     return '';
 }
 
-// denTrail is the trail to a den's pane, with the channel ch shown: on the
-// phone layout the list, the channel above it and the members above that;
-// in a wider window the den alone.
-export function denTrail(den, ch, pane, narrow) {
-    if (!narrow) return [HOME, { k: 'chan', den, ch }];
+// denTrail is the trail to a den's pane, with the channel ch shown, or
+// the call's pane where call says: on the phone layout the list, the
+// channel above it and the members above that; in a wider window the den
+// alone.
+export function denTrail(den, ch, pane, narrow, call = false) {
+    const shown = call ? { k: 'chan', den, ch, call: true } : { k: 'chan', den, ch };
+    if (!narrow) return [HOME, shown];
     const trail = [HOME, { k: 'list', den }];
     if (pane === 'list') return trail;
-    trail.push({ k: 'chan', den, ch });
+    trail.push(shown);
     if (pane === 'side') trail.push({ k: 'side', den, ch });
     return trail;
+}
+
+// callTrail is the trail from cur to the pane of the call in den's voice
+// channel ch: above the channel shown in that den, or in place of another
+// call's pane, and from anywhere else as the den's channel; or null where
+// it shows already.
+export function callTrail(cur, den, ch, narrow) {
+    let end = cur.length;
+    while (end > 1 && (cur[end - 1].k === 'layer' || cur[end - 1].k === 'side')) end--;
+    const top = cur[end - 1];
+    if (top.k !== 'chan' || top.den !== den) return denTrail(den, ch, 'chan', narrow, true);
+    if (top.ch === ch) return end === cur.length ? null : cur.slice(0, end);
+    return [...cur.slice(0, top.call ? end - 1 : end), { k: 'chan', den, ch, call: true }];
 }
 
 // trailFor is the trail to the screen an address names, as a page opened
@@ -258,8 +276,11 @@ export function createNav(win) {
         },
         // open goes to the screen an address names, as a link to it does.
         open: (path) => move(() => trailFor(path, narrow())),
-        // den goes to a den's pane, list, chan or side, showing ch.
-        den: (den, ch, pane) => move(() => denTrail(den, ch, pane, narrow())),
+        // den goes to a den's pane, list, chan or side, showing ch, or the
+        // call's pane where call says.
+        den: (den, ch, pane, call) => move(() => denTrail(den, ch, pane, narrow(), call)),
+        // call opens the pane of the call in den's voice channel ch.
+        call: (den, ch) => move((c) => callTrail(c, den, ch, narrow())),
         home: () => move(() => [HOME]),
         // openLayer puts a dialog over what's shown, and returns its ID;
         // back closes it once the history drops it, and returns false to

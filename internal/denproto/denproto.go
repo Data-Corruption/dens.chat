@@ -320,6 +320,9 @@ type Den struct {
 	// NameStyles says the den keeps a style for each member's name; a den
 	// older than them drops one a member sets.
 	NameStyles bool `json:"name_styles,omitempty"`
+	// Away says the den keeps a member's Away in their call; a den older
+	// than it drops the mark.
+	Away bool `json:"away,omitempty"`
 	// Relay says the den passes boxes between a member's devices, so
 	// their installs ask only a den that does.
 	Relay bool `json:"relay,omitempty"`

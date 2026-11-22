@@ -7,7 +7,7 @@ Voice and screen share through the den, staff in calls, the limits for calls, se
 A call is a session between one member's browser and the den, in a voice channel. The den runs the media side. The client relays the signaling below between its socket to the den and its member's browser, and decides where the browser sends media (see the design's [Calls](../design/calls.md)).
 
 ```
-call = {"channel_id", "members": [{"id", "muted"?, "deafened"?, "staff_muted"?,
+call = {"channel_id", "members": [{"id", "muted"?, "deafened"?, "away"?, "staff_muted"?,
                                    "sharing"?, "sound"?, "watching"?}, …],
         "elapsed_ms"?, "record_ms"?}
 ```
@@ -15,10 +15,10 @@ call = {"channel_id", "members": [{"id", "muted"?, "deafened"?, "staff_muted"?,
 Client frames:
 
 ```json
-[{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false, "sealed": true}}]
+[{"t": "voice.join", "d": {"channel_id": "41", "muted": false, "deafened": false, "away": false, "sealed": true}}]
 [{"t": "voice.join", "d": {"channel_id": "41", "resume": true, "sealed": true}}]
 [{"t": "voice.answer", "d": {"version": 1, "sdp": "v=0…"}}]
-[{"t": "voice.mute", "d": {"muted": true, "deafened": true}}]
+[{"t": "voice.mute", "d": {"muted": true, "deafened": true, "away": true}}]
 [{"t": "voice.restart", "d": {}}]
 [{"t": "voice.share", "d": {"on": true, "sound": true}}]
 [{"t": "voice.watch", "d": {"member_id": "7", "on": true}}]
@@ -45,7 +45,7 @@ Den events, all ephemeral:
 
 ### Joining and leaving
 
-- `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted` and `deafened` are optional and set the member's marks from the start. With `"resume": true`, the join takes back a call the den holds for this device instead of starting one (see [Riding out a dropped connection](#riding-out-a-dropped-connection)).
+- `voice.join` names a voice channel the member can see. The den starts the member's call on this socket and sends it `voice.offer`, and ends any other call of the member's, on any device, with `voice.ended` and `moved`. `muted`, `deafened` and `away` are optional and set the member's marks from the start. With `"resume": true`, the join takes back a call the den holds for this device instead of starting one (see [Riding out a dropped connection](#riding-out-a-dropped-connection)).
 - A refused join gets `voice.ended` with `not_found` (no voice channel the member can see has that ID), `full` (the call holds as many members as the den allows, or the den's calls do; see [Limits for calls](#limits-for-calls)), `rate_limited`, `failed` when the den couldn't set the call up, or `update_needed`, for a join that doesn't say `"sealed": true` (see [Sealed calls](#sealed-calls)). An older client takes `update_needed` for `failed`.
 - `voice.leave` ends the member's call. When the socket a call started on closes, the den holds the call (see below), unless the den closed that socket for good with 4003 or after a logout. So removals, bans, revoked devices, new passwords, starting over, leaving and logging out end calls at once, and a den restart ends every call.
 - The den ends a call with `forbidden` when its member can no longer see the channel, as after a role change or the channel becoming staff-only; with `deleted` when the channel goes; with `failed` when its connection doesn't come up or breaks (below); and with `disconnected_by_staff` when staff disconnect its member.
@@ -70,7 +70,7 @@ Den events, all ephemeral:
 
 ### Who's in a call
 
-- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce, and so is `deafened`, which says the member hears nothing of the call either; a deafened member is muted too. `staff_muted` is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls)). `sharing` says the member is sharing their screen, and `sound` that the share has sound; `watching` lists the members whose shares they watch (see [Screen share](#screen-share)).
+- `voice.state` gives the members of each call that changed, to everyone who can see its channel; a call that emptied has none. `muted` is the member's own mark, set with `voice.mute` or at join, which the den passes on but doesn't enforce, and so is `deafened`, which says the member hears nothing of the call either; a deafened member is muted too. `away` is the member's own too, set with `voice.mute` or at join, which the den takes only with `muted`, so an unmute ends it; it keeps it with the call, in memory, through a hold. A den that keeps it says `"away": true` in its info; an older den drops it, and its calls show the member muted. `staff_muted` is staff's, which the den does enforce (see [Staff in calls](#staff-in-calls)). `sharing` says the member is sharing their screen, and `sound` that the share has sound; `watching` lists the members whose shares they watch (see [Screen share](#screen-share)).
 - `ready` carries `calls`, those the member can see that have someone in them. Calls aren't replayed, so after `resumed` the den sends `voice.state` with `"full": true`, which replaces every call the client held.
 - Every call the den sends carries `elapsed_ms`, how long it has gone on in milliseconds, from its first member's join, held calls counting, and `record_ms`, its channel's longest call as the call began, absent for none (see [Call records](#call-records)). A client turns `elapsed_ms` into a start on its own clock as the frame arrives, and refuses either below 0 or past a hundred years. A den older than v1.13.0 sends neither, and a client shows its calls without a length. Additive: no version bump.
 
@@ -104,7 +104,7 @@ POST /api/members/{id}/move        {"channel_id": "42"}  204
 - Staff disconnect and mute members of a lower rank, as they remove them: moderators act on members, and the owner on anyone else. Anyone else gets `403 forbidden`, and an ID that isn't a member in the den gets `404 not_found`, as for a move.
 - Disconnecting ends the member's call, held or not, with `voice.ended` and `disconnected_by_staff`. It leaves a member in no call as they are. They can join again at once.
 - A staff mute makes the den forward nothing from the member, in their call and in any they join, until staff lift it with `"muted": false`, the member leaves the den, or the den restarts. It ends their share, and they can't share while it lasts. It can be set whether or not they're in a call. Calls show it as `"staff_muted": true` on the member, beside their own `muted`.
-- Moving moves a member's call to another voice channel. Staff move anyone but the owner and themselves, a moderator moving another moderator too; anyone else gets `403 forbidden`. The den checks what joining does: a channel that isn't a voice channel the member can see gets `404 not_found`, and one whose call holds the den's `members` already `409 call_full`. A call held while its socket is away has nothing to tell, and gets `409 call_held`. Otherwise the den sends `voice.move {"channel_id", "to"}` to the socket holding the call, the call's channel and the one to join, and answers 204; the member's client joins `to` as if they'd picked it, with `voice.join`, sealed, muted and deafened as they were, which ends the old call. That join, within 30 seconds, doesn't count toward the member's limit on joining. A member in no call, or in that channel's already, stays as they are, with 204. A den that moves members says `"move_members": true` in its info, so a client offers it only then; a client older than it ignores `voice.move`, and stays where it is.
+- Moving moves a member's call to another voice channel. Staff move anyone but the owner and themselves, a moderator moving another moderator too; anyone else gets `403 forbidden`. The den checks what joining does: a channel that isn't a voice channel the member can see gets `404 not_found`, and one whose call holds the den's `members` already `409 call_full`. A call held while its socket is away has nothing to tell, and gets `409 call_held`. Otherwise the den sends `voice.move {"channel_id", "to"}` to the socket holding the call, the call's channel and the one to join, and answers 204; the member's client joins `to` as if they'd picked it, with `voice.join`, sealed, muted, deafened and away as they were, which ends the old call. That join, within 30 seconds, doesn't count toward the member's limit on joining. A member in no call, or in that channel's already, stays as they are, with 204. A den that moves members says `"move_members": true` in its info, so a client offers it only then; a client older than it ignores `voice.move`, and stays where it is.
 
 ### Screen share
 

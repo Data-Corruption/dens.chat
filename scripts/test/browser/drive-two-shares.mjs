@@ -1,13 +1,14 @@
-// The two-shares check: two shares in bob's player. Alice (Chromium)
-// shares her fake screen; carol is the voice probe, sharing Pion's packets,
-// which no decoder takes, so her tile waits: enough for the layout and the
-// focus.
+// The two-shares check: two shares on the stage of bob's call's pane, side
+// by side, and in his player once he goes back to the text channel. Alice
+// (Chromium) shares her fake screen; carol is the voice probe, sharing
+// Pion's packets, which no decoder takes, so her tile waits: enough for the
+// layout and the focus.
 //
 //   run.sh two-shares
 import { spawn } from 'node:child_process';
 import { setTimeout as sleep } from 'node:timers/promises';
 import fs from 'node:fs';
-import { ALICE, BOB, CAROL, HOME, checks, launch, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CAROL, HOME, backFromPane, checks, launch, pair, tileMenu, waitFor } from './browsers.mjs';
 
 const { DEN: den, LOUNGE: lounge } = process.env;
 const PRELOAD = `() => {
@@ -26,6 +27,7 @@ const report = c.report;
 const A = ALICE;
 const B = BOB;
 const PLAYER = `document.querySelector('section[aria-label="Screen shares"]')`;
+const STAGE = `document.querySelector('[data-call-stage]')`;
 const live = (s, name) => s.b.eval(`(() => { const li = [...document.querySelectorAll('ul[aria-label="In the call"] li')].find((x) => x.textContent.includes(${JSON.stringify(name)})); return !!li?.querySelector('button[aria-label*="screen"]'); })()`);
 const watch = (s, name) => s.b.eval(`[...document.querySelectorAll('ul[aria-label="In the call"] li')].find((x) => x.textContent.includes(${JSON.stringify(name)})).querySelector('button[aria-label*="screen"]').click(), true`, true);
 let probe;
@@ -60,12 +62,32 @@ try {
     // Alice shares too; bob watches both.
     await A.b.eval(`document.querySelector('button[aria-label="Share your screen"]').click(), true`, true);
     await waitFor(() => live(B, 'Alice'), "alice's LIVE mark", 15000);
+    // Bob's join opened the call's pane, whose stage takes the shares he
+    // watches, side by side, the members' tiles in a row under it, while
+    // the floating player shows nothing.
     await watch(B, 'Alice');
-    await waitFor(() => B.b.eval(`(() => { const v = ${PLAYER}?.querySelector('video'); return v && v.videoWidth > 0; })()`), "bob sees alice", 15000);
+    await waitFor(() => B.b.eval(`(() => { const v = ${STAGE}?.querySelector('video'); return v && v.videoWidth > 0; })()`), "bob sees alice", 15000);
     await watch(B, 'Carol');
-    await waitFor(() => B.b.eval(`${PLAYER}?.querySelectorAll('video').length === 2`), 'two tiles', 10000);
+    await waitFor(() => B.b.eval(`${STAGE}?.querySelectorAll('video').length === 2`), 'two shares on the stage', 10000);
     const keyframes = await waitFor(() => probeOut.includes('the den asked for a keyframe') ? 'yes' : '', "carol's keyframe request", 15000).catch((e) => e.message);
     report(keyframes === 'yes', `carol's probe got a keyframe request as bob started watching: ${keyframes}`);
+    const staged = JSON.parse(await B.b.eval(`(() => {
+        const st = ${STAGE};
+        const r = st.getBoundingClientRect();
+        const v = [...st.querySelectorAll('video')].map((x) => x.getBoundingClientRect());
+        const tiles = [...document.querySelectorAll('[data-call-pane] [data-call-tile]')].map((t) => t.getBoundingClientRect());
+        return JSON.stringify({ cols: st.style.gridTemplateColumns, side: v.length === 2 && Math.abs(v[0].top - v[1].top) < 2 && v[0].right <= v[1].left + 1,
+            tiles: tiles.length, under: tiles.length > 0 && tiles.every((t) => t.top >= r.bottom), player: !!${PLAYER} });
+    })()`));
+    report(staged.cols.startsWith('repeat(2') && staged.side && staged.tiles === 3 && staged.under && !staged.player,
+        `two shares stand side by side on the pane's stage, the members' tiles under it, the player showing nothing: ${JSON.stringify(staged)}`);
+    await B.b.shot(`${HOME}/shot-two-shares-stage.png`);
+    const menu = await tileMenu(B.b, 'Alice');
+    report(menu.within && menu.reached, `a tile's menu, from the row under the stage, shows its volume within the window, in reach: ${JSON.stringify(menu)}`);
+    // Back to the text channel: the call goes on, and the player takes the
+    // shares.
+    await backFromPane(B.b, 'bob');
+    await waitFor(() => B.b.eval(`${PLAYER}?.querySelectorAll('video').length === 2`), 'two tiles in the player', 10000);
     const layout = await B.b.eval(`(() => { const g = ${PLAYER}.querySelector('.grid'); const r = ${PLAYER}.getBoundingClientRect(); return JSON.stringify({ cols: g.style.gridTemplateColumns, rows: g.style.gridTemplateRows, w: Math.round(r.width), h: Math.round(r.height), title: ${PLAYER}.querySelector('span').textContent }); })()`);
     const l = JSON.parse(layout);
     report(l.title === 'Watching 2 shares' && (l.w >= l.h * 1.2 ? l.cols.startsWith('repeat(2') : l.rows.startsWith('repeat(2')), `two shares lay out in the player: ${layout}`);

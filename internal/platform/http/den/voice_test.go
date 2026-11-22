@@ -288,6 +288,117 @@ func TestCallThroughTheDen(t *testing.T) {
 	alice.wait(inCall(lounge.ID))
 }
 
+// awayIn matches word of a call in which a member is away, muted or
+// not, read as a page reads voice.state.
+func awayIn(channel, member string, away, muted bool) (string, func(denproto.Event) bool) {
+	return fmt.Sprintf("member %s away %t, muted %t", member, away, muted), func(e denproto.Event) bool {
+		var s struct {
+			Calls []struct {
+				ChannelID string `json:"channel_id"`
+				Members   []struct {
+					ID    string `json:"id"`
+					Muted bool   `json:"muted"`
+					Away  bool   `json:"away"`
+				} `json:"members"`
+			} `json:"calls"`
+		}
+		if e.T != denproto.EventVoiceState || json.Unmarshal(e.D, &s) != nil {
+			return false
+		}
+		for _, c := range s.Calls {
+			for _, m := range c.Members {
+				if c.ChannelID == channel && m.ID == member {
+					return m.Away == away && m.Muted == muted
+				}
+			}
+		}
+		return false
+	}
+}
+
+// TestAwayInCalls checks a member's Away, sent as the page sends it: set
+// by voice.mute and by voice.join on a muted member alone, cleared by an
+// unmute, kept while the call is held and taken back, and shown to everyone
+// who sees the call; and that the den's info says it keeps it.
+func TestAwayInCalls(t *testing.T) {
+	f := newFixture(t)
+	f.startCalls(sfu.Config{})
+	aliceToken, _ := f.owner()
+	bobToken := f.member(aliceToken, "bob")
+	carolToken := f.member(aliceToken, "carol")
+	lounge := f.channel(f.session(aliceToken), "Lounge", denproto.KindVoice, false)
+	alice := f.voiceSocket(aliceToken, nil)
+	bobCaller := newCaller(t)
+	bob := f.voiceSocket(bobToken, bobCaller)
+	bob.join(lounge.ID)
+	alice.wait(inCall(lounge.ID, bob.me))
+	mute := func(v *voiceSocket, d map[string]any) { v.send(denproto.EventVoiceMute, d) }
+
+	// A member muted already who marks themselves away.
+	mute(bob, map[string]any{"muted": true})
+	alice.wait(awayIn(lounge.ID, bob.me, false, true))
+	mute(bob, map[string]any{"muted": true, "away": true})
+	alice.wait(awayIn(lounge.ID, bob.me, true, true))
+	// Deafening keeps it.
+	mute(bob, map[string]any{"muted": true, "deafened": true, "away": true})
+	alice.wait(inCall(lounge.ID, bob.me+"*~"))
+	// An unmute ends it, and away alone, unmuted, isn't taken.
+	mute(bob, map[string]any{"muted": false, "away": true})
+	alice.wait(awayIn(lounge.ID, bob.me, false, false))
+	mute(bob, map[string]any{"muted": true, "away": true})
+	alice.wait(awayIn(lounge.ID, bob.me, true, true))
+	mute(bob, map[string]any{"muted": false})
+	alice.wait(awayIn(lounge.ID, bob.me, false, false))
+
+	// A join sets it from the start, as a move's does, on a muted member
+	// alone.
+	carol := f.voiceSocket(carolToken, newCaller(t))
+	carol.send(denproto.EventVoiceJoin, map[string]any{"channel_id": lounge.ID, "muted": true, "away": true, "sealed": true})
+	alice.wait(awayIn(lounge.ID, carol.me, true, true))
+	carol.send(denproto.EventVoiceLeave, struct{}{})
+	alice.wait(inCall(lounge.ID, bob.me))
+	carol.send(denproto.EventVoiceJoin, map[string]any{"channel_id": lounge.ID, "away": true, "sealed": true})
+	alice.wait(awayIn(lounge.ID, carol.me, false, false))
+
+	// A held call keeps it, and so does the call taken back.
+	mute(bob, map[string]any{"muted": true, "away": true})
+	alice.wait(awayIn(lounge.ID, bob.me, true, true))
+	bob.c.Close(websocket.StatusGoingAway, "")
+	// The offers carol's join and leave brought: his reader is done with
+	// them once it closes his events.
+	for range bob.events {
+	}
+	again := f.voiceSocket(bobToken, bobCaller)
+	again.version, again.answer = bob.version, bob.answer
+	again.send(denproto.EventVoiceJoin, map[string]any{"channel_id": lounge.ID, "resume": true, "sealed": true})
+	again.wait(resumed())
+	snap, first := f.dial(aliceToken, "")
+	defer snap.CloseNow()
+	if _, match := awayIn(lounge.ID, bob.me, true, true); !match(denproto.Event{T: denproto.EventVoiceState, D: readyCalls(t, first[0].D)}) {
+		t.Fatalf("ready's calls lost bob's Away: %s", first[0].D)
+	}
+	var ready struct {
+		Den struct {
+			Away bool `json:"away"`
+		} `json:"den"`
+	}
+	if json.Unmarshal(first[0].D, &ready); !ready.Den.Away {
+		t.Fatal("the den's info doesn't say it keeps Away")
+	}
+}
+
+// readyCalls is a ready's calls as a voice.state's would carry them.
+func readyCalls(t *testing.T, ready json.RawMessage) json.RawMessage {
+	t.Helper()
+	var r struct {
+		Calls json.RawMessage `json:"calls"`
+	}
+	if err := json.Unmarshal(ready, &r); err != nil {
+		t.Fatal(err)
+	}
+	return json.RawMessage(`{"calls":` + string(r.Calls) + `}`)
+}
+
 // TestCallRidesOutItsSocket checks that a call whose socket closes is
 // held, with its media flowing, and taken back on a new socket of the same
 // device, which then gets the call's offers.

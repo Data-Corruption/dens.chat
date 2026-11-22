@@ -41,9 +41,10 @@ type call struct {
 	sock  atomic.Pointer[socket]
 	staff bool // whether the member is staff, which a held call can't ask its socket
 	peer  *sfu.Peer
-	// The member's own marks: muted, and deafened, hearing nothing.
-	muted, deafened bool
-	hold            *time.Timer // ends a held call that isn't taken back
+	// The member's own marks: muted; deafened, hearing nothing; and away,
+	// which holds only while muted.
+	muted, deafened, away bool
+	hold                  *time.Timer // ends a held call that isn't taken back
 	// sharing is whether the member shares their screen, with sound if
 	// sound, and watching whose shares they watch, in the order they
 	// started.
@@ -305,7 +306,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		changed = append(changed, old.channel)
 	}
 	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted, deafened: req.Deafened,
-		joined: d.now()}
+		away: req.Away && req.Muted, joined: d.now()}
 	nc.sock.Store(sock)
 	bitrate := c.Bitrate
 	if bitrate == 0 {
@@ -420,16 +421,18 @@ func (d *Den) socketCall(sock *socket) *call {
 	return c
 }
 
-// muteCall sets the mark of the member whose call this socket holds.
+// muteCall sets the marks of the member whose call this socket holds.
+// Away goes with muted alone, so an unmute ends it.
 func (d *Den) muteCall(sock *socket, marks denproto.VoiceMute) {
 	r := &d.calls
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	c := r.byMember[sock.member]
-	if c == nil || c.sock.Load() != sock || (c.muted == marks.Muted && c.deafened == marks.Deafened) {
+	away := marks.Away && marks.Muted
+	if c == nil || c.sock.Load() != sock || (c.muted == marks.Muted && c.deafened == marks.Deafened && c.away == away) {
 		return
 	}
-	c.muted, c.deafened = marks.Muted, marks.Deafened
+	c.muted, c.deafened, c.away = marks.Muted, marks.Deafened, away
 	if c.muted {
 		d.stopTalkingLocked(c)
 	}
@@ -1266,7 +1269,7 @@ func (r *callRegistry) callOf(cid int64, room *callRoom, now time.Time) denproto
 	elapsed := max(now.Sub(room.began).Milliseconds(), 0)
 	c := denproto.Call{ChannelID: denproto.FormatID(cid), Members: []denproto.CallMember{}, ElapsedMS: &elapsed, RecordMS: room.record}
 	for _, x := range room.members {
-		m := denproto.CallMember{ID: denproto.FormatID(x.member), Muted: x.muted, Deafened: x.deafened,
+		m := denproto.CallMember{ID: denproto.FormatID(x.member), Muted: x.muted, Deafened: x.deafened, Away: x.away,
 			StaffMuted: r.staffMuted[x.member], Sharing: x.sharing, Sound: x.sound}
 		for _, w := range x.watching {
 			m.Watching = append(m.Watching, denproto.FormatID(w))

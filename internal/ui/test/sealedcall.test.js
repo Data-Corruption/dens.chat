@@ -242,7 +242,7 @@ test('a browser that can\'t seal, or a device without the seal, says why and ope
 test('a sealed call: the microphone goes on sealed, every receiver through the worker, and the keys to it whole', async () => {
     await joinCall('den1', 'lounge', { den: 'Den', channel: 'Lounge' });
     assert.equal(state.call.sealed, true);
-    assert.deepEqual(sent('voice.join').at(-1).d, { den: 'den1', channel: 'lounge', muted: false, deafened: false, sealed: true });
+    assert.deepEqual(sent('voice.join').at(-1).d, { den: 'den1', channel: 'lounge', muted: false, deafened: false, away: false, sealed: true });
     deliver({ t: 'call', d: { den: 'den1', channel: 'lounge', offer: { version: 1, sdp: 'v=0\r\n', udp_port: 1, tcp_port: 2 } } });
     await settle();
     // The worker comes with the call's first sealed sender.

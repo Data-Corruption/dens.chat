@@ -427,6 +427,7 @@ type pageMessage struct {
 		Channel  string              `json:"channel"`
 		Muted    bool                `json:"muted"`
 		Deafened bool                `json:"deafened"`
+		Away     bool                `json:"away"`
 		Resume   bool                `json:"resume"`
 		Sealed   bool                `json:"sealed"`
 		Version  int                 `json:"version"`
@@ -444,6 +445,12 @@ type pageMessage struct {
 	} `json:"d"`
 }
 
+// marks are the member's marks in their call, as a join or a mute gives
+// them.
+func (msg pageMessage) marks() denproto.VoiceMute {
+	return denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened, Away: msg.D.Away}
+}
+
 // pageMessage acts on one of the page's messages.
 func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage, deliver func(denclient.CallEvent)) {
 	switch msg.T {
@@ -459,8 +466,7 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 	case "typing":
 		_ = rt.a.Dens.Typing(msg.D.Den, msg.D.Channel)
 	case "voice.join":
-		opts := denclient.JoinOptions{Marks: denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened}, Resume: msg.D.Resume,
-			Sealed: msg.D.Sealed}
+		opts := denclient.JoinOptions{Marks: msg.marks(), Resume: msg.D.Resume, Sealed: msg.D.Sealed}
 		if rt.a.Dens.JoinCall(ctx, page, msg.D.Den, msg.D.Channel, opts, deliver) != nil {
 			deliver(denclient.CallEvent{DenID: msg.D.Den, Channel: msg.D.Channel, Ended: denproto.VoiceNotFound})
 		}
@@ -471,7 +477,7 @@ func (rt *router) pageMessage(ctx context.Context, page string, msg pageMessage,
 	case "voice.restart":
 		rt.a.Dens.RestartCall(ctx, page, msg.D.Den)
 	case "voice.mute":
-		rt.a.Dens.MuteCall(page, msg.D.Den, denproto.VoiceMute{Muted: msg.D.Muted, Deafened: msg.D.Deafened})
+		rt.a.Dens.MuteCall(page, msg.D.Den, msg.marks())
 	case "voice.share":
 		rt.a.Dens.ShareCall(page, msg.D.Den, msg.D.On, msg.D.Sound)
 	case "voice.watch":

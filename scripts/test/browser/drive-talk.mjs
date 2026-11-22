@@ -12,7 +12,7 @@
 //   run.sh talk chromium|firefox
 import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, SETTINGS, checks, launch, openSettings, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, HOME, SETTINGS, backFromPane, checks, launch, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den } = process.env;
@@ -85,6 +85,9 @@ try {
         await waitFor(() => s.b.eval(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), `${s.name} in the call`, 30000);
     }
     await waitFor(async () => (await A.b.eval(`document.querySelectorAll('ul[aria-label="In the call"] li').length`)) === 2, 'both in the call');
+    // Their joins opened the call's pane; the player plays a share beside a
+    // text channel, which each goes back to.
+    for (const s of [A, B]) await backFromPane(s.b, s.name);
 
     // Push to talk in silence: neither page sends a sound, so only the den's
     // word rings one for the other.

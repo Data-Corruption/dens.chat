@@ -817,6 +817,28 @@ export const CALL = `(() => {
     };
 })()`;
 
+// PANE_LOOK is what the call's pane shows on the phone layout: its tiles
+// and its foot's buttons, where they stand, the call's button, and whether
+// the bar or the docked player show, or anything runs past the screen; lone
+// says it's the one pane on screen.
+const PANE_LOOK = `(() => {
+    const box = (e) => { const r = e.getBoundingClientRect();
+        return { top: Math.round(r.top), bottom: Math.round(r.bottom), left: Math.round(r.left), right: Math.round(r.right) }; };
+    const within = (r) => r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight;
+    const pane = document.querySelector('[data-call-pane]');
+    const tiles = [...pane.querySelectorAll('[data-call-tile]')].map(box);
+    const foot = pane.querySelector('[data-call-foot]');
+    const keys = [...foot.querySelectorAll('button')];
+    const button = document.querySelector('[data-call-button]');
+    const chan = document.querySelector('[data-pane=chan]').getBoundingClientRect();
+    return JSON.stringify({
+        tiles: tiles.length, tilesIn: tiles.every(within), foot: box(foot), keys: keys.length, keysIn: keys.map(box).every(within),
+        smallest: Math.min(...keys.map((k) => Math.min(k.offsetWidth, k.offsetHeight))), button: button ? box(button) : null,
+        bar: !!document.querySelector('[data-call-bar]'), docked: !!document.querySelector('section[data-docked]'),
+        sideways: document.scrollingElement.scrollWidth > innerWidth + 1, lone: Math.round(chan.left) === 0 && Math.round(chan.width) === innerWidth,
+    });
+})()`;
+
 // LIST_END scrolls the channel's message list to its end, and says how far
 // above the list's foot its newest message ends: its own room at its end,
 // 24 pixels, as the call's button floats over the list rather than making
@@ -854,9 +876,10 @@ const selfRings = (den) => `fetch('/api/dens/${den}/state').then((r) => r.json()
 const IN_LIST = (name) => `[...document.querySelectorAll('nav[aria-label=Channels] button')].find((b) => b.textContent.trim() === ${JSON.stringify(name)})`;
 const BUTTON = `document.querySelector('[data-call-button]')`;
 
-// callScreens joins the den's voice channel from its list, and looks at
-// the call on the list, a member's sheet, in a channel and at Home, and at
-// a share, each screen with its picture and its audit. On the phone layout,
+// callScreens joins the den's voice channel from its list, which opens the
+// call's pane, and looks at the call on the list, a member's sheet, in a
+// channel, in its pane from the bar's tap, and at Home, and at a share,
+// each screen with its picture and its audit. On the phone layout,
 // through the driver's d, as gettingAround and touching have it,
 // the call's bar shows across the top of the channel's pane; where the
 // page has the call's button, a touch screen's, d.down(x) and d.up() hold
@@ -867,7 +890,8 @@ const BUTTON = `document.querySelector('[data-call-button]')`;
 // volume is a slider in a sheet, which a finger drags; the share docks
 // above the channel, plays full screen by a tap on it and back, and where
 // own says the browser shares its fake screen, that share docks at its
-// shape, and a tap goes on to the other; and the call ends from the bar.
+// shape, and a tap goes on to the other; the call ends from the bar; and
+// a join the microphone refuses says why on screen.
 export async function callScreens(h, ctx, d, report, { share, own } = {}) {
     const { den } = ctx;
     const did = (good, what) => report(good, `${d.name}: ${what}`);
@@ -877,6 +901,12 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         await h.click(h.byText('[role=tab]', 'Den'));
         await h.click(IN_LIST('Lounge'), 'Lounge');
         await waitFor(() => h.ev(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`), 'connected', 30000);
+        // The click that joined opened the call's pane, above the list,
+        // which Back returns to.
+        const opened = await h.has(`document.querySelector('[data-call-pane]')`);
+        await d.back();
+        await waitFor(async () => !(await h.has(`document.querySelector('[data-call-pane]')`)), 'back to the list', 5000);
+        did(opened, "the click that joins opens the call's pane, and Back returns to the list");
         await sleep(1500);
         await h.snap('call-list');
         const share = await h.has(`[...document.querySelectorAll('button')].some((b) => b.getAttribute('aria-label') === 'Share your screen')`);
@@ -939,6 +969,24 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         else did(!c.button, "with a mouse there's no call's button");
         const end = await h.ev(LIST_END);
         did(listEnds(end, c), `the list ends at its newest message, ${end} pixels above its foot, and nothing else scrolls: ${JSON.stringify({ row: c.rowScrolls, page: c.pageScrolls })}`);
+    });
+    // A tap on the bar opens the call's pane, the channel's pane here: the
+    // members' tiles and the call's controls along its foot, within the
+    // screen, with no bar or docked player over it, and the call's button
+    // above the foot; Back returns to the channel, the bar over it.
+    await h.step('call-pane', async () => {
+        await d.tap(`document.querySelector('[data-call-bar] button')`);
+        await h.wait(`document.querySelector('[data-call-pane]')`, "the call's pane", 5000);
+        await sleep(600);
+        await h.snap('call-pane');
+        const p = JSON.parse(await h.ev(PANE_LOOK));
+        did(p.tiles >= 2 && p.tilesIn && p.keys >= 5 && p.keysIn && p.smallest >= 44 && !p.bar && !p.docked && !p.sideways && p.lone,
+            `the bar's tap opens the call's pane, its tiles and its foot within the screen: ${JSON.stringify(p)}`);
+        if (d.touch) did(!!p.button && p.button.bottom <= p.foot.top - 23, `the call's button floats above the pane's foot: ${JSON.stringify({ button: p.button, foot: p.foot })}`);
+        await d.back();
+        await h.wait(COMPOSER, 'the channel again', 5000);
+        await sleep(600);
+        did(barPlaced(await call()), 'Back returns to the channel, the bar over it');
     });
     // The bar holds the soundboard and mute, which a narrow window
     // with a mouse has no call's button for; the soundboard opens as a sheet
@@ -1080,6 +1128,23 @@ export async function callScreens(h, ctx, d, report, { share, own } = {}) {
         const left = await waitFor(async () => !(await h.has(`document.querySelector('[data-call-bar]')`)) && !(await h.has(BUTTON)), 'the call to end', 10000)
             .catch(() => false);
         did(left, 'the call ends from its bar, and its bar and button go');
+    });
+    // A join the microphone refuses says why on screen, over the channel
+    // its click left the list for.
+    await h.step('call-refused', async () => {
+        await h.go(`/den/${den}`);
+        await h.click(h.byText('[role=tab]', 'Den'));
+        await h.ev(`(window.__gumKept = navigator.mediaDevices.getUserMedia, navigator.mediaDevices.getUserMedia = () => Promise.reject(new DOMException('no', 'NotAllowedError')), true)`);
+        await h.click(IN_LIST('Lounge'), 'Lounge');
+        const said = await waitFor(() => h.ev(`(() => {
+            const n = document.querySelector('[data-call-notice-bar] [data-call-notice]');
+            if (!n) return false;
+            const r = n.getBoundingClientRect();
+            return r.width > 0 && r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight && /microphone/i.test(n.textContent) ? n.textContent.trim() : false;
+        })()`), 'the refusal on screen', 10000).catch(() => false);
+        await h.snap('call-refused');
+        did(!!said, `a join the microphone refuses says why on screen: ${said}`);
+        await h.ev(`(navigator.mediaDevices.getUserMedia = window.__gumKept, document.querySelector('[data-call-notice-bar] button[aria-label=Dismiss]')?.click(), true)`);
     });
 }
 

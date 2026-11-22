@@ -148,9 +148,14 @@ read them. Resetting that key, or leaving the den, loses them.
 Channels, calls, screen shares, reactions, polls, emoji, events and the
 soundboard work as you'd expect. What's different:
 
-- **Calls** are end-to-end encrypted. The arrow beside a call's buttons opens
-  the soundboard and the lock, which lists who's in the call, to compare
-  codes with. Each call's length shows beside
+- **Calls** open in the middle of the page as you join: everyone in the
+  call, lit as they talk, the screens you watch, and the call's buttons.
+  Open any channel and the call goes on, its buttons under the channel list.
+  **Away** mutes you and shows everyone who can see the call that you're
+  away, until you unmute or push to talk. Calls are end-to-end encrypted:
+  the arrow beside the buttons under the channel list opens the soundboard,
+  **Away** and the lock, which lists who's in the call, to compare codes
+  with. Each call's length shows beside
   its channel, counted from the first person in to the last one out, and
   turns to a rainbow once it beats the channel's longest call; staff reset
   that in the channel's settings. Turn the timer off under **Settings** →

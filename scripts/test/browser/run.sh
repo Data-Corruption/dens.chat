@@ -10,7 +10,8 @@
 #
 # Usage: scripts/test/browser/run.sh CHECK [ARGS...]
 # The checks, and the arguments their drivers take:
-#   calls BROWSER BROWSER       two members in a call; staff sliding a member's
+#   calls BROWSER BROWSER       two members in a call, in its pane's tiles, and away on both
+#                               pages; staff sliding a member's
 #                               volume with the mouse, their menu staying put; and a member at 200%,
 #                               measured twice as loud as their stream; and the call's length on
 #                               both pages a second apart, in the rainbow past a short record with
@@ -19,7 +20,7 @@
 #                               and a Short's cover and player portrait
 #   share                       screen shares, Chromium and Firefox; a share turned down,
 #                               muted, unmuted and watched again, playing where it was
-#   two-shares                  two shares in a player, one the probe's
+#   two-shares                  two shares on the call's pane's stage, then in a player, one the probe's
 #   retention                   retention, Chromium and Firefox
 #   files                       managing files, Chromium and Firefox, and a photo
 #                               sent as a spoiler in a channel and a DM, covered until clicked; and
@@ -105,7 +106,7 @@
 #                               long press, a sheet's swipe down, three lines sent and a tip's tap;
 #                               and pages, the settings and Manage as lists of pages Back walks
 #                               out of, the viewer swiped and zoomed, and a dialog's sheet swiped down;
-#                               and the call, its bar, the call's button held and tapped by its
+#                               and the call, its pane from the bar's tap, its bar, the call's button held and tapped by its
 #                               role, a member's volume in a sheet, a share docked, full screen and back,
 #                               and leaving from the bar; and the emoji picker's sheet, its search
 #                               at its top as it scrolls, and :par and @al completed by taps; and a

@@ -1,7 +1,8 @@
 // A call's controls, which follow the call from den to den: in a block at
 // the foot of a den's channel list, and boxed on the other pages; and who
-// is in each voice channel's call, with who is speaking, how loud each
-// plays here, and staff's controls. The call's block has a
+// is in each voice channel's call, with who is speaking, who is away, how
+// loud each plays here, and staff's controls, which the call's pane's
+// tiles share. The call's block has a
 // row for sharing the member's screen, and the list marks who shares,
 // which a click watches. The phone layout shows the call in a
 // bar across the top of the channel's pane, and a touch screen holds the
@@ -19,7 +20,7 @@ import { CallLock, KeysChangedMark, keysChanged } from './calllock.jsx';
 import { CallMore } from './callmore.jsx';
 import { Button, LongName, Slider, StatusText, Tip } from '../ui/components.jsx';
 import { sendRelayKey } from '../core/events.js';
-import { CogIcon, ICON, SpeakerIcon, StatusIcon } from '../ui/icons.jsx';
+import { AwayIcon, CogIcon, ICON, SpeakerIcon, StatusIcon } from '../ui/icons.jsx';
 import { MenuItems, SheetItems, menuKeys, ownsMenu, rightClick, usePlaced } from '../ui/menus.jsx';
 import { nav, useNarrow } from '../core/nav.js';
 import { RoleMark, isStaff, rank } from '../people.jsx';
@@ -33,8 +34,8 @@ import { SoundboardButton } from './soundboard.jsx';
 import { useStaffMarks } from '../ui/staffmarks.js';
 import { createHold, useCoarse, useHoldsButton } from '../core/touch.js';
 import {
-    LOUDEST, byName, clearNotice, clearShareNotice, joinAndWatch, keysElsewhere, leaveCall, onCall, pressButton, releaseButton, rings, setDeafened,
-    setMemberMuted, setMuted, setPreview, setVolume, startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
+    LOUDEST, byName, clearNotice, clearShareNotice, keysElsewhere, leaveCall, onCall, openCall, pressButton, releaseButton,
+    rings, setDeafened, setMemberMuted, setMuted, setPreview, setVolume, startShare, stopShare, unwatchShare, voiceSettings, volumeIn, watchShare,
 } from './voice.js';
 
 // useCall is the page's call, why the last one ended, who is speaking in
@@ -95,7 +96,7 @@ function useFoot() {
 }
 
 // STATUS says how the call stands, and where.
-const STATUS = {
+export const STATUS = {
     joining: (where) => `Joining ${where}…`,
     connecting: (where) => `Connecting to ${where}…`,
     connected: (where) => `Connected to ${where}`,
@@ -117,7 +118,7 @@ const WEBVIEW = 'https://play.google.com/store/apps/details?id=com.google.androi
 // that it waits for the microphone, that staff muted them in this
 // den's, or that push to talk has no key yet, where the call's button
 // isn't there to hold.
-function notices(call, notice, denID, staffMuted, shareNotice, holds) {
+export function notices(call, notice, denID, staffMuted, shareNotice, holds) {
     const ptt = voiceSettings();
     const lines = [];
     // The block's lines are small, so each draws its state's icon itself,
@@ -202,10 +203,10 @@ function StatusLine({ denID, call }) {
         return <p role="status" class={`${line} ${color}`} data-call-status><SpeakerIcon size="h-4 w-4" /><span class="truncate text-base-content/80">{said}</span></p>;
     }
     return (
-        <button type="button" class={`${line} min-w-0 rounded hover:bg-base-300/60 ${color}`} data-call-status onClick={() => nav().den(call.den, '', 'list')}>
+        <button type="button" class={`${line} min-w-0 rounded hover:bg-base-300/60 ${color}`} data-call-status onClick={() => nav().call(call.den, call.channel)}>
             <SpeakerIcon size="h-4 w-4" />
             <span role="status" class="truncate text-base-content/80">{said}</span>
-            <span class="sr-only">Go to its den</span>
+            <span class="sr-only">Show the call</span>
         </button>
     );
 }
@@ -227,12 +228,25 @@ export function CallBox() {
     );
 }
 
+// CallNotice says why the page's last call ended, or didn't start, atop
+// the channel's pane on the phone layout, where the block, which says it
+// elsewhere, is off screen.
+export function CallNotice({ denID }) {
+    const { call, notice } = useCall();
+    if (call || !notice) return null;
+    return (
+        <div class="flex shrink-0 flex-col gap-1 border-b border-base-300 bg-bar px-4 py-2 text-xs" data-call-notice-bar>
+            {notices(call, notice, denID, false, null, false)}
+        </div>
+    );
+}
+
 // CallBar is the call across the top of the channel's pane on the phone
 // layout, under its header, for 40 pixels while in a call, as a
 // wider window shows its block beside the channel: where it is and how it
 // stands, the soundboard, mute, since a narrow window with a mouse has no
-// call's button, deafen and leave. A tap on the rest goes to the
-// list of the call's den, where its members and its other controls are.
+// call's button, deafen and leave. A tap on the rest opens the call's
+// pane, where its members and its other controls are.
 export function CallBar({ denID }) {
     const { call, den, sounding, board } = useCall();
     if (!call) return null;
@@ -241,7 +255,7 @@ export function CallBar({ denID }) {
     const color = call.status === 'connected' ? 'text-success' : 'text-warning';
     return (
         <div class="flex h-10 shrink-0 items-center gap-1 border-b border-base-300 bg-bar pr-2" data-call-bar>
-            <button type="button" class="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-1 text-left" onClick={() => nav().den(call.den, '', 'list')}>
+            <button type="button" class="flex h-full min-w-0 flex-1 items-center gap-2 pl-4 pr-1 text-left" onClick={() => nav().call(call.den, call.channel)}>
                 <span class={`shrink-0 ${color}`}><SpeakerIcon /></span>
                 <span role="status" class="truncate text-sm">{said}</span>
                 <span class="sr-only">Show the call</span>
@@ -398,7 +412,7 @@ function ShareRow({ call, share, den }) {
 // shareWhy says why the member can't start a share now, or '' when they
 // can: the den allows none, as many share as it allows, or staff muted
 // them. The den checks again all the same.
-function shareWhy(call, den) {
+export function shareWhy(call, den) {
     if (!den) return 'Waiting for the den';
     const mine = den.calls.find((c) => c.channel_id === call.channel);
     if (mine?.members.some((m) => m.id === den.me && m.staff_muted)) return "Staff muted you, so you can't share your screen.";
@@ -427,12 +441,13 @@ function ShareButton({ call, share, den }) {
 
 // CallControls are the call, in this den or another, in a row: the arrow
 // that opens the rest of them, and the buttons to share, mute,
-// deafen, open the voice settings and leave, spread evenly, with how the
-// call stands for a screen reader, which the block's line and the
-// channel's row show. labeled spells out where and how it stands, before
-// the buttons, for pages with room for it, Home's box, which holds the
-// lock and the soundboard, where the den has one, in the row. They
-// show only what the browser can do: a share where it can share.
+// deafen and leave, spread evenly, with how the call stands for a screen
+// reader, which the block's line and the channel's row show; the voice
+// settings open from the call's pane. labeled spells out where and how it
+// stands, before the buttons, for pages with room for it, Home's box,
+// which holds the lock, the soundboard, where the den has one, and the
+// voice settings in the row. They show only what the browser can do: a
+// share where it can share.
 export function CallControls({ denID, call, share, den, sounding, board, labeled }) {
     const where = call.den === denID ? call.label.channel : `${call.label.channel} in ${call.label.den}`;
     const said = STATUS[call.status](where);
@@ -449,9 +464,11 @@ export function CallControls({ denID, call, share, den, sounding, board, labeled
                 onClick={() => setDeafened(!call.deafened)}>
                 <HeadphonesIcon off={call.deafened} size="h-[18px] w-[18px]" />
             </IconButton>
-            <IconButton label="Voice settings" onClick={() => openSettings('voice')}>
-                <CogIcon />
-            </IconButton>
+            {labeled && (
+                <IconButton label="Voice settings" onClick={() => openSettings('voice')}>
+                    <CogIcon />
+                </IconButton>
+            )}
             <IconButton label="Leave the call" danger onClick={leaveCall}>
                 <LeaveIcon />
             </IconButton>
@@ -509,7 +526,7 @@ function LiveMark({ denID, call, member, name, mine, inCall, label, watching, me
     }
     const what = !inCall ? `Join the call and watch ${name}'s screen` : watching ? `Stop watching ${name}'s screen` : `Watch ${name}'s screen`;
     function act() {
-        if (!inCall) joinAndWatch(denID, call.channel_id, label, member.id, name);
+        if (!inCall) openCall(denID, call.channel_id, label, { id: member.id, name });
         else if (watching) unwatchShare(member.id);
         else watchShare(member.id, name);
     }
@@ -576,7 +593,7 @@ export function HeadphonesIcon({ off, size = 'h-4 w-4' }) {
 
 // ScreenIcon is a monitor, with an arrow going out of it while on: the
 // member is sharing.
-function ScreenIcon({ on }) {
+export function ScreenIcon({ on }) {
     return (
         <svg class="h-[18px] w-[18px] shrink-0" {...ICON}>
             <rect x="1.5" y="2.5" width="13" height="8.5" rx="1" />
@@ -615,7 +632,7 @@ function SoundOffIcon() {
     );
 }
 
-function LeaveIcon() {
+export function LeaveIcon() {
     return (
         <svg class="h-[18px] w-[18px]" viewBox="0 0 16 16" aria-hidden="true">
             <path fill="currentColor" d="M1.5 9.4c3.6-3.4 9.4-3.4 13 0l-1.3 1.9-2.6-.8V8.9a8.4 8.4 0 0 0-5.2 0v1.6l-2.6.8z" />
@@ -623,34 +640,49 @@ function LeaveIcon() {
     );
 }
 
-// CallMembers lists who is in a voice channel's call, under the channel.
-// In the page's own call, a ring marks whoever is speaking or holds push to
-// talk: speaking holds member IDs, and "self" for this page's member,
-// me; and whoever's sound plays, sounding. A member's name opens
-// their profile through onProfile. Everyone else's row has a menu that sets
-// how loud they play here, from volumes, up to twice as loud as they send,
-// and gives staff a way to mute or disconnect those they rank above. A
-// member who shares their screen has a LIVE mark, which watches or
-// stops watching in the page's own call, inCall, and elsewhere joins the
-// call as label names it and watches; watched holds the members whose
-// shares the page watches. The identities this member's Dens
-// kept mark those they verified, and those whose keys changed since, or
-// since the page's call began, since. Where the den moves members, moving
-// gives staff Move to in the menu of anyone but the owner, with the voice
-// channels it lists, and with a mouse lets them drag their row onto
-// another, but for a row whose menu is open, whose slider would
-// drag the row along. With a mouse, a right click on a row opens its menu
-// at the pointer.
-export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since, moving }) {
-    // menu is the member whose menu is open, and where a right click
-    // opened it, if one did.
+// MemberMarks are the marks of a member of a call, each with a tip
+// saying what it means: verified, and keys changed since, for anyone but
+// the member here; muted, deafened, which mutes too, so it shows both;
+// muted by staff; and away. where tells the tips of the list's rows from
+// the pane's tiles'.
+export function MemberMarks({ m, name, other, identities, since, where = '' }) {
+    return (
+        <>
+            {other && identities?.[m.id]?.verified && <VerifiedMark id={`${where}call-verified-${m.id}`} name={name} />}
+            {other && keysChanged(identities?.[m.id], since) && (
+                <KeysChangedMark id={`${where}call-changed-${m.id}`} name={name} kept={identities[m.id]} />
+            )}
+            {(m.muted || m.deafened) && (
+                <Tip id={`${where}muted-${m.id}`} label="muted" trigger={<MicIcon off size="h-3.5 w-3.5" />}>Muted</Tip>
+            )}
+            {m.deafened && (
+                <Tip id={`${where}deafened-${m.id}`} label="deafened" trigger={<HeadphonesIcon off size="h-3.5 w-3.5" />}>
+                    Deafened: hears nothing of the call
+                </Tip>
+            )}
+            {m.staff_muted && (
+                <Tip id={`${where}staff-muted-${m.id}`} label="muted by staff" trigger={
+                    <span class="flex items-center gap-0.5 text-xs text-warning"><MicIcon off size="h-3.5 w-3.5" />staff</span>
+                }>
+                    Muted by staff: nobody hears them
+                </Tip>
+            )}
+            {m.away && (
+                <Tip id={`${where}away-${m.id}`} label="away" trigger={<span data-away><AwayIcon size="h-3.5 w-3.5" /></span>}>Away</Tip>
+            )}
+        </>
+    );
+}
+
+// useMemberMenu is the menu of a member of a call other than this one,
+// from a list's row or the pane's tile: which is open, and where a right
+// click opened it, if one did; why staff's action failed; and the menu
+// itself, for the member m. It closes on a click anywhere else, or on
+// Escape; on the phone layout it's a sheet, which closes itself.
+export function useMemberMenu({ denID, members, me, volumes, moving }) {
     const [menu, setMenu] = useState(null);
     const [error, setError] = useState('');
     const narrow = useNarrow();
-    const touch = useCoarse();
-    const marks = useStaffMarks();
-    // An open menu closes on a click anywhere else, or on Escape; on the
-    // phone layout it's a sheet, which closes itself.
     useEffect(() => {
         if (!menu || narrow) return undefined;
         const away = (e) => {
@@ -666,7 +698,6 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
             document.removeEventListener('keydown', escape);
         };
     }, [menu, narrow]);
-    if (!call?.members?.length) return null;
     async function act(id, what, body) {
         setError('');
         setMenu(null);
@@ -676,13 +707,12 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
             setError(e.message);
         }
     }
-    // menuItems are what the menu of a member other than this one holds
-    // under their volume, in order: muting them for the member here alone;
-    // for staff who outrank them, muting them for everyone; for staff,
-    // moving anyone but the owner to another call, its channels
-    // opening beside it; and for staff who outrank them, disconnecting
-    // them.
-    function menuItems(m, moderate, movable, muted) {
+    // items are what the menu holds under the member's volume, in order:
+    // muting them for the member here alone; for staff who outrank them,
+    // muting them for everyone; for staff, moving anyone but the owner to
+    // another call, its channels opening beside it; and for staff who
+    // outrank them, disconnecting them.
+    function items(m, moderate, movable, muted) {
         const targets = movable && moving ? moving.targets(members.get(m.id)) : [];
         return [
             { key: 'mute', label: muted ? 'Unmute' : 'Mute', icon: muted ? 'unmute' : 'mute', run: () => {
@@ -713,6 +743,58 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
             </label>
         );
     }
+    // render is the menu of m, a member of the call, while it's open:
+    // under its ⋯, or at the right click, on a wider layout, and a sheet
+    // on the phone layout.
+    function render(m) {
+        if (menu?.id !== m.id) return null;
+        const member = members.get(m.id);
+        const name = member?.display_name || 'Unknown member';
+        const moderate = me && member && rank(me.role) > rank(member.role);
+        const movable = member && isStaff(me?.role) && member.role !== 'owner';
+        const pct = Math.round(volumeIn(volumes || {}, denID, m.id) * 100);
+        const label = `Options for ${name} in the call`;
+        if (narrow) {
+            return (
+                <Sheet label={label} title={<span class="font-semibold">{name}</span>} onClose={() => setMenu(null)}>
+                    {volume(m, name, pct)}
+                    <SheetItems items={items(m, moderate, movable, pct === 0)} picked={() => setMenu(null)} />
+                </Sheet>
+            );
+        }
+        return (
+            <CallMenu at={menu.at} label={label} items={items(m, moderate, movable, pct === 0)} onClose={() => setMenu(null)}>
+                {volume(m, name, pct)}
+            </CallMenu>
+        );
+    }
+    return { menu, setMenu, error, render };
+}
+
+// CallMembers lists who is in a voice channel's call, under the channel.
+// In the page's own call, a ring marks whoever is speaking or holds push to
+// talk: speaking holds member IDs, and "self" for this page's member,
+// me; and whoever's sound plays, sounding. A member's name opens
+// their profile through onProfile. Everyone else's row has a menu that sets
+// how loud they play here, from volumes, up to twice as loud as they send,
+// and gives staff a way to mute or disconnect those they rank above. A
+// member who shares their screen has a LIVE mark, which watches or
+// stops watching in the page's own call, inCall, and elsewhere joins the
+// call as label names it and watches; watched holds the members whose
+// shares the page watches. The identities this member's Dens
+// kept mark those they verified, and those whose keys changed since, or
+// since the page's call began, since. Where the den moves members, moving
+// gives staff Move to in the menu of anyone but the owner, with the voice
+// channels it lists, and with a mouse lets them drag their row onto
+// another, but for a row whose menu is open, whose slider would
+// drag the row along. With a mouse, a right click on a row opens its menu
+// at the pointer.
+export function CallMembers({ denID, call, members, me, speaking, sounding, deafened, volumes, onProfile, inCall, label, watched, previewing, identities, since, moving }) {
+    const { menu, setMenu, error, render } = useMemberMenu({ denID, members, me, volumes, moving });
+    const narrow = useNarrow();
+    const touch = useCoarse();
+    const marks = useStaffMarks();
+    if (!call?.members?.length) return null;
     return (
         <>
             {/* Rings stand 3px out from each avatar, so rows keep 8px apart. */}
@@ -726,9 +808,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                     // the member here outranks them, and moving anyone but
                     // the owner.
                     const other = me && m.id !== me.id;
-                    const moderate = me && member && rank(me.role) > rank(member.role);
                     const movable = other && member && isStaff(me.role) && member.role !== 'owner';
-                    const pct = Math.round(volumeIn(volumes || {}, denID, m.id) * 100);
                     const open = menu?.id === m.id;
                     // Staff drag those they may move onto another voice channel.
                     const drags = movable && moving?.lift && !open ? {
@@ -753,28 +833,8 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                 <LongName name={name} member={member} />
                                 {marks && <RoleMark role={member?.role} />}
                             </button>
-                            {other && identities?.[m.id]?.verified && <VerifiedMark id={`call-verified-${m.id}`} name={name} />}
-                            {other && keysChanged(identities?.[m.id], inCall ? since : Infinity) && (
-                                <KeysChangedMark id={`call-changed-${m.id}`} name={name} kept={identities[m.id]} />
-                            )}
                             {talking && <span class="sr-only">speaking</span>}
-                            {/* Deafening mutes too, so it shows both. Each mark's
-                                tip says what it means. */}
-                            {(m.muted || m.deafened) && (
-                                <Tip id={`muted-${m.id}`} label="muted" trigger={<MicIcon off size="h-3.5 w-3.5" />}>Muted</Tip>
-                            )}
-                            {m.deafened && (
-                                <Tip id={`deafened-${m.id}`} label="deafened" trigger={<HeadphonesIcon off size="h-3.5 w-3.5" />}>
-                                    Deafened: hears nothing of the call
-                                </Tip>
-                            )}
-                            {m.staff_muted && (
-                                <Tip id={`staff-muted-${m.id}`} label="muted by staff" trigger={
-                                    <span class="flex items-center gap-0.5 text-xs text-warning"><MicIcon off size="h-3.5 w-3.5" />staff</span>
-                                }>
-                                    Muted by staff: nobody hears them
-                                </Tip>
-                            )}
+                            <MemberMarks m={m} name={name} other={other} identities={identities} since={inCall ? since : Infinity} />
                             {m.sharing && (
                                 <LiveMark denID={denID} call={call} member={m} name={name} mine={m.id === me?.id} inCall={inCall} label={label}
                                     watching={!!watched?.has(m.id)} members={members} previewing={previewing} />
@@ -787,17 +847,7 @@ export function CallMembers({ denID, call, members, me, speaking, sounding, deaf
                                     aria-label={`Options for ${name} in the call`} aria-haspopup="menu" aria-expanded={open}
                                     onClick={() => setMenu(open ? null : { id: m.id, at: null })}>⋯</button>
                             )}
-                            {other && open && !narrow && (
-                                <CallMenu at={menu.at} label={`Options for ${name} in the call`} items={menuItems(m, moderate, movable, pct === 0)} onClose={() => setMenu(null)}>
-                                    {volume(m, name, pct)}
-                                </CallMenu>
-                            )}
-                            {other && open && narrow && (
-                                <Sheet label={`Options for ${name} in the call`} title={<span class="font-semibold">{name}</span>} onClose={() => setMenu(null)}>
-                                    {volume(m, name, pct)}
-                                    <SheetItems items={menuItems(m, moderate, movable, pct === 0)} picked={() => setMenu(null)} />
-                                </Sheet>
-                            )}
+                            {other && render(m)}
                         </HoverRow>
                     );
                 })}

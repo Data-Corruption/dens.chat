@@ -4,7 +4,14 @@ Ideas and fixes no milestone has taken up yet. A lot of these are still loose, a
 
 ## Probably M24
 
-What M23 left of M22's review of every screen, and of what it found members would want.
+First, what M23.1's security checklist found and left, each a den's doing, alone or with a member:
+
+- A group's edits signed for: the author's signature covers who else may edit a message, so an edit, a tick or a reply's quote opens only from its author or someone they named. The names are the den's now, so the den and a member of the group together can show that member's words as another's message, edited. To settle in its plan: what becomes of others' edits to messages sent before it.
+- A group's name from its signed changes: the name shown is the one its latest checked naming set, and a key's statement signs the name it carries. A member's Dens shows the sealed name the den sends now, so the den chooses among the names the group has had; it still reads none.
+- A hold that outlasts a new device: a device reads the member's record before it meets anyone after a snapshot. One that never kept a member keeps their new identity unheld now, and its next write of the record lifts the hold on the member's other devices, with nobody choosing.
+- The checklist's last probes: a test each for a group message's first signer and for fetched keys hashing to the identity kept, and the lines read behind the items ticked on a citation alone.
+
+Then what M23 left of M22's review of every screen, and of what it found members would want.
 
 - Pinned messages: a channel's own, pinned by staff and listed from its header, with no cap on how many. A pin is one more of staff's acts for M23's audit log.
 - Forward a message to another channel or DM, from its menu, in one step where a pasted link takes several. M23's quick switcher finds where it goes.

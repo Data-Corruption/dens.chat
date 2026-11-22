@@ -34,6 +34,35 @@ export async function waitFor(fn, what, ms = 20000) {
     throw new Error(`timed out waiting for ${what}: ${typeof last === 'string' ? last : JSON.stringify(last)}`);
 }
 
+// The call's pane opens as a click on a voice channel joins its call.
+// PANE finds it, and backFromPane goes back to the channel shown before,
+// which keeps the call, with its block, its bar and the player.
+export const PANE = `document.querySelector('[data-call-pane]')`;
+export async function backFromPane(b, who = 'the page') {
+    await waitFor(() => b.eval(`!!${PANE}`), `${who}'s call's pane`);
+    // From a task of its own: Chromium's evaluate doesn't return around it.
+    await b.eval('(setTimeout(() => history.back()), true)');
+    await waitFor(async () => !(await b.eval(`!!${PANE}`)), `${who} back from the call's pane`);
+}
+
+// tileMenu opens the menu of a member's tile in the call's pane, by its
+// ⋯, and says whether its volume slider shows within the window, where a
+// click at its middle reaches it; Escape closes it.
+export async function tileMenu(b, name) {
+    await b.eval(`[...document.querySelectorAll('[data-call-pane] [data-call-tile]')].find((t) => t.textContent.includes(${JSON.stringify(name)})).querySelector('button[data-call-menu]').click(), true`);
+    const slider = `document.querySelector('[data-call-pane] input[aria-label=${JSON.stringify(`Volume for ${name}`)}]')`;
+    const seen = await waitFor(() => b.eval(`(() => {
+        const s = ${slider};
+        if (!s) return false;
+        const r = s.getBoundingClientRect();
+        const within = r.width > 0 && r.left >= 0 && r.top >= 0 && r.right <= innerWidth && r.bottom <= innerHeight;
+        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+        return JSON.stringify({ within, reached: hit === s || s.contains(hit) });
+    })()`), `${name}'s tile's menu`, 5000).then(JSON.parse, () => ({ within: false, reached: false }));
+    await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    return seen;
+}
+
 // The app's settings: the dialog, a section of it by name in the
 // list down its side, and opening it at a section from the cog on
 // either page, as expressions for a page's eval and a step that waits.

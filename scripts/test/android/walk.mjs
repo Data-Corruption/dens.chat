@@ -278,7 +278,8 @@ async function styledName(h, c) {
 // callWalk walks a call with desk, the den's owner,
 // whose desk.mjs answers at c.desk with what its page shows of the call,
 // and c.name the member's name there: the member joins Lounge from the
-// list, as desk shares, taps desk's LIVE there and goes to general, and
+// list, as desk shares, which opens the call's pane, and Back returns to
+// the list; taps desk's LIVE there and goes to general, and
 // from there on, never back to the list, finds the call's bar under its
 // header, desk's share docked under the bar and the call's button above
 // the composer; plays the share full screen with a tap, which the shell
@@ -318,6 +319,11 @@ async function callWalk(h, d, c) {
         await d.tap(inList('Lounge'));
         await h.wait(`[...document.querySelectorAll('[role=status]')].some((e) => e.textContent.includes('Connected'))`, 'the call', 30000);
         await waitFor(onDesk, 'desk to see the member in the call', 15000);
+        const pane = await h.has(`document.querySelector('[data-call-pane]')`);
+        await h.snap('call-pane');
+        await d.back();
+        const listed = await waitFor(async () => !(await h.has(`document.querySelector('[data-call-pane]')`)) && (await h.has(inList('Lounge'))), 'the list again', 8000).catch(() => false);
+        report(pane && listed, `joining from the list opens the call's pane (${pane}), and Back returns to the list (${listed})`);
         report(!(await h.has(`document.querySelector('button[aria-label="Share your screen"]')`)), "the WebView's call has no share button");
         // The call's length on Lounge's row, as desk's page shows it,
         // read a moment apart.
@@ -667,6 +673,10 @@ async function relayWalk(h, d, c) {
     const inCall = await waitFor(async () => moved(await contexts()) && (await h.ev(PLAYING)), "the player in the call's context", 20000).catch(() => false);
     report(inCall === true, `in a call on the phone, the player plays in the call's context, its own closed: ${JSON.stringify(await contexts())}; Android has ${players().join(', ')}`);
     await h.snap('relay-call');
+    // The join opened the call's pane; Back returns to the list, whose
+    // block leaves and whose bar stops the sound.
+    await d.back();
+    await waitFor(async () => !(await h.has(`document.querySelector('[data-call-pane]')`)) && (await h.has(inList('Lounge'))), 'the list again', 8000);
     await d.tap(`document.querySelector('button[aria-label="Leave the call"]')`);
     const backed = (x) => x.join() === 'playback closed,none closed,playback running';
     const back = await waitFor(async () => backed(await contexts()) && (await h.ev(PLAYING)) && started('USAGE_MEDIA'), 'the player back in its own', 20000)
