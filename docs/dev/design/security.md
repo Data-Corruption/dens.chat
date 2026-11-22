@@ -99,6 +99,13 @@ Before the first release an audit checked every item here against the code (2026
 - [x] The service takes only a still PNG, JPEG or WebP, by its own look at the bytes, of at most 10 MB, strips it, and keeps it sealed with the data key.
 - [x] Nothing about the background is logged but that it was set or removed.
 
+### Getting around
+
+- [x] The switcher draws every den's names, its channels', members' and groups', as text, from that den's state on this install, which holds only what the member sees; opening it asks no den anything.
+- [x] A channel's link names its den by ID and the channel by ID; its chip's words are the member's own Dens's, and a click opens only a text channel, DM, group or notes the member sees, never a call, one out of sight reading `#unknown`, as one gone does.
+- [x] `POST /api/read` moves the member's position only where they see the channel, by the snapshot's own rule, never backward, in one write that counts toward their writes, and tells their sessions alone.
+- [x] A voice key bound over a page key takes its press, so the page acts on no key the member gave a voice action.
+
 ## Members
 
 ### Name styles
