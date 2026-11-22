@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { askToNotify, heading, mutedIn, notifying, permission, show, whereTheyShow, withdraw } from '../src/core/notify.js';
+import { askToNotify, heading, levelMenu, levelOf, mutedIn, notifying, permission, quiet, quietEnd, setLevel, show, untilWords, whereTheyShow, withdraw } from '../src/core/notify.js';
 
 // browser is a window whose Notification starts at permission, answers a
 // request with answer, and keeps what it shows.
@@ -102,7 +102,59 @@ test('mutes and kinds, as the service says them', () => {
     const m = mutedIn(st, 'd1');
     assert.ok(m.den && m.channels.has('7') && !m.channels.has('8'));
     const none = mutedIn(st, 'd2');
-    assert.ok(!none.den && none.channels.size === 0);
+    assert.ok(!none.den && none.channels.size === 0 && none.all.size === 0);
+});
+
+test("a channel's level: Nothing as v1.14.0's mutes kept it, All messages beside it, Mentions until the member chooses", () => {
+    const st = { muted: { d1: { channels: ['7'], all: ['9'] } } };
+    assert.equal(levelOf(st, 'd1', '7'), 'nothing');
+    assert.equal(levelOf(st, 'd1', '9'), 'all');
+    assert.equal(levelOf(st, 'd1', '8'), 'mentions');
+    assert.equal(levelOf(null, 'd1', '8'), 'mentions');
+    assert.ok(mutedIn(st, 'd1').all.has('9'));
+    assert.ok(notifying({ eventsOff: true, muted: { d1: { all: ['9'] } } }), 'a channel at All messages notifies with every kind off');
+    assert.ok(!notifying({ eventsOff: true, muted: { d1: { channels: ['7'] } } }));
+    const items = levelMenu('all');
+    assert.deepEqual(items.map((i) => `${i.label}${i.checked ? ' (checked)' : ''}`), ['All messages (checked)', 'Mentions', 'Nothing']);
+});
+
+test('All messages asks the browser in the click, and goes without waiting for its answer', async (t) => {
+    const sent = [];
+    let asked = 0;
+    // The browser's prompt stays open, as one a member leaves.
+    globalThis.Notification = class { static permission = 'default'; static requestPermission() { asked++; return new Promise(() => {}); } };
+    globalThis.fetch = async (path, opts) => {
+        sent.push(`${opts.method} ${path} ${opts.body}`);
+        return { ok: true, status: 200, headers: { get: () => null }, text: async () => '{}' };
+    };
+    t.after(() => {
+        delete globalThis.Notification;
+        delete globalThis.fetch;
+    });
+    await setLevel('d1', '9', 'all');
+    await setLevel('d1', '9', 'nothing');
+    assert.equal(asked, 1, 'only All messages asks');
+    assert.deepEqual(sent, ['POST /api/dens/d1/notifications {"channel":"9","level":"all"}', 'POST /api/dens/d1/notifications {"channel":"9","level":"nothing"}']);
+});
+
+test("Do not disturb's ends, read against the device's clock", () => {
+    const at = (h, m = 0) => new Date(2026, 10, 21, h, m);
+    assert.equal(quietEnd('hour', at(22, 15)).getTime(), at(23, 15).getTime());
+    assert.equal(quietEnd('tomorrow', at(22, 15)).getTime(), new Date(2026, 10, 22, 8).getTime(), 'the next 8:00, tomorrow');
+    assert.equal(quietEnd('tomorrow', at(2)).getTime(), at(8).getTime(), 'the next 8:00, past midnight');
+    assert.equal(quietEnd('tomorrow', at(8)).getTime(), new Date(2026, 10, 22, 8).getTime());
+    assert.equal(quietEnd('manual', at(22)), null);
+
+    const now = at(22).getTime();
+    assert.deepEqual(quiet({ dnd: true, dndUntil: at(23).toISOString() }, now), { on: true, until: at(23).getTime() });
+    assert.deepEqual(quiet({ dnd: true }, now), { on: true, until: null });
+    assert.deepEqual(quiet({ dnd: true, dndUntil: at(21).toISOString() }, now), { on: false, until: null }, 'an end gone by is off');
+    assert.deepEqual(quiet({ dndUntil: at(23).toISOString() }, now), { on: false, until: null });
+    assert.deepEqual(quiet(null, now), { on: false, until: null });
+
+    assert.match(untilWords(at(23, 30).getTime(), now), /^until 11:30\sPM$|^until 23:30$/);
+    assert.match(untilWords(new Date(2026, 10, 22, 8).getTime(), now), /^until tomorrow, 8:00\sAM$|^until tomorrow, 08:00$/);
+    assert.equal(untilWords(null, now), 'until you turn it off');
 });
 
 test('the settings say where notifications show only what calls for a line', () => {

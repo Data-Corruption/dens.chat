@@ -20,7 +20,7 @@ import { MessagePane, openAt } from './messages.jsx';
 import { LinkContext } from './msglinks.jsx';
 import { Name } from '../appearance/names.jsx';
 import { nav, useNarrow } from '../core/nav.js';
-import { mutedIn, notifying, withdraw } from '../core/notify.js';
+import { levelMenu, levelOf, mutedIn, notifying, setLevel, withdraw } from '../core/notify.js';
 import { showsOffline } from '../core/offline.js';
 import { ChannelDialog, GroupDialog } from '../manage.jsx';
 import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isStaff } from '../people.jsx';
@@ -48,6 +48,7 @@ import { channelLinkTo } from './links.js';
 import { onPageKey } from '../core/keys.js';
 import { showDen } from '../core/switcher.js';
 import { SwitcherButton } from '../ui/switcher.jsx';
+import { QuietButton } from '../ui/quiet.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -236,8 +237,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     // The call's button floats in the screen's corner, where the
     // phone layout's list keeps clear of it.
     const button = useCallButton() && narrow;
-    // What the member muted here, which the bells show once they turned
-    // notifications on.
+    // What the member muted here, and their channels at All messages,
+    // which the bells show while anything notifies.
     const notifications = useNotifications();
     const muted = mutedIn(notifications, denID);
     const bells = notifying(notifications);
@@ -670,7 +671,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                             </>
                         ) : (
                             <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
-                                muted={bells ? muted.channels : null} onOpen={openChannel} onDialog={setDialog}
+                                muted={muted} bells={bells} onOpen={openChannel} onDialog={setDialog}
                                 events={view.event_limits ? { open: eventsOpen, onOpen: () => openChannel(EVENTS) } : null} />
                         )}
                         <div class="mt-auto">
@@ -719,6 +720,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     verified={!!(dm && view.identities?.[dm.id]?.verified)} onCompare={() => dm && setDialog({ kind: 'codes', member: dm })}
                                     online={dm && online.has(dm.id)} membersOpen={!at && membersOpen}
                                     muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
+                                    level={bells ? levelOf(notifications, denID, channel.id) : null}
+                                    onLevel={(level) => setLevel(denID, channel.id, level).catch(() => {})}
                                     onChannels={() => toPane('list')} onMembers={toggleMembers}
                                     onProfile={openProfile} />
                                 {callTop}
@@ -919,13 +922,16 @@ export const NEW_IN_DEN = [
 
 /** channelMenu lists what a channel's menu holds: for a text channel
     Mark as read, where read says the member may, disabled with nothing
-    unread, and Copy link; then for staff its settings, and Move up and
-    Move down, the drag's for touch screens and keyboards, each disabled at
-    its end */
-export function channelMenu(view, channel, { staff = false, read = true, unread: waiting = false } = {}) {
+    unread, and Notifications, whose levels open beside it, level checked;
+    and Copy link; then for staff its settings, and Move up and Move down,
+    the drag's for touch screens and keyboards, each disabled at its end */
+export function channelMenu(view, channel, { staff = false, read = true, unread: waiting = false, level = 'mentions' } = {}) {
     const text = channel.kind === 'text';
     const out = [
-        ...(text && read ? [{ key: 'read', label: 'Mark as read', icon: 'read', disabled: !waiting }] : []),
+        ...(text && read ? [
+            { key: 'read', label: 'Mark as read', icon: 'read', disabled: !waiting },
+            { key: 'notifications', label: 'Notifications', icon: 'bell', items: levelMenu(level) },
+        ] : []),
         ...(text ? [{ key: 'link', label: 'Copy link', icon: 'link' }] : []),
     ];
     if (!staff) return out;
@@ -1030,8 +1036,9 @@ export function groupMenu(view, group) {
 
 // UserPanel is the member's own corner at the foot of the channel list,
 // its middle level with the message box's beside it: their picture and
-// name, which open their profile to edit, and the cog for the settings. It keeps the list's color, so the call's lighter block above it
-// shows at a glance.
+// name, which open their profile to edit, Do not disturb's moon and the
+// cog for the settings. It keeps the list's color, so the call's lighter
+// block above it shows at a glance.
 function UserPanel({ me, online, onEdit }) {
     return (
         <div class="flex h-[73px] items-center gap-1 border-t border-base-300 px-2">
@@ -1043,6 +1050,7 @@ function UserPanel({ me, online, onEdit }) {
                     <span class="block truncate text-xs text-base-content/60">@{me.username}</span>
                 </span>
             </HoverRow>
+            <QuietButton />
             <button type="button" class="btn btn-ghost btn-sm btn-square" aria-label="Settings" title="Settings" onClick={() => openSettings()}>
                 <CogIcon />
             </button>
@@ -1142,9 +1150,13 @@ function rowLabel(name, ...marks) {
     return said.length ? [name, ...said].join(', ') : undefined;
 }
 
+// LEVEL_WORDS name a text channel's levels in its bell's tip.
+const LEVEL_WORDS = { all: 'All messages', mentions: 'Mentions', nothing: 'Nothing' };
+
 // What a channel's or a DM's marks mean, which their tips say.
 const STAFF_ONLY = 'Staff only: only moderators and the owner can see it.';
 const MUTED = "Muted: its messages don't notify you.";
+const ALL_MESSAGES = 'All messages: each of its messages notifies you.';
 
 // readStyle is how a row's name shows whether it waits to be read: bold at
 // full strength, while one read is a little fainter, unless it's open or
@@ -1207,11 +1219,11 @@ function applyReads(view, reads) {
     return { ...view, read_states: view.read_states.map((r) => changed.get(r.channel_id) || r) };
 }
 
-// muted holds the channels the member muted, or is null while no kind of
-// notification is on.
+// muted holds the channels at Nothing and at All messages, which the
+// rows mark while bells says anything notifies.
 // events, while the den has them, puts its events' row at the list's top,
 // open while their pane shows, which events.onOpen opens.
-function ChannelList({ denID, view, reads, members, open, staff, gone, muted, onOpen, onDialog, events }) {
+function ChannelList({ denID, view, reads, members, open, staff, gone, muted, bells, onOpen, onDialog, events }) {
     const { ungrouped, groups } = listed(view);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
     const [folded, setFolded] = useState(() => readFolded(stored(FOLDED + denID)));
@@ -1245,10 +1257,12 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 link: () => copyText(channelLinkTo(view.url, denID, c.id)).catch((err) => setDragError(err.message)),
                 edit: () => onDialog({ kind: 'channel', channel: c }),
             };
+            const level = muted.channels.has(c.id) ? 'nothing' : muted.all.has(c.id) ? 'all' : 'mentions';
+            const levels = (items) => items.map((l) => ({ ...l, run: () => setLevel(denID, c.id, l.key).catch((err) => setDragError(err.message)) }));
             return {
                 label: `Options for ${c.name}`, title: c.kind === 'voice' ? c.name : `#${c.name}`,
-                items: channelMenu(view, c, { staff: managed, read: !gone, unread: unread(reads.get(c.id)) })
-                    .map((i) => ({ ...i, run: run[i.key] || (() => patch(`channels/${c.id}`, i.body)) })),
+                items: channelMenu(view, c, { staff: managed, read: !gone, unread: unread(reads.get(c.id)), level })
+                    .map((i) => (i.items ? { ...i, items: levels(i.items) } : { ...i, run: run[i.key] || (() => patch(`channels/${c.id}`, i.body)) })),
             };
         }
         const g = view.groups.find((x) => x.id === id);
@@ -1390,7 +1404,8 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         const state = inCall ? callState(call.status) : '';
         const label = { den: view.name, channel: c.name };
         const hasMenu = c.kind === 'text' || managed;
-        const isMuted = !!muted?.has(c.id);
+        const isMuted = bells && muted.channels.has(c.id);
+        const isAll = bells && muted.all.has(c.id);
         const mentions = c.id !== open ? r?.mention_count || 0 : 0;
         return (
             <li key={c.id}>
@@ -1404,7 +1419,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                         onClick={() => (voice ? openCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
                         title={voice ? (canCall() ? 'Join the call' : NO_CALLS) : undefined}
-                        aria-label={rowLabel(c.name, state, c.staff_only && 'staff only', isMuted && 'muted', mentions && `${mentions} mentions`)}
+                        aria-label={rowLabel(c.name, state, c.staff_only && 'staff only', isMuted && 'muted', isAll && 'all messages', mentions && `${mentions} mentions`)}
                     >
                         <span class={!inCall ? 'text-base-content/50' : state === 'connected' ? 'text-success' : 'text-warning'} data-call-state={state || undefined}>
                             {voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}
@@ -1414,6 +1429,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     {isUnread && <UnreadPill />}
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
+                    {isAll && <Tip id={`all-${c.id}`} label="All messages" trigger={<BellIcon ring size="h-3.5 w-3.5" />}>{ALL_MESSAGES}</Tip>}
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
                     {/* The call's length, to everyone who sees the channel. */}
                     {voice && <CallLength call={calls.get(c.id)} />}
@@ -1614,9 +1630,11 @@ function ChannelsButton({ elsewhere, onChannels }) {
 
 // ChannelHeader names the channel or the DM's other member. A channel's
 // description shows its first line, which opens the rest when there is
-// more than fits. Its bell mutes the channel's notifications, once the
-// member turned some on: muted is null until then.
-export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, onChannels, onMembers, onProfile }) {
+// more than fits. While anything notifies, a text channel's bell opens its
+// levels, level the one it's at, and a DM's or a group's mutes it: level
+// and muted are null otherwise.
+export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, level, onLevel,
+    onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
     const clipped = useClipped(line, channel.description);
@@ -1704,7 +1722,13 @@ export function ChannelHeader({ channel, dm, groupTitle: grouped, me, elsewhere,
                     </button>
                 )}
                 <div class="ml-auto flex shrink-0 items-center gap-1">
-                    {muted !== null && channel.kind !== 'voice' && channel.kind !== 'notes' && (
+                    {level && channel.kind === 'text' && (
+                        <MenuButton label={`Notifications for #${channel.name}`} title={`#${channel.name}`}
+                            items={levelMenu(level).map((l) => ({ ...l, run: () => onLevel(l.key) }))}
+                            button={{ class: 'btn btn-ghost btn-sm btn-square', title: `Notifications: ${LEVEL_WORDS[level]}`, 'data-levels': level,
+                                children: <BellIcon off={level === 'nothing'} ring={level === 'all'} /> }} />
+                    )}
+                    {muted !== null && (channel.kind === 'dm' || channel.kind === 'group_dm') && (
                         <button type="button" class="btn btn-ghost btn-sm btn-square" aria-pressed={muted} onClick={() => onMute(!muted)}
                             aria-label={`${muted ? 'Unmute' : 'Mute'} ${channel.kind === 'dm' ? `the DM with ${dm ? dm.display_name : 'this member'}` : channel.kind === 'group_dm' ? grouped : `#${channel.name}`}`}
                             title={muted ? 'Unmute its notifications' : 'Mute its notifications'}>

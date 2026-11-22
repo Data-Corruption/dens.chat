@@ -8,12 +8,17 @@
 // channel, wherever it shows. Android's WebView has no notifications: the
 // app's shell posts them there.
 //
+// A text channel's level, All messages, Mentions or Nothing, and Do not
+// disturb, which holds every notification until its end, are the
+// service's too; the page sets them and reads them from the status.
+//
 // The service places the message's sound too, so a message
 // makes one: a page plays it with the notification it shows, which it asks
 // the browser to show silently, and alone where the service says, as when
 // the member turned the kind off. It also carries the sounds' settings in
 // the status, which the page's sounds play by.
 
+import { api } from './api.js';
 import { onEvent, setPageState } from './events.js';
 import { heardSounds, playSound } from '../voice/sounds.js';
 
@@ -136,16 +141,94 @@ export function onNotifications(fn) {
 }
 
 // mutedIn is what the member muted in a den, by the status: the whole den,
-// and its channels'.
+// and its channels at Nothing; and its channels at All messages.
 export function mutedIn(st, denID) {
     const m = st?.muted?.[denID];
-    return { den: !!m?.den, channels: new Set(m?.channels || []) };
+    return { den: !!m?.den, channels: new Set(m?.channels || []), all: new Set(m?.all || []) };
 }
 
-// notifying is whether any kind notifies: DMs or mentions, which the
-// member turns on, or events, on unless they turn them off.
+// levelOf is a text channel's level: all, mentions or nothing.
+export function levelOf(st, denID, channelID) {
+    const m = st?.muted?.[denID];
+    if (m?.channels?.includes(channelID)) return 'nothing';
+    return m?.all?.includes(channelID) ? 'all' : 'mentions';
+}
+
+// LEVELS are a text channel's levels, as its menu and its header's bell
+// list them.
+const LEVELS = [
+    { key: 'all', label: 'All messages', icon: 'bellring' },
+    { key: 'mentions', label: 'Mentions', icon: 'at' },
+    { key: 'nothing', label: 'Nothing', icon: 'belloff' },
+];
+
+// levelMenu lists the levels, level checked, as MenuItems takes them.
+export function levelMenu(level) {
+    return LEVELS.map((l) => ({ ...l, checked: l.key === level }));
+}
+
+// setLevel sets a text channel's level. All messages asks the browser to
+// let the page notify, where it hasn't asked, which it does only in
+// answer to the click, so the click calls this at once; the level goes
+// without waiting, since a prompt may stay open.
+export function setLevel(denID, channel, level) {
+    if (level === 'all') askToNotify().then(() => tell());
+    return api.post(`/api/dens/${denID}/notifications`, { channel, level });
+}
+
+// notifying is whether anything notifies: DMs or mentions, which the
+// member turns on, a channel at All messages, or events, on unless they
+// turn them off.
 export function notifying(st) {
-    return !!(st && (st.dms || st.mentions || !st.eventsOff));
+    return !!(st && (st.dms || st.mentions || !st.eventsOff || Object.values(st.muted || {}).some((m) => m.all?.length)));
+}
+
+// quiet is how Do not disturb stands at now, by the status: on, and its
+// end, null for none. An end gone by is off: the service sends nothing as
+// it passes, and reads it as off from then on.
+export function quiet(st, now = Date.now()) {
+    const until = st?.dndUntil ? Date.parse(st.dndUntil) : null;
+    if (!st?.dnd || (until !== null && until <= now)) return { on: false, until: null };
+    return { on: true, until };
+}
+
+// QUIET_ENDS are Do not disturb's ends, as the moon lists them.
+export const QUIET_ENDS = [
+    { key: 'hour', label: 'For an hour', icon: 'clock' },
+    { key: 'tomorrow', label: 'Until tomorrow', icon: 'sunrise' },
+    { key: 'manual', label: 'Until I turn it off', icon: 'moon' },
+];
+
+// quietEnd is when an end of QUIET_ENDS falls, from now: an hour on, the
+// next 8:00 by the device's clock, or null for none.
+export function quietEnd(key, now = new Date()) {
+    if (key === 'hour') return new Date(now.getTime() + 60 * 60 * 1000);
+    if (key !== 'tomorrow') return null;
+    const at = new Date(now);
+    at.setHours(8, 0, 0, 0);
+    if (at <= now) at.setDate(at.getDate() + 1);
+    return at;
+}
+
+// setQuiet turns Do not disturb on until an end of QUIET_ENDS, sent as
+// the time it falls, or with key null turns it off.
+export function setQuiet(key) {
+    if (!key) return api.post('/api/settings', { notifications: { dnd: false } });
+    const until = quietEnd(key);
+    return api.post('/api/settings', { notifications: until ? { dnd: true, dndUntil: until.toISOString() } : { dnd: true } });
+}
+
+// untilWords says until when Do not disturb holds, from now: a time
+// today, tomorrow's with the word, or another day's with its name.
+export function untilWords(until, now = Date.now()) {
+    if (until === null) return 'until you turn it off';
+    const end = new Date(until);
+    const time = end.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+    const day = new Date(now);
+    if (end.toDateString() === day.toDateString()) return `until ${time}`;
+    day.setDate(day.getDate() + 1);
+    if (end.toDateString() === day.toDateString()) return `until tomorrow, ${time}`;
+    return `until ${end.toLocaleDateString([], { weekday: 'long' })}, ${time}`;
 }
 
 // whereTheyShow is what the settings say of where the member's

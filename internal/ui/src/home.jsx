@@ -1,6 +1,7 @@
 // The home page, a launcher: the dens this install has joined, each
 // a row that opens it, its Manage dialog or Add device's code,
-// under a header with Add a den and the settings' cog; sign-ins waiting on
+// under a header with Add a den, Do not disturb's moon and the settings'
+// cog; sign-ins waiting on
 // this device above them; adding a den, by scanning another device's
 // code, from its address or from an invite; and setting up the den this
 // install hosts, once hosting is on, while it has no owner.
@@ -24,6 +25,7 @@ import { readSignInCode } from './core/signincode.js';
 import { coarse } from './core/touch.js';
 import { UpdateNotice } from './update.jsx';
 import { SwitcherButton } from './ui/switcher.jsx';
+import { QuietButton } from './ui/quiet.jsx';
 
 const PASSWORD_HINT = "You'll need it to sign in on a new device. The den never sees it, so reusing one across dens is safe.";
 
@@ -160,6 +162,7 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
                     <h2 class="card-title flex-1">Your dens</h2>
                     <Button kind="primary" onClick={onAdd}>Add a den</Button>
                     <SwitcherButton />
+                    <QuietButton class={`${buttonClass('quiet')} btn-square`} />
                     <SettingsCog />
                 </div>
                 {dens.length === 0 ? (
