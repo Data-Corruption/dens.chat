@@ -806,6 +806,10 @@ async function reopenMic() {
 // push to talk still does.
 export const VOICE_DEFAULTS = { mode: 'voice', auto: true, threshold: -50, button: 'toggleMute', releaseDelay: 0 };
 const KEYS = ['ptt', 'toggleMute', 'pushMute', 'toggleDeafen'];
+
+// KEY_NAMES are the actions' names, as the settings and the list of keys
+// show them.
+export const KEY_NAMES = { ptt: 'Push to talk', toggleMute: 'Toggle mute', pushMute: 'Push to mute', toggleDeafen: 'Toggle deafen' };
 // ROLES are what the call's button may do.
 const ROLES = ['ptt', 'toggleMute', 'pushMute'];
 // RELEASE_MOST is the longest release delay, in milliseconds, which goes

@@ -65,6 +65,17 @@ test('links end exactly where the den finds them to rewrite', () => {
     }
 });
 
+test("links to channels show as chips, a spoiler's too, none in code", () => {
+    let cases = 0;
+    for (const c of linkCases.cases) {
+        if (!c.channels) continue;
+        cases++;
+        const chips = nodes(render(c.text)).filter((n) => n.type === MessageLink && !n.props.link.message).map((n) => n.props.link.channel);
+        assert.deepEqual(chips, c.channels, JSON.stringify(c.text));
+    }
+    assert.ok(cases >= 4, `only ${cases} cases of links to channels`);
+});
+
 test("links to events show their events' cards, none in code or a spoiler", () => {
     let cases = 0;
     for (const c of linkCases.cases) {

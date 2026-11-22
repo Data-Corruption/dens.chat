@@ -17,6 +17,7 @@ import {
 import { onEvent } from '../core/events.js';
 import { upload, uploadAnimated } from './files.jsx';
 import { Sheet } from '../ui/sheet.jsx';
+import { HashIcon } from '../ui/icons.jsx';
 
 // COLUMNS is how many emoji a row of the picker holds, and MOST_ROWS how
 // many rows the most used take at most.
@@ -195,10 +196,10 @@ export function Completions({ items, index, tone, onPick, onIndex }) {
         <ul ref={list} role="listbox" aria-label="Completions" data-completions
             class="absolute inset-x-0 bottom-full z-30 mb-1 max-h-72 overflow-y-auto rounded-box border border-base-300 bg-base-100 p-1 shadow-lg">
             {items.map((item, i) => (
-                <HoverRow key={item.everyone ? 'everyone' : item.member ? item.member.id : item.den ? `d${item.den.id}` : item.unicode.emoji} as="li" role="option"
+                <HoverRow key={item.everyone ? 'everyone' : item.member ? item.member.id : item.channel ? `c${item.channel.id}` : item.den ? `d${item.den.id}` : item.unicode.emoji} as="li" role="option"
                     aria-selected={i === index}
                     class={`flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm pointer-coarse:min-h-11 ${i === index ? 'bg-base-200' : ''}`}
-                    data-completion={item.everyone ? '@everyone' : item.member ? `@${item.member.username}` : item.den ? `:${item.den.name}:` : item.unicode.emoji}
+                    data-completion={item.everyone ? '@everyone' : item.member ? `@${item.member.username}` : item.channel ? `#${item.channel.name}` : item.den ? `:${item.den.name}:` : item.unicode.emoji}
                     onPointerDown={(e) => e.preventDefault()} onMouseDown={(e) => e.preventDefault()}
                     onMouseEnter={() => onIndex(i)} onClick={() => onPick(item)}>
                     {item.everyone ? (
@@ -212,6 +213,11 @@ export function Completions({ items, index, tone, onPick, onIndex }) {
                             <Avatar member={item.member} size="sm" />
                             <span class="truncate font-medium">{item.member.display_name}</span>
                             <span class="truncate text-base-content/60">@{item.member.username}</span>
+                        </>
+                    ) : item.channel ? (
+                        <>
+                            <span class="flex h-6 w-6 shrink-0 items-center justify-center text-base-content/50" aria-hidden="true"><HashIcon /></span>
+                            <span class="truncate">{item.channel.name}</span>
                         </>
                     ) : item.den ? (
                         <>

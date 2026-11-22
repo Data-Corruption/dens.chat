@@ -42,6 +42,12 @@ import { CallBar, CallBlock, CallMembers, CallNotice, callState, useCall, useCal
 import { CallPane } from '../voice/callpane.jsx';
 import { setPaneShown } from '../voice/pane.js';
 import { CallLength } from '../voice/calltimer.jsx';
+import { inOrder, listed } from './lists.js';
+import { copyText } from '../core/clipboard.js';
+import { channelLinkTo } from './links.js';
+import { onPageKey } from '../core/keys.js';
+import { showDen } from '../core/switcher.js';
+import { SwitcherButton } from '../ui/switcher.jsx';
 
 const LAST_CHANNEL = 'DENS_LAST_CHANNEL:';
 const MEMBERS_OPEN = 'DENS_MEMBERS_OPEN';
@@ -96,23 +102,10 @@ function closedDMs(view) {
     return new Set(view.read_states.filter((r) => r.closed).map((r) => r.channel_id));
 }
 
-// listed arranges a den's channels, DMs and group DMs aside, as its
-// channel list shows them: those in no group, then each group's, each by
-// position.
-export function listed(view) {
-    const byPosition = (a, b) => a.position - b.position;
-    const channels = view.channels.filter((c) => !isPrivate(c));
-    return {
-        ungrouped: channels.filter((c) => !c.group_id).sort(byPosition),
-        groups: [...view.groups].sort(byPosition).map((group) => ({ group, channels: channels.filter((c) => c.group_id === group.id).sort(byPosition) })),
-    };
-}
-
 // denChannel is the text channel the Den tab opens: the one last
 // open in the den, unless it's gone or out of sight, else the list's first.
 export function denChannel(view, lastID) {
-    const { ungrouped, groups } = listed(view);
-    const text = [...ungrouped, ...groups.flatMap((g) => g.channels)].filter((c) => c.kind === 'text');
+    const text = inOrder(view).filter((c) => c.kind === 'text');
     return text.find((c) => c.id === lastID) || text[0] || null;
 }
 
@@ -417,6 +410,20 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     const row = usePaneRow(at, !!view, (near) => near !== at && toPane(near));
     // The den's emoji, for every text the den's page shows.
     const emoji = useDenEmoji(denID, view?.emoji, view?.emoji_limits);
+    // The switcher lists this den's channels from its view.
+    useEffect(() => showDen(denID, view), [denID, view]);
+    useEffect(() => () => showDen('', null), []);
+    // Alt+↑, Alt+↓ and Esc act on what the page shows, which keyed holds
+    // once the view is in.
+    const keyed = useRef(null);
+    useEffect(() => {
+        const stops = [
+            onPageKey('previous', () => keyed.current?.step(-1)),
+            onPageKey('next', () => keyed.current?.step(1)),
+            onPageKey('escape', () => keyed.current?.readHere()),
+        ];
+        return () => stops.forEach((stop) => stop());
+    }, []);
 
     if (error && !view) return <div class="p-6"><ErrorText message={error} /></div>;
     if (!view) return <div class="p-6"><span class="loading loading-spinner"></span></div>;
@@ -439,6 +446,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     const typers = channel
         ? [...(typing.get(channel.id)?.keys() || [])].filter((id) => id !== view.me.id).map((id) => members.get(id)).filter(Boolean)
         : [];
+    // Whether anything in the den waits, for Mark all as read.
+    const waiting = view.channels.some((c) => hasMessages(c) && unread(reads.get(c.id)));
     // What waits elsewhere, for the channels button on the phone layout.
     const elsewhere = { mentions: 0, unread: false };
     for (const c of view.channels) {
@@ -451,6 +460,27 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     function openChannel(id) {
         nav().den(denID, id, 'chan');
     }
+
+    // step opens the channel or DM before or after the one shown, in the
+    // list shown, passing voice channels; the den's events and a call's
+    // pane step from the top or the end.
+    function step(by) {
+        const notesRow = view.has_notes ? ownNotes(view) : null;
+        const rows = tab === 'dms' ? [...(notesRow ? [notesRow] : []), ...recentDMs(view, reads, channel?.id)] : inOrder(view);
+        let at = rows.findIndex((c) => c.id === (channel?.id || callChannel?.id));
+        if (at < 0) at = by > 0 ? -1 : rows.length;
+        for (let i = at + by; i >= 0 && i < rows.length; i += by) {
+            if (hasMessages(rows[i])) return openChannel(rows[i].id);
+        }
+    }
+
+    // readHere marks the channel shown read and goes to its newest message.
+    function readHere() {
+        if (!channel) return;
+        if (unread(reads.get(channel.id))) markRead(denID, channel, reads.get(channel.id)).catch(() => {});
+        openAt(denID, channel.id, '');
+    }
+    keyed.current = { step, readHere };
 
     // showInList shows a channel behind the phone layout's list, which
     // keeps its own address, as the list would have it in a wider window.
@@ -597,10 +627,13 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     <Marks mentions={away.mentions} unread={away.unread} />
                                 </a>
                                 {/* The den's name opens its menu, as a server's name
-                                    does elsewhere: Manage, and for staff a new channel
-                                    or group, which touch screens and keyboards reach
-                                    here, having no right click. */}
-                                <MenuButton label={`${view.name}'s menu`} title={view.name} align="left" box="min-w-0 flex-1" items={denMenu(staff && !gone).map((i) => ({ ...i, run: {
+                                    does elsewhere: Mark all as read, Manage, and for
+                                    staff a new channel or group, which touch screens
+                                    and keyboards reach here, having no right click. */}
+                                <MenuButton label={`${view.name}'s menu`} title={view.name} align="left" box="min-w-0 flex-1" items={denMenu({
+                                    staff: staff && !gone, readAll: !!view.read_all && !gone, unread: waiting,
+                                }).map((i) => ({ ...i, run: {
+                                    read: () => api.post(`/api/dens/${denID}/read`).catch(() => {}),
                                     manage: () => openManage(denID),
                                     channel: () => setDialog({ kind: 'channel' }),
                                     group: () => setDialog({ kind: 'group' }),
@@ -609,6 +642,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     title: 'Den menu', 'data-den-menu': true,
                                     children: <><span class="truncate">{view.name}</span><OpenIcon down size="h-4 w-4" /></>,
                                 }} />
+                                <SwitcherButton class="-my-1" />
                                 {bells && (
                                     <button type="button" class="btn btn-ghost btn-xs btn-square relative -my-1 touch-room" aria-pressed={muted.den}
                                         aria-label={muted.den ? `Unmute ${view.name}` : `Mute ${view.name}`}
@@ -630,7 +664,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                 : (staff && !gone && { label: 'New channel or group', items: NEW_IN_DEN.map((i) => ({ ...i, run: () => setDialog({ kind: i.key }) })) })} />
                         {tab === 'dms' ? (
                             <>
-                                <DMList dms={recentDMs(view, reads, channel?.id)} reads={reads} open={channel?.id} partner={partner} online={online}
+                                <DMList denID={denID} denURL={view.url} gone={gone} dms={recentDMs(view, reads, channel?.id)} reads={reads} open={channel?.id} partner={partner} online={online}
                                     identities={view.identities || {}} muted={bells ? muted.channels : null} title={title} onOpen={openChannel} onClose={closeDM}
                                     notes={view.has_notes && (ownNotes(view) || !gone) ? { open: notes } : null} onNotes={openNotes} />
                             </>
@@ -712,6 +746,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     retention={view.retention}
                                     offline={showsOffline(live, view.state)}
                                     spoilers={!!view.spoilers}
+                                    channels={inOrder(view).filter((c) => c.kind === 'text')}
                                     onProfile={openProfile}
                                     onTyping={notes ? () => {} : () => sendTyping(denID, channel.id)}
                                 />
@@ -863,10 +898,15 @@ function ListTabs({ tab, onTab, view, reads, open, add }) {
     );
 }
 
-/** denMenu lists what the den's name opens: Manage, and for staff a new
+/** denMenu lists what the den's name opens: Mark all as read, where the
+    den does it, disabled with nothing unread; Manage; and for staff a new
     channel or group */
-export function denMenu(staff) {
-    return [{ key: 'manage', label: 'Manage', icon: 'settings' }, ...(staff ? NEW_IN_DEN : [])];
+export function denMenu({ staff = false, readAll = false, unread: waiting = false } = {}) {
+    return [
+        ...(readAll ? [{ key: 'read', label: 'Mark all as read', icon: 'read', disabled: !waiting }] : []),
+        { key: 'manage', label: 'Manage', icon: 'settings' },
+        ...(staff ? NEW_IN_DEN : []),
+    ];
 }
 
 // NEW_IN_DEN is what makes a channel or a group: the Den tab's + and the
@@ -877,17 +917,104 @@ export const NEW_IN_DEN = [
     { key: 'group', label: 'New group', icon: 'group' },
 ];
 
-/** channelMenu lists what staff's menu of a channel holds: its settings,
-    then Move up and Move down, the drag's for touch screens and keyboards,
-    each disabled at its end */
-export function channelMenu(view, channel) {
+/** channelMenu lists what a channel's menu holds: for a text channel
+    Mark as read, where read says the member may, disabled with nothing
+    unread, and Copy link; then for staff its settings, and Move up and
+    Move down, the drag's for touch screens and keyboards, each disabled at
+    its end */
+export function channelMenu(view, channel, { staff = false, read = true, unread: waiting = false } = {}) {
+    const text = channel.kind === 'text';
+    const out = [
+        ...(text && read ? [{ key: 'read', label: 'Mark as read', icon: 'read', disabled: !waiting }] : []),
+        ...(text ? [{ key: 'link', label: 'Copy link', icon: 'link' }] : []),
+    ];
+    if (!staff) return out;
     const moves = channelMoves(view, channel.id);
     return [
+        ...out,
         { key: 'edit', label: 'Edit channel', icon: 'edit' },
         { key: 'up', label: 'Move up', icon: 'up', disabled: !moves.up, body: moves.up },
         { key: 'down', label: 'Move down', icon: 'down', disabled: !moves.down, body: moves.down },
     ];
 }
+
+/** dmMenu lists what a DM's or a group's menu holds: Mark as read,
+    disabled with nothing unread, and Copy link, which only its members
+    can open */
+export function dmMenu({ read = true, unread: waiting = false } = {}) {
+    return [
+        ...(read ? [{ key: 'read', label: 'Mark as read', icon: 'read', disabled: !waiting }] : []),
+        { key: 'link', label: 'Copy link', icon: 'link' },
+    ];
+}
+
+// markRead marks a channel read to its newest message, as its read state
+// r names it: the den changes nothing for it.
+export function markRead(denID, c, r) {
+    if (!r?.last_message_id) return Promise.resolve();
+    return api.put(`/api/dens/${denID}/channels/${c.id}/read`, { message_id: r.last_message_id });
+}
+
+// useRowMenu gives a list's rows their menus. Each opens from a ⋯ beside
+// its row, which shows on hover or focus, and stays while its menu is
+// open; it shows once its row has the focus, since Tab passes over what's
+// hidden. With a mouse a right click opens it at the pointer. A touch
+// screen has no ⋯ there: a long press on the row opens its menu, as one on
+// a message opens its actions. menu is the menu open: its row's key,
+// where it opened, and what takes the focus back.
+function useRowMenu() {
+    const touch = useCoarse();
+    const [menu, setMenu] = useState(null);
+    const pressed = useRef(null);
+    const press = useRef(null);
+    press.current ||= createPress({ onLong: (e) => pressed.current && setMenu({ key: pressed.current, at: { x: e.clientX, y: e.clientY } }) });
+    // The click a long press may be followed by goes nowhere: not to the
+    // row, nor to the menu it opened under the finger, which isn't the
+    // row's, and whose backdrop would take it for a tap outside.
+    useEffect(() => {
+        const swallow = (e) => {
+            if (!press.current.click()) return;
+            e.preventDefault();
+            e.stopPropagation();
+        };
+        document.addEventListener('click', swallow, true);
+        return () => {
+            document.removeEventListener('click', swallow, true);
+            press.current.cancel();
+        };
+    }, []);
+    // presses has a row's long press open its menu, key, in place of the
+    // browser's own selection and menu, and a mouse's right click open it
+    // at the pointer.
+    const presses = (key) => (touch ? {
+        onPointerDown: (e) => {
+            pressed.current = key;
+            press.current.down(e);
+        },
+        onPointerMove: (e) => press.current.move(e),
+        onPointerUp: () => press.current.up(),
+        onPointerCancel: () => press.current.cancel(),
+        onContextMenu: (e) => e.preventDefault(),
+    } : {
+        onContextMenu: (e) => {
+            const row = e.currentTarget;
+            if (!ownsMenu(e.target, getSelection(), row)) return;
+            e.preventDefault();
+            setMenu({ key, at: rightClick(e, row) || underOf(row), back: row.querySelector('button') });
+        },
+    });
+    // dots is the ⋯ that opens a row's menu, key, under it.
+    const dots = (key, label, title, extra = '') => (
+        <button type="button" class={`${DOTS} ${menu?.key === key ? 'visible' : 'invisible'} ${extra}`} title={title} aria-label={label}
+            aria-haspopup="menu" aria-expanded={menu?.key === key}
+            onClick={(e) => setMenu(menu?.key === key ? null : { key, at: underOf(e.currentTarget), back: e.currentTarget })}>
+            ⋯
+        </button>
+    );
+    return { menu, setMenu, presses, dots, touch };
+}
+
+const DOTS = 'btn btn-ghost btn-xs btn-square group-hover:visible group-focus-within:visible pointer-coarse:hidden touch-room';
 
 /** groupMenu lists what staff's menu of a group holds: a new channel in
     it, its settings, and Move up and Move down */
@@ -1096,64 +1223,12 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
     }
     const { call, speaking, sounding, volumes, watched, share } = useCall();
     const watching = new Set(watched.map((w) => w.member));
-    // Staff reach each channel's and group's menu from a ⋯ beside it,
-    // which shows on hover or focus, and stays while its menu is
-    // open. It shows once its row has the focus, since Tab passes over
-    // what's hidden. With a mouse a right click opens the menu at
-    // the pointer, as one on the list's empty space opens a new channel or
-    // group. A touch screen has no ⋯ there: a long press on the row opens
-    // its menu, as one on a message opens its actions.
-    const settings = 'btn btn-ghost btn-xs btn-square group-hover:visible group-focus-within:visible pointer-coarse:hidden touch-room';
-    const touch = useCoarse();
-    // menu is the menu open: its row's key, channel:ID, group:ID or list,
-    // where it opened, and what takes the focus back.
-    const [menu, setMenu] = useState(null);
-    const pressed = useRef(null);
-    const press = useRef(null);
-    press.current ||= createPress({ onLong: (e) => pressed.current && setMenu({ key: pressed.current, at: { x: e.clientX, y: e.clientY } }) });
-    // The click a long press may be followed by goes nowhere: not to the
-    // row, nor to the settings it opened under the finger, which aren't
-    // the row's, and whose backdrop would take it for a tap outside.
-    useEffect(() => {
-        const swallow = (e) => {
-            if (!press.current.click()) return;
-            e.preventDefault();
-            e.stopPropagation();
-        };
-        document.addEventListener('click', swallow, true);
-        return () => {
-            document.removeEventListener('click', swallow, true);
-            press.current.cancel();
-        };
-    }, []);
-    // presses has a row's long press open its menu, key, in place of the
-    // browser's own selection and menu, and a mouse's right
-    // click opens it at the pointer.
-    const presses = (key) => (touch && staff && !gone ? {
-        onPointerDown: (e) => {
-            pressed.current = key;
-            press.current.down(e);
-        },
-        onPointerMove: (e) => press.current.move(e),
-        onPointerUp: () => press.current.up(),
-        onPointerCancel: () => press.current.cancel(),
-        onContextMenu: (e) => e.preventDefault(),
-    } : !touch && staff && !gone ? {
-        onContextMenu: (e) => {
-            const row = e.currentTarget;
-            if (!ownsMenu(e.target, getSelection(), row)) return;
-            e.preventDefault();
-            setMenu({ key, at: rightClick(e, row) || underOf(row), back: row.querySelector('button') });
-        },
-    } : {});
-    // dots is the ⋯ that opens a row's menu, key, under it.
-    const dots = (key, label, title, extra = '') => (
-        <button type="button" class={`${settings} ${menu?.key === key ? 'visible' : 'invisible'} ${extra}`} title={title} aria-label={label}
-            aria-haspopup="menu" aria-expanded={menu?.key === key}
-            onClick={(e) => setMenu(menu?.key === key ? null : { key, at: underOf(e.currentTarget), back: e.currentTarget })}>
-            ⋯
-        </button>
-    );
+    // menu is the menu open: its row's key, channel:ID, group:ID or list.
+    // A text channel's opens for every member, a voice channel's and a
+    // group's for staff alone, as does one on the list's empty space.
+    const { menu, setMenu, presses, dots, touch } = useRowMenu();
+    const managed = staff && !gone;
+    const [dragError, setDragError] = useState('');
     const patch = (path, body) => api.patch(`/api/dens/${denID}/${path}`, body).catch((err) => setDragError(err.message));
     // opened is the menu open, its items run.
     function opened() {
@@ -1165,9 +1240,15 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         if (kind === 'channel') {
             const c = view.channels.find((x) => x.id === id);
             if (!c) return null;
+            const run = {
+                read: () => markRead(denID, c, reads.get(c.id)).catch((err) => setDragError(err.message)),
+                link: () => copyText(channelLinkTo(view.url, denID, c.id)).catch((err) => setDragError(err.message)),
+                edit: () => onDialog({ kind: 'channel', channel: c }),
+            };
             return {
                 label: `Options for ${c.name}`, title: c.kind === 'voice' ? c.name : `#${c.name}`,
-                items: channelMenu(view, c).map((i) => ({ ...i, run: i.key === 'edit' ? () => onDialog({ kind: 'channel', channel: c }) : () => patch(`channels/${c.id}`, i.body) })),
+                items: channelMenu(view, c, { staff: managed, read: !gone, unread: unread(reads.get(c.id)) })
+                    .map((i) => ({ ...i, run: run[i.key] || (() => patch(`channels/${c.id}`, i.body)) })),
             };
         }
         const g = view.groups.find((x) => x.id === id);
@@ -1184,7 +1265,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
     const shown = opened();
     // A right click on the list's empty space, past its rows, opens a new
     // channel or group there.
-    const listMenu = !touch && staff && !gone ? {
+    const listMenu = !touch && managed ? {
         onContextMenu: (e) => {
             if (e.defaultPrevented || e.target.closest('[data-channel-row], [data-group-row], [data-call-member], [data-events-row], a, button, input')) return;
             e.preventDefault();
@@ -1196,12 +1277,11 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
     // keyboards keep the settings' Move up and Move down, and Move to in
     // the member's menu. held is what this list's drag carries, which only
     // a drag it started does, and drop where it would land.
-    const drags = staff && !gone && !touch;
-    const moves = staff && !gone && !!view.move_members;
+    const drags = managed && !touch;
+    const moves = managed && !!view.move_members;
     const held = useRef(null);
     const [drop, setDrop] = useState(null);
     const [dragging, setDragging] = useState('');
-    const [dragError, setDragError] = useState('');
     function lift(e, type, what, id, from = '') {
         e.dataTransfer.setData(type, id);
         e.dataTransfer.effectAllowed = 'move';
@@ -1309,15 +1389,15 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
         // green once connected, and yellow until then.
         const state = inCall ? callState(call.status) : '';
         const label = { den: view.name, channel: c.name };
-        const managed = staff && !gone;
+        const hasMenu = c.kind === 'text' || managed;
         const isMuted = !!muted?.has(c.id);
         const mentions = c.id !== open ? r?.mention_count || 0 : 0;
         return (
             <li key={c.id}>
                 {/* The row's button reaches across it, under its marks, whose
                     tips say on a tap what they mean. */}
-                <div class={`${ROW} ${managed ? 'pr-8 pointer-coarse:pr-1' : ''} ${rowShade(c.id === open || inCall)} ${dropMark(c.id)}`}
-                    data-channel-row={c.id} {...presses(`channel:${c.id}`)} {...rowDrag(c)}>
+                <div class={`${ROW} ${hasMenu ? 'pr-8 pointer-coarse:pr-1' : ''} ${rowShade(c.id === open || inCall)} ${dropMark(c.id)}`}
+                    data-channel-row={c.id} {...(hasMenu ? presses(`channel:${c.id}`) : {})} {...rowDrag(c)}>
                     <button
                         type="button"
                         class={ROW_BUTTON}
@@ -1337,7 +1417,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
                     {/* The call's length, to everyone who sees the channel. */}
                     {voice && <CallLength call={calls.get(c.id)} />}
-                    {managed && dots(`channel:${c.id}`, `Options for ${c.name}`, 'Channel options', 'absolute right-1 top-1/2 -translate-y-1/2')}
+                    {hasMenu && dots(`channel:${c.id}`, `Options for ${c.name}`, 'Channel options', 'absolute right-1 top-1/2 -translate-y-1/2')}
                 </div>
                 {voice && (
                     <CallMembers denID={denID} call={calls.get(c.id)} members={members} me={view.me} speaking={inCall ? speaking : null}
@@ -1369,7 +1449,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                 return (
                     <div key={g.id}>
                         <div class={`group flex min-h-6 select-none items-center justify-between gap-1 rounded px-2 text-xs font-semibold uppercase text-base-content/60 pointer-coarse:min-h-11 ${dropMark(`group-${g.id}`)}`}
-                            data-group-row={g.id} {...presses(`group:${g.id}`)} {...headDrag(g)}>
+                            data-group-row={g.id} {...(managed ? presses(`group:${g.id}`) : {})} {...headDrag(g)}>
                             <button type="button" class="flex min-w-0 flex-1 cursor-pointer items-center gap-1 self-stretch text-left uppercase hover:text-base-content"
                                 aria-expanded={!isFolded} onClick={() => fold(g.id)}>
                                 <ChevronIcon folded={isFolded} />
@@ -1377,7 +1457,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
                                 {marks?.mentions > 0 && <span class="badge badge-error badge-xs font-normal normal-case">{marks.mentions}</span>}
                                 {marks?.unread && !marks.mentions && <span class="h-2 w-2 shrink-0 rounded-full bg-base-content" aria-label="unread"></span>}
                             </button>
-                            {staff && !gone && dots(`group:${g.id}`, `Options for the group ${g.name}`, 'Group options', 'relative font-normal normal-case')}
+                            {managed && dots(`group:${g.id}`, `Options for the group ${g.name}`, 'Group options', 'relative font-normal normal-case')}
                         </div>
                         <ul class="flex flex-col">{shown.map(item)}</ul>
                     </div>
@@ -1397,8 +1477,20 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, on
 // notification is on.
 // notes, while the den has notes for this Dens, puts the member's at the
 // list's top, open while they show, which onNotes opens.
-function DMList({ dms, notes, reads, open, partner, online, identities, muted, title, onOpen, onClose, onNotes }) {
+// Each DM's and group's row has a menu, as a text channel's does.
+function DMList({ denID, denURL, gone, dms, notes, reads, open, partner, online, identities, muted, title, onOpen, onClose, onNotes }) {
+    const rowMenu = useRowMenu();
+    const { menu, setMenu, presses, dots } = rowMenu;
+    const [error, setError] = useState('');
     const notesRow = notes && <NotesRow open={notes.open} onOpen={onNotes} />;
+    const menuOf = menu && dms.find((c) => c.id === menu.key);
+    const shown = menuOf && {
+        label: `Options for ${menuOf.kind === 'group_dm' ? title(menuOf) : partner(menuOf)?.display_name || 'this DM'}`,
+        items: dmMenu({ read: !gone, unread: unread(reads.get(menuOf.id)) }).map((i) => ({ ...i, run: {
+            read: () => markRead(denID, menuOf, reads.get(menuOf.id)).catch((err) => setError(err.message)),
+            link: () => copyText(channelLinkTo(denURL, denID, menuOf.id)).catch((err) => setError(err.message)),
+        }[i.key] })),
+    };
     if (dms.length === 0) {
         return (
             <>
@@ -1419,7 +1511,7 @@ function DMList({ dms, notes, reads, open, partner, online, identities, muted, t
                 {notesRow}
                 {dms.map((c) => {
                     if (c.kind === 'group_dm') {
-                        return <GroupRow key={c.id} c={c} r={reads.get(c.id)} open={open} title={title(c)} muted={muted} onOpen={onOpen} onClose={onClose} />;
+                        return <GroupRow key={c.id} c={c} r={reads.get(c.id)} open={open} title={title(c)} muted={muted} onOpen={onOpen} onClose={onClose} menu={rowMenu} />;
                     }
                     const other = partner(c);
                     const r = reads.get(c.id);
@@ -1429,7 +1521,8 @@ function DMList({ dms, notes, reads, open, partner, online, identities, muted, t
                     const mentions = c.id !== open ? r?.mention_count || 0 : 0;
                     const who = other ? other.display_name : 'Unknown member';
                     return (
-                        <HoverRow as="li" key={c.id} class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-8 pointer-coarse:min-h-11 ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'}`}>
+                        <HoverRow as="li" key={c.id} class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-14 pointer-coarse:min-h-11 pointer-coarse:pr-8 ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
+                            data-dm-row={c.id} {...presses(c.id)}>
                             <button
                                 type="button"
                                 class={`flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded ${other?.left_at ? 'opacity-60' : ''}`}
@@ -1443,6 +1536,7 @@ function DMList({ dms, notes, reads, open, partner, online, identities, muted, t
                             {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                             {verified && <VerifiedMark id={`verified-${c.id}`} name={who} />}
                             {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
+                            {dots(c.id, `Options for ${who}`, 'DM options', 'absolute right-7 top-1/2 -translate-y-1/2')}
                             {/* Touch screens have no hover, so there the X always shows. */}
                             <button
                                 type="button"
@@ -1457,19 +1551,21 @@ function DMList({ dms, notes, reads, open, partner, online, identities, muted, t
                     );
                 })}
             </ul>
+            {error && <StatusText kind="error" role="alert" class="px-2">{error}</StatusText>}
+            {shown && <RowMenu at={menu.at} label={shown.label} items={shown.items} back={menu.back} onClose={() => setMenu(null)} />}
         </nav>
     );
 }
 
 // GroupRow is a group DM in the DM list: its name, or its other
-// members', and what waits in it.
-function GroupRow({ c, r, open, title, muted, onOpen, onClose }) {
+// members', and what waits in it; menu is the list's row menus.
+function GroupRow({ c, r, open, title, muted, onOpen, onClose, menu }) {
     const isUnread = unread(r) && c.id !== open;
     const isMuted = !!muted?.has(c.id);
     const mentions = c.id !== open ? r?.mention_count || 0 : 0;
     return (
-        <HoverRow as="li" class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-8 pointer-coarse:min-h-11 ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
-            data-group-row={c.id}>
+        <HoverRow as="li" class={`group relative flex min-h-8 items-center gap-0.5 rounded pr-14 pointer-coarse:min-h-11 pointer-coarse:pr-8 ${c.id === open ? 'bg-base-300' : 'hover:bg-base-300/60'}`}
+            data-group-row={c.id} {...menu.presses(c.id)}>
             <button type="button" class="flex min-w-0 flex-1 items-center gap-2 self-stretch rounded px-2 text-left after:absolute after:inset-0 after:rounded"
                 onClick={() => onOpen(c.id)} aria-label={rowLabel(title, 'group', isMuted && 'muted', mentions && `${mentions} unread`)}>
                 <GroupIcon size="h-6 w-6" />
@@ -1478,6 +1574,7 @@ function GroupRow({ c, r, open, title, muted, onOpen, onClose }) {
             {isUnread && <UnreadPill />}
             {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
             {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
+            {menu.dots(c.id, `Options for ${title}`, 'Group options', 'absolute right-7 top-1/2 -translate-y-1/2')}
             <button type="button"
                 class="btn btn-ghost btn-xs btn-square absolute right-1 top-1/2 -translate-y-1/2 touch-room md:pointer-fine:invisible md:pointer-fine:group-hover:visible md:pointer-fine:focus:visible"
                 aria-label={`Close ${title}`} title="Close" onClick={() => onClose(c)}>

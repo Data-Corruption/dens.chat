@@ -23,6 +23,7 @@ import { QRCode, Scanner, useCamera } from './ui/scan.jsx';
 import { readSignInCode } from './core/signincode.js';
 import { coarse } from './core/touch.js';
 import { UpdateNotice } from './update.jsx';
+import { SwitcherButton } from './ui/switcher.jsx';
 
 const PASSWORD_HINT = "You'll need it to sign in on a new device. The den never sees it, so reusing one across dens is safe.";
 
@@ -158,6 +159,7 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
                 <div class="flex items-center gap-2">
                     <h2 class="card-title flex-1">Your dens</h2>
                     <Button kind="primary" onClick={onAdd}>Add a den</Button>
+                    <SwitcherButton />
                     <SettingsCog />
                 </div>
                 {dens.length === 0 ? (

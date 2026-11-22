@@ -377,10 +377,11 @@ export function quickRow(denID, denEmoji, now = Date.now(), l = list, on = true)
 
 /** completionAt says what the member is completing with the caret at
     caret in text: an emoji, after a colon and two characters, where one
-    may start, or with members, a member, after an @ where a mention may
-    start. Nothing completes in code or in a link. It returns its kind,
-    where its colon or @ is, and what follows it, or null. */
-export function completionAt(text, caret, members) {
+    may start; with members, a member, after an @ where a mention may
+    start; or with channels, a channel, after a # and a character there.
+    Nothing completes in code or in a link. It returns its kind, where its
+    colon, @ or # is, and what follows it, or null. */
+export function completionAt(text, caret, members, channels = null) {
     let i = caret;
     while (i > 0 && caret - i <= 32 && NAME_CHAR.test(text[i - 1])) i--;
     const at = i - 1;
@@ -391,6 +392,7 @@ export function completionAt(text, caret, members) {
     let kind = null;
     if (mark === ':' && !NAME_CHAR.test(before) && query.length >= 2) kind = 'emoji';
     else if (mark === '@' && members && !NAME_CHAR.test(before) && before !== '@') kind = 'member';
+    else if (mark === '#' && channels && !NAME_CHAR.test(before) && before !== '#' && query.length >= 1) kind = 'channel';
     if (!kind || fenced(text, caret)) return null;
     const lineStart = text.lastIndexOf('\n', at) + 1;
     const line = text.slice(lineStart, at);
@@ -427,6 +429,28 @@ export function completeMember(query, members) {
         .sort((a, b) => a.r - b.r || a.m.username.localeCompare(b.m.username))
         .slice(0, MAX_COMPLETIONS)
         .map((x) => x.m);
+}
+
+/** nameRank ranks a name for what the member typed, q, in lowercase: 0
+    where the name starts with it, 1 where a word in it does, and -1 where
+    neither */
+export function nameRank(name, q) {
+    const n = name.toLowerCase();
+    if (n.startsWith(q)) return 0;
+    return n.split(/[^\p{L}\p{N}]+/u).some((w) => w.startsWith(q)) ? 1 : -1;
+}
+
+/** completeChannel lists the channels a # offers, as { channel }: those
+    whose name starts with query, then those with a word that does, each in
+    the order given */
+export function completeChannel(query, channels) {
+    const q = query.toLowerCase();
+    return channels
+        .map((c, i) => ({ c, i, r: nameRank(c.name, q) }))
+        .filter((x) => x.r >= 0)
+        .sort((a, b) => a.r - b.r || a.i - b.i)
+        .slice(0, MAX_COMPLETIONS)
+        .map((x) => ({ channel: x.c }));
 }
 
 /** completeMention lists what completing a mention offers: @everyone

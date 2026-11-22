@@ -1,9 +1,10 @@
-// Links to messages. In a message, a link to one shows as a chip
-// naming where it points, and a click opens the den and the channel at
-// the message, as a reply's quote jumps to its original. When it can't,
-// the chip says why: the member hasn't joined that den; the channel is
-// gone or out of their sight, which look alike, so a staff-only channel
-// stays hidden; or the message is gone.
+// Links to messages and to channels. In a message, a link to one shows as
+// a chip naming where it points, and a click opens the den and the channel,
+// at the message, as a reply's quote jumps to its original, or at its
+// newest. When it can't, the chip says why: the member hasn't joined that
+// den; the channel is gone or out of their sight, which look alike, so a
+// staff-only channel stays hidden; or the message is gone. A voice
+// channel's link reads as one out of sight, so a click never joins a call.
 
 import { createContext } from 'preact';
 import { useContext, useEffect, useRef, useState } from 'preact/hooks';
@@ -117,15 +118,19 @@ function partner(view, channel) {
     return view.members.find((m) => m.id === id);
 }
 
-// follow opens the message a link points to, and returns '' once it has,
-// or why it can't. Another den's state is fetched afresh, as its channels
-// may have changed since its chip was named.
+// follow opens the message or channel a link points to, and returns ''
+// once it has, or why it can't. Another den's state is fetched afresh, as
+// its channels may have changed since its chip was named.
 export async function follow(link, links) {
     const den = denOf(link, links);
     if (!den) return notJoined(link);
     const view = den.den_id === links.denID ? links.view : await api.get(`/api/dens/${den.den_id}/state`);
     const { channel } = place(link, { ...links, view, denID: den.den_id });
     if (!channel) return CHANNEL_GONE;
+    if (!link.message) {
+        links.open(den.den_id, channel.id, '');
+        return '';
+    }
     try {
         const page = await api.get(`/api/dens/${den.den_id}/channels/${channel.id}/messages?around=${link.message}&limit=1`);
         // A page around a message that's gone starts at the one after it.
@@ -139,8 +144,8 @@ export async function follow(link, links) {
     return '';
 }
 
-// MessageLink is a link to a message, as a chip naming where it points,
-// with the address on hover. Outside a den's page, as in the guide to
+// MessageLink is a link to a message or a channel, as a chip naming where
+// it points, with the address on hover. Outside a den's page, as in the guide to
 // writing, it's an ordinary link. Opening it in a new tab, as with Ctrl,
 // opens the den's address in the browser, which says what it is.
 export function MessageLink({ url, link }) {
@@ -187,9 +192,11 @@ export function MessageLink({ url, link }) {
             <a href={url} title={url} aria-busy={busy} onClick={click}
                 class={`inline-flex max-w-full items-center gap-1 rounded bg-primary/15 px-1 align-bottom font-medium text-primary hover:bg-primary/25 ${busy ? 'cursor-wait opacity-70' : ''}`}>
                 <span class="truncate">{chipLabel(link, at, links.denID)}</span>
-                <svg class="h-3.5 w-3.5 shrink-0" {...ICON}>
-                    <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 13.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
-                </svg>
+                {link.message && (
+                    <svg class="h-3.5 w-3.5 shrink-0" {...ICON}>
+                        <path d="M3 3h10a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H7.5L4.5 13.5V11H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z" />
+                    </svg>
+                )}
             </a>
             {refusal ? <StatusText kind="error" inline role="status" class="ml-1 align-bottom">{refusal}</StatusText> : null}
         </>
