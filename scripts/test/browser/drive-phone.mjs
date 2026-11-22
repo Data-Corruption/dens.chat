@@ -10,8 +10,9 @@
 // swipes between the panes, by touch drags or a touchpad's sideways
 // scroll, taps, and the browser's Back, through the settings, the
 // members, the channel, the list and Home, the switcher from the
-// magnifier atop the list, and a member's long press on a channel's row
-// for its menu; and touch: a message's
+// magnifier atop the list, a member's long press on a channel's row for
+// its menu, its levels set from it, and Do not disturb from the moon in
+// the member's panel, and off from Home's; and touch: a message's
 // actions by a long press, or the ⋯ with a mouse, in a sheet closed by a
 // swipe down and by Back, three lines written and sent, by the send button
 // with a finger, and a tip opened and closed by taps; and pages:
@@ -65,8 +66,8 @@ import fs from 'node:fs';
 import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, token } from './browsers.mjs';
 import {
-    audits, callScreens, compact, emojiPicking, eventing, gettingAround, helpers, memberScreens, noting, ownerScreens, pages, polling, quickReacting, staffPress,
-    switching, touching, waitFor,
+    audits, callScreens, compact, emojiPicking, eventing, gettingAround, helpers, memberScreens, noting, ownerScreens, pages, polling, quickReacting, quieting,
+    staffPress, switching, touching, waitFor,
 } from './screens.mjs';
 
 const args = process.argv.slice(2);
@@ -299,6 +300,7 @@ for (const mode of modes.length ? modes : ['chromium', 'firefox', 'firefox-mouse
             if (want('around')) {
                 await gettingAround(h, ctx, driver(mode, b, h), report).catch(fail);
                 await switching(h, ctx, driver(mode, b, h), report).catch(fail);
+                await quieting(h, ctx, driver(mode, b, h), report).catch(fail);
             }
             if (want('touch')) await touching(h, ctx, driver(mode, b, h), report).catch(fail);
             if (want('pages')) await pages(h, ctx, driver(mode, b, h), report).catch(fail);
