@@ -155,3 +155,24 @@ test('a microphone with two channels goes as their mix, in one', () => {
     // Half the left channel's level, a frame behind: the mix, not the left alone.
     assert.ok(Math.abs(out[48000 - 1] - left[48000 - 1 - 480] / 2) < 1e-6);
 });
+
+test('blocks with no channels go as silence', () => {
+    // Firefox gives a disabled track's blocks so: the gate closes after its
+    // hold, and the meter still hears a level.
+    const p = new globalThis.registered.voice({ processorOptions: { gate: { mode: 'level', threshold: -40 } } });
+    const reports = [];
+    p.port.postMessage = (m) => reports.push(m);
+    const loud = tone(1, 0.3);
+    for (let at = 0; at + 128 <= loud.length; at += 128) p.process([[loud.subarray(at, at + 128)]], [[new Float32Array(128)]]);
+    const before = reports.length;
+    const out = new Float32Array(48000);
+    for (let at = 0; at + 128 <= out.length; at += 128) {
+        const block = new Float32Array(128);
+        p.process([[]], [[block]]);
+        out.set(block, at);
+    }
+    assert.ok(reports.length - before >= 9, `${reports.length - before} reports in a second of no channels`);
+    assert.equal(reports.at(-1).level, -120);
+    assert.equal(reports.at(-1).open, false);
+    assert.equal(rms(out, 9600), 0);
+});

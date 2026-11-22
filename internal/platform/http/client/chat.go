@@ -19,6 +19,7 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Get("/api/dens/{den}/channels/{channel}/messages", rt.handleHistory)
 	r.Post("/api/dens/{den}/channels/{channel}/messages", rt.handleSend)
 	r.Put("/api/dens/{den}/channels/{channel}/read", rt.handleMarkRead)
+	r.Post("/api/dens/{den}/read", rt.handleMarkAllRead)
 	r.Patch("/api/dens/{den}/messages/{message}", rt.handleEdit)
 	r.Post("/api/dens/{den}/messages/{message}/tasks/{n}", rt.handleTask)
 	r.Delete("/api/dens/{den}/messages/{message}", rt.handleDeleteMessage)
@@ -192,6 +193,14 @@ func (rt *router) handleMarkRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := rt.a.Dens.MarkRead(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "channel"), req.MessageID); err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]bool{"ok": true})
+}
+
+func (rt *router) handleMarkAllRead(w http.ResponseWriter, r *http.Request) {
+	if err := rt.a.Dens.MarkAllRead(r.Context(), chi.URLParam(r, "den")); err != nil {
 		rt.denError(w, r, err)
 		return
 	}

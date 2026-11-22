@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { DenEmoji } from '../src/chat/denemoji.jsx';
 import {
-    HALF_LIFE, KEEP, MAX_BIG, QUICK, TONES, cleanName, completeEmoji, completeMember, completeMention, completionAt, denKey, emojiAlone, emojiIn, emojiList,
+    HALF_LIFE, KEEP, MAX_BIG, QUICK, TONES, cleanName, completeChannel, completeEmoji, completeMember, completeMention, completionAt, denKey, emojiAlone, emojiIn, emojiList,
     inTone, mostUsed, nameAt, nameFromFile, noteSent, noteUses, quickRow, scoreOf, searchDen, searchUnicode, setEmojiList, setSkinTone,
     skinTone, unicodeKey, validName,
 } from '../src/chat/emoji.js';
@@ -241,6 +241,22 @@ test('a colon and two characters complete an emoji where one may start, and an @
     assert.deepEqual(completeMember('b', members).map((m) => m.username), ['bob', 'carol'], 'by username, then a word of the display name');
     assert.deepEqual(completeMember('', members).map((m) => m.username), ['bob', 'carol']);
     assert.deepEqual(completeMember('tab', members).map((m) => m.username), ['bob']);
+});
+
+test('a # and a character complete a text channel where a mention may start, by a name or a word in it', () => {
+    const channels = [{ id: '1', name: 'general' }, { id: '2', name: 'Game night' }, { id: '3', name: 'off-topic' }, { id: '4', name: 'gallery' }];
+    const at = (text) => completionAt(text, text.length, null, channels);
+    assert.deepEqual(at('#g'), { kind: 'channel', start: 0, query: 'g' });
+    assert.deepEqual(at('see #top'), { kind: 'channel', start: 4, query: 'top' });
+    for (const text of ['#', 'a#g', '##g', '`#g', 'https://den.example.com/#c/x', 'see https://x.com/#g']) {
+        assert.equal(at(text), null, JSON.stringify(text));
+    }
+    assert.equal(completionAt('#g', 2, null, null), null, 'nowhere to complete from');
+    const names = (q) => completeChannel(q, channels).map((x) => x.channel.name);
+    assert.deepEqual(names('g'), ['general', 'Game night', 'gallery'], "by a name's start, in the list's order");
+    assert.deepEqual(names('NIGHT'), ['Game night']);
+    assert.deepEqual(names('top'), ['off-topic'], 'a word after a dash');
+    assert.deepEqual(names('x'), []);
 });
 
 test('completing @ offers staff @everyone first where it matches, and others only members', () => {

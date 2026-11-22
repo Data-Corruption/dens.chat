@@ -15,7 +15,7 @@
 import { useContext, useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { DenEmoji, EmojiContext } from './denemoji.jsx';
 import { emojiAlone, nameAt } from './emoji.js';
-import { eventLink, messageLink, shownLink, steamApp, trimLink, videoOf } from './links.js';
+import { channelLink, eventLink, messageLink, shownLink, steamApp, trimLink, videoOf } from './links.js';
 import { MessageLink } from './msglinks.jsx';
 import { EventLink } from './eventlinks.jsx';
 
@@ -279,10 +279,10 @@ function inline(line, marks, ctx, key, start, end) {
                 if (video) ctx.videos.push(video);
                 const game = ctx.games && !ctx.spoiler && steamApp(url);
                 if (game) ctx.games.push(game);
-                // A link to a message is a chip naming where it points,
-                // and one to an event a chip naming it, with its card under
-                // the message.
-                const message = !ctx.preview && messageLink(url);
+                // A link to a message or a channel is a chip naming where it
+                // points, and one to an event a chip naming it, with its
+                // card under the message.
+                const message = !ctx.preview && (messageLink(url) || channelLink(url));
                 const event = !ctx.preview && !message && eventLink(url);
                 if (event && ctx.events && !ctx.spoiler) ctx.events.push(event);
                 flush();

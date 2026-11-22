@@ -526,6 +526,33 @@ send)
     nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
     api POST "/api/dens/$1/channels/$2/messages" "{\"nonce\":\"$nonce\",\"text\":\"$3\"}" | json 'd["id"]'
     ;;
+wait-unread)
+    # wait-unread DEN_ID CHANNEL_ID...: wait until each channel waits
+    # unread here.
+    den=$1
+    shift
+    for _ in $(seq 1 40); do
+        waiting=$(api GET "/api/dens/$den/state" | json '" ".join(r["channel_id"] for r in d["read_states"] if (r.get("message_id") or "") != (r.get("last_message_id") or ""))')
+        all=1
+        for c in "$@"; do
+            case " $waiting " in *" $c "*) ;; *) all=0 ;; esac
+        done
+        [ "$all" = 1 ] && exit 0
+        sleep 0.25
+    done
+    fail "not all of $* waited unread here: $waiting"
+    ;;
+read-all)
+    # read-all DEN_ID: mark every channel and DM this member sees read, and
+    # wait until none waits unread here.
+    api POST "/api/dens/$1/read" >/dev/null
+    for _ in $(seq 1 40); do
+        waiting=$(api GET "/api/dens/$1/state" | json '" ".join(r["channel_id"] for r in d["read_states"] if (r.get("message_id") or "") != (r.get("last_message_id") or ""))')
+        [ -z "$waiting" ] && exit 0
+        sleep 0.25
+    done
+    fail "after Mark all as read, still unread here: $waiting"
+    ;;
 send-shared)
     # send-shared DEN_ID CHANNEL_ID EDITOR_ID TEXT: post a message another
     # member may edit; print its ID. TEXT is JSON-escaped.

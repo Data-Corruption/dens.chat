@@ -222,6 +222,26 @@ export function linkTo(denURL, denID, channelID, messageID) {
     return `${denURL}/#m/${denID}/${channelID}/${messageID}`;
 }
 
+// A link to a channel is its den's address, then the den's ID and the
+// channel's in the fragment, as a channel's Copy link writes it:
+// https://den.example.com/#c/<den ID>/41. It opens by the den's ID, as a
+// link to a message does, and outlasts the channel's renaming.
+const CHANNEL_LINK = /^https?:\/\/([^/?#@\s]+)\/?#c\/([A-Za-z0-9_-]{43})\/([1-9][0-9]{0,18})$/;
+
+// channelLink reads a link to a channel as { den, host, channel }, where
+// den is the den's ID, or null for any other link.
+export function channelLink(url) {
+    const m = CHANNEL_LINK.exec(url);
+    if (!m || !fitsID(m[3])) return null;
+    return { den: m[2], host: m[1].toLowerCase(), channel: m[3] };
+}
+
+// channelLinkTo is the link to a channel in the den with ID denID at
+// denURL, as Copy link writes it.
+export function channelLinkTo(denURL, denID, channelID) {
+    return `${denURL}/#c/${denID}/${channelID}`;
+}
+
 // A link to an event is its den's address, then the den's ID and
 // the event's in the fragment, as an event's Copy link writes it:
 // https://den.example.com/#e/<den ID>/12. It opens by the den's ID, as a

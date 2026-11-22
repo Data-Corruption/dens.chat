@@ -61,6 +61,7 @@ GET /                                           200 text/plain: a line saying th
 - Rewriting links leaves the fragment as it is (see [Links](#links)), so a link to a message reads the same in a channel and in a DM.
 - Before opening one, the client checks that the channel is a text channel or DM the member can see, and that the message is there: `around` it with a `limit` of 1 answers it, or the message after it once it's gone (see [History](#history)).
 - A link to an event is the same with `/#e/`, `den_id`, `/` and the event's ID: `https://den.example.com/#e/<den ID>/12`. A client reads it as it reads a link to a message, and shows the event's card (see [Cards and badges](members.md#cards-and-badges)).
+- A link to a channel is the same with `/#c/`, `den_id`, `/` and the channel's ID: `https://den.example.com/#c/<den ID>/41`. A client opens it as a link to a message, at the channel's newest message, where it's a text channel, a DM, a group or the member's notes they can see; a voice channel's opens nothing.
 
 ### History
 
@@ -96,12 +97,14 @@ DELETE /api/messages/{id}                                                       
 ### Read state
 
 ```
-PUT /api/channels/{id}/read   {"message_id"}   204
+PUT  /api/channels/{id}/read   {"message_id"}   204
+POST /api/read                                  204
 ```
 
 - The position only moves forward: a lower `message_id` is ignored.
+- `POST /api/read` moves the member's position in every channel, DM, group and note they see to its newest message, in one write, where `read_all` is in the den's info. It counts as one write against the member's limit.
 - Clients send it once a message has been on screen, at most once every few seconds per channel.
-- The den tells all the member's sessions with `read_state.updated {channel_id, message_id, mention_count}`.
+- The den tells all the member's sessions with `read_state.updated {channel_id, message_id, mention_count}`, one for each channel whose position moved.
 - `ready` carries `read_states`: for each channel, `channel_id`, its last message's ID as `last_message_id`, the member's read position as `message_id`, their unread mention count as `mention_count`, and for a DM, whether they closed it, as `closed`.
 
 ## Shared messages

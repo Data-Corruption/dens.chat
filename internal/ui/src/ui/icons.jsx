@@ -265,6 +265,16 @@ export function StatusIcon({ kind, size = 'h-4 w-4' }) {
     );
 }
 
+// SearchIcon is a magnifier, for the quick switcher.
+export function SearchIcon({ size = 'h-4 w-4' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <circle cx="7" cy="7" r="4.25" />
+            <path d="M10.25 10.25 13.5 13.5" />
+        </svg>
+    );
+}
+
 // PlusIcon is a plus, for what makes something new: a tab's +.
 export function PlusIcon({ size = 'h-4 w-4' }) {
     return (

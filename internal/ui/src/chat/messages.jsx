@@ -23,13 +23,13 @@ import { Compare, comparable, mayGoSmaller, progressKey, progressLabel, sendSmal
 import { EmojiContext } from './denemoji.jsx';
 import { DENSITY_COMPACT, useDensity } from '../appearance/density.js';
 import { useStaffMarks } from '../ui/staffmarks.js';
-import { completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
+import { completeChannel, completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
     Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
 } from './files.jsx';
 import { compareIds, newNonce } from '../core/ids.js';
-import { linkTo } from './links.js';
+import { channelLinkTo, linkTo } from './links.js';
 import { OFFLINE_NOTE } from '../core/offline.js';
 import {
     PAGE, REACTIONS, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate,
@@ -39,6 +39,8 @@ import { QuickReactions, ReactionPicker, Reactions, RemoveReactions, useChips } 
 import { keptFor } from '../core/retention.js';
 import { Markdown, Preview, sends } from './markdown.jsx';
 import { Dialog } from '../manage.jsx';
+import { COMPOSER_KEYS, KeyTable } from '../ui/shortcuts.jsx';
+import { openShortcuts } from '../ui/dialogs.js';
 import { MENU, MenuItems, SheetItems, menuKeys, ownsMenu, rightClick, usePlaced } from '../ui/menus.jsx';
 import { Name } from '../appearance/names.jsx';
 import { useNarrow } from '../core/nav.js';
@@ -88,8 +90,8 @@ let pendingJump = null;
 // channel where it is.
 const jumpers = new Set();
 
-// openAt has the pane showing a den's channel jump to a message, or the
-// next one that opens on it.
+// openAt has the pane showing a den's channel jump to a message, or to its
+// newest with none, or the next one that opens on it.
 export function openAt(denID, channelID, messageID) {
     for (const jump of jumpers) {
         if (jump(denID, channelID, messageID)) return;
@@ -132,7 +134,7 @@ export function dividerAt(readPosition, lastMessage) {
 // the channel's newest, as its read state has it, and denURL the den's
 // address, which links to its messages start with.
 export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, group, groupTitle, keys, gate = '', changes, identities,
-    typing, closed, limits, retention, offline, spoilers, onProfile, onCompare, onTyping }) {
+    typing, closed, limits, retention, offline, spoilers, channels = null, onProfile, onCompare, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
     const [highlight, setHighlight] = useState(null);
@@ -446,7 +448,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         pendingJump = null;
         if (jump) jumpTo(jump, true);
         else loadNewest();
-        const here = (d, c, id) => d === denID && c === channel.id && (jumpTo(id), true);
+        const here = (d, c, id) => d === denID && c === channel.id && (id ? jumpTo(id) : listRef.current.hasNewer ? loadNewest() : jumpToBottom(), true);
         jumpers.add(here);
         const onVisible = () => markRead();
         document.addEventListener('visibilitychange', onVisible);
@@ -939,6 +941,8 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                         onCancelReply={() => setReplyTo(null)}
                         candidates={candidates}
                         mentionable={sealed ? null : candidates}
+                        channels={denURL ? channels : null}
+                        channelLink={(id) => channelLinkTo(denURL, denID, id)}
                         polls={polls}
                         everyone={polls && isStaff(role)}
                         shares={!notes}
@@ -1678,7 +1682,7 @@ export function boxHeight(text, room, least = BOX_LEAST) {
 // the members a mention may name, none in a DM, and with everyone, staff's
 // @everyone first. With polls, the + makes the message a poll,
 // whose question is its text.
-export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, polls, shares = true, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
+export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typing, files, candidates, mentionable, everyone, channels = null, channelLink, polls, shares = true, editors, onEditors, onAddFiles, onRemoveFile, canSpoil, onSpoiler, onCompare, onCancelReply, onSend, onEditLast, onTyping, narrow, touch }) {
     const [text, setText] = useState('');
     // poll is the poll being written, which goes without files or other
     // editors, and problem what kept it from going.
@@ -1749,8 +1753,11 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
     const lastTyping = useRef(0);
     // The box takes the focus without scrolling to it: on the phone layout
     // the row of panes is sliding to the channel as it opens, which Firefox
-    // stops short at a focus that scrolls.
-    useEffect(() => box.current?.focus({ preventScroll: true }), [replyTo]);
+    // stops short at a focus that scrolls. A dialog opened meanwhile, as
+    // the switcher, keeps it.
+    useEffect(() => {
+        if (!document.activeElement?.closest?.('[role="dialog"]')) box.current?.focus({ preventScroll: true });
+    }, [replyTo]);
     // The box grows with its text up to half of its pane's room: the pane's
     // height, or less of it where a phone's keyboard covers the rest.
     useLayoutEffect(() => {
@@ -1821,7 +1828,7 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
     // complete finds what the caret at at completes in value, and what that
     // offers, which needs the list of Unicode's emoji for a name.
     function complete(value, at) {
-        const found = at == null ? null : completionAt(value, at, mentionable);
+        const found = at == null ? null : completionAt(value, at, mentionable, channels);
         if (!found || dismissed.current === value) {
             setCompleting(null);
             return;
@@ -1830,6 +1837,8 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
         let items;
         if (found.kind === 'member') {
             items = completeMention(found.query, mentionable, everyone);
+        } else if (found.kind === 'channel') {
+            items = completeChannel(found.query, channels);
         } else {
             const l = emojiList();
             if (!l) loadEmoji().then(() => box.current && complete(box.current.value, box.current.selectionStart), () => {});
@@ -1852,14 +1861,15 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
         noteUses([key]);
         picked.current.set(key, (picked.current.get(key) || 0) + 1);
     }
-    // completeWith puts in what a completion offers: a mention or an emoji,
-    // and a space after it.
+    // completeWith puts in what a completion offers: a mention, a channel's
+    // link or an emoji, and a space after it.
     function completeWith(item) {
         const c = completing;
         if (!c) return;
         const end = c.start + 1 + c.query.length;
         if (item.everyone) return putIn(c.start, end, '@everyone ');
         if (item.member) return putIn(c.start, end, `@${item.member.username} `);
+        if (item.channel) return putIn(c.start, end, `${channelLink(item.channel.id)} `);
         used(item);
         putIn(c.start, end, `${item.den ? `:${item.den.name}:` : inTone(item.unicode, skinTone())} `);
     }
@@ -2022,6 +2032,7 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
                         class={`block min-h-12 w-full resize-none bg-transparent outline-none ${BOX_TEXT}`}
                         rows={1}
                         data-message-box
+                        data-unsent={files.length > 0 || !!poll || !!replyTo ? '' : undefined}
                         placeholder={poll ? 'Ask your question' : placeholder}
                         enterkeyhint={touch ? 'enter' : 'send'}
                         value={text}
@@ -2066,7 +2077,7 @@ export function Composer({ denID, limits, placeholder, replyTo, replyAuthor, typ
                                 submit();
                             } else if (e.key === 'Escape' && replyTo) {
                                 onCancelReply();
-                            } else if (e.key === 'ArrowUp' && !text) {
+                            } else if (e.key === 'ArrowUp' && !text && !e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
                                 e.preventDefault();
                                 onEditLast();
                             }
@@ -2122,15 +2133,15 @@ function SendIcon() {
 
 // WritingGuide is what a member looks up while writing: the
 // markdown subset, each example rendered as the list shows it, and the
-// keys, or on a touch screen how sending goes. The rest of writing
-// a message is the guide's, linked at its foot.
+// message box's keys, linking the rest of the page's, or on a touch screen
+// how sending goes. The rest of writing a message is the guide's, linked
+// at its foot.
 function WritingGuide({ touch, onClose }) {
     useEffect(() => {
         const escape = (e) => e.key === 'Escape' && onClose();
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
     }, [onClose]);
-    const kbd = (...keys) => keys.map((k, i) => <span key={k}>{i > 0 && '+'}<kbd class="kbd kbd-xs">{k}</kbd></span>);
     return (
         <Dialog title="Formatting help" onClose={onClose}>
             <div class="flex flex-col gap-4 text-sm">
@@ -2147,33 +2158,21 @@ function WritingGuide({ touch, onClose }) {
                 {touch ? (
                     <p>The button beside the box sends, and ↵ starts a new line.</p>
                 ) : (
-                    <table class="table table-sm" aria-label="Keys">
-                        <tbody>
-                            {GUIDE_KEYS.map(([keys, what]) => (
-                                <tr key={what}>
-                                    <td class="whitespace-nowrap">{typeof keys === 'string' ? keys : kbd(...keys)}</td>
-                                    <td>{what}</td>
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
+                    <>
+                        <KeyTable label="Keys" rows={COMPOSER_KEYS} />
+                        <div>
+                            <Button kind="secondary" data-all-shortcuts onClick={() => {
+                                onClose();
+                                openShortcuts();
+                            }}>All keyboard shortcuts</Button>
+                        </div>
+                    </>
                 )}
                 <p><DocsLink page="usage/#writing-messages" label="More on writing messages" /></p>
             </div>
         </Dialog>
     );
 }
-
-// GUIDE_KEYS are the composer's keys, as the writing guide lists them.
-const GUIDE_KEYS = [
-    [['Enter'], 'Send'],
-    [['Shift', 'Enter'], 'Start a new line'],
-    [['Ctrl', 'Enter'], 'Send from inside a code block'],
-    [['↑'], 'Edit your last message, in an empty box'],
-    [['Esc'], 'Drop the reply you started'],
-    [':th', 'Emoji that match, and @ members to mention'],
-    [['Tab'], 'Put in the emoji or member marked'],
-];
 
 const GUIDE_FORMATS = [
     ['**bold**', ''],

@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -812,6 +813,85 @@ func TestStatusMarksWhatWaits(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitMarks(1, 1, "read up to the first of them")
+}
+
+// Mark all as read, from the member's Dens through the den's route, moves
+// every channel and DM they see to its newest message, telling their pages
+// of each, and writes no position where they can't see: a staff-only
+// channel, or the owner's DM with carol.
+func TestMarkAllReadThroughTheDen(t *testing.T) {
+	h, owner, member, denID, general := chatDen(t)
+	ctx := context.Background()
+	staffOnly, name := true, "staff"
+	if err := owner.Manage(ctx, denID, "channels", http.MethodPost, "", denproto.ChannelRequest{Name: &name, StaffOnly: &staffOnly}); err != nil {
+		t.Fatal(err)
+	}
+	staff := viewOf(t, owner, denID, "the staff channel", func(v denclient.View) bool { return len(v.Channels) == 2 }).Channels
+	staffID := staff[slices.IndexFunc(staff, func(c denproto.Channel) bool { return c.StaffOnly })].ID
+	send(t, owner, denID, general, "one")
+	last := send(t, owner, denID, general, "two")
+	send(t, owner, denID, staffID, "for staff")
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	psst := send(t, owner, denID, dm, "psst")
+	invite, _, err := owner.CreateInvite(ctx, denID, denproto.InviteCreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	carol := h.client(t, noOwnDen)
+	join(t, carol, invite, "carol")
+	theirs := openDM(t, owner, carol, denID)
+	readyDM(t, owner, carol, denID, theirs)
+	send(t, owner, denID, theirs, "not bob's")
+
+	reads := func(v denclient.View) map[string]denproto.ReadState {
+		out := map[string]denproto.ReadState{}
+		for _, r := range v.ReadStates {
+			out[r.ChannelID] = r
+		}
+		return out
+	}
+	v := viewOf(t, member, denID, "general and the DM unread", func(v denclient.View) bool {
+		r := reads(v)
+		return r[general].LastMessage == last.ID && r[dm].LastMessage == psst.ID && r[general].ReadPosition == "" && r[dm].ReadPosition == ""
+	})
+	if !v.ReadAll {
+		t.Fatal("the den's info doesn't say it marks every channel read")
+	}
+	stream, stop := member.Stream()
+	defer stop()
+	if err := member.MarkAllRead(ctx, denID); err != nil {
+		t.Fatal(err)
+	}
+	told := map[string]bool{}
+	timeout := time.After(5 * time.Second)
+	for !told[general] || !told[dm] {
+		select {
+		case e := <-stream:
+			for _, r := range e.Reads {
+				if r.ReadPosition == r.LastMessage && r.ReadPosition != "" {
+					told[r.ChannelID] = true
+				}
+			}
+		case <-timeout:
+			t.Fatalf("the pages were told of %v, not general and the DM", told)
+		}
+	}
+	viewOf(t, member, denID, "general and the DM read", func(v denclient.View) bool {
+		r := reads(v)
+		return r[general].ReadPosition == last.ID && r[dm].ReadPosition == psst.ID
+	})
+	bob, _ := denproto.ParseID(me(t, member, denID).ID)
+	for _, id := range []string{staffID, theirs} {
+		cid, _ := denproto.ParseID(id)
+		var n int
+		if err := h.s.db.QueryRow(`SELECT count(*) FROM den_read_states WHERE member_id = ? AND channel_id = ?`, bob, cid).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		if n != 0 {
+			t.Errorf("bob has a read position in channel %s, which he can't see", id)
+		}
+	}
 }
 
 // A den restart resyncs: the page is told to reload, and history still

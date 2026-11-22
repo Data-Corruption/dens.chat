@@ -66,9 +66,10 @@ type denState struct {
 	// the time their members set.
 	disappearing bool
 	// spoilers says the den keeps which of a channel's files went as
-	// spoilers, moveMembers that staff move members between calls, and
-	// away that it keeps a member's Away in their call.
-	spoilers, moveMembers, away bool
+	// spoilers, moveMembers that staff move members between calls, away
+	// that it keeps a member's Away in their call, and readAll that it
+	// marks every channel read at once.
+	spoilers, moveMembers, away, readAll bool
 	// nameStyles says the den keeps a style for each member's name.
 	nameStyles bool
 	// relay says the den passes boxes between the member's devices.
@@ -126,6 +127,9 @@ type View struct {
 	Spoilers    bool `json:"spoilers"`
 	MoveMembers bool `json:"move_members"`
 	Away        bool `json:"away"`
+	// ReadAll says the den marks every channel and DM read at once, which
+	// the page offers only then.
+	ReadAll bool `json:"read_all"`
 	// NameStyles says the den keeps a style for each member's name, which
 	// the page offers only then.
 	NameStyles bool `json:"name_styles"`
@@ -211,7 +215,7 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}, Online: []string{}, Limits: s.limits,
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
 		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
-		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Away: s.away, NameStyles: s.nameStyles, Events: sortedEvents(s.events),
+		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Events: sortedEvents(s.events),
 		EventLimits: s.eventLimits}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
@@ -466,6 +470,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.limits, next.callLimits, next.retention, next.soundLimits = r.Den.Limits, r.Den.CallLimits, r.Den.Retention, r.Den.SoundLimits
 	next.sealedCalls, next.disappearing = r.Den.SealedCalls, r.Den.Disappearing
 	next.spoilers, next.moveMembers, next.away, next.nameStyles = r.Den.Spoilers, r.Den.MoveMembers, r.Den.Away, r.Den.NameStyles
+	next.readAll = r.Den.ReadAll
 	next.relay = r.Den.Relay
 	sounds, ok := cleanSounds(r.Sounds)
 	if !ok {
@@ -614,7 +619,7 @@ type keptState struct {
 func (s *denState) kept() (keptState, []denproto.Member) {
 	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits,
 		EmojiLimits: s.emojiLimits, EventLimits: s.eventLimits, SealedCalls: s.sealedCalls, Disappearing: s.disappearing, Spoilers: s.spoilers,
-		MoveMembers: s.moveMembers, Away: s.away, NameStyles: s.nameStyles},
+		MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
@@ -657,6 +662,7 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 	s.limits, s.callLimits, s.retention, s.sealCheck = k.Den.Limits, k.Den.CallLimits, k.Den.Retention, k.SealCheck
 	s.soundLimits, s.sealedCalls, s.disappearing = k.Den.SoundLimits, k.Den.SealedCalls, k.Den.Disappearing
 	s.spoilers, s.moveMembers, s.away, s.nameStyles = k.Den.Spoilers, k.Den.MoveMembers, k.Den.Away, k.Den.NameStyles
+	s.readAll = k.Den.ReadAll
 	sounds, ok := cleanSounds(k.Sounds)
 	if !ok {
 		return nil, errMalformed

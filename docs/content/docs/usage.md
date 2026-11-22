@@ -164,6 +164,15 @@ soundboard work as you'd expect. What's different:
   call, or **Mute** them just for you; past 100% a loud voice may crackle.
   **Unmute** brings back the volume they had. **Settings** → **Voice** holds
   push to talk's **Release delay** and a **Toggle deafen** shortcut.
+- **Getting around**: **Ctrl+K**, or the magnifier beside the den's name,
+  finds any channel, DM or den you're in by a few letters, what's unread
+  first. **Alt+↑** and **Alt+↓** go to the channel above or below, and
+  **Esc** marks the one open read and jumps to its newest message.
+  **Ctrl+/** lists every shortcut. A shortcut you set under **Settings** →
+  **Voice** wins over these.
+- **Mark as read** is in a channel's or a DM's **⋯**, or a long press on a
+  phone, and **Mark all as read**, for the whole den, in the den's name's
+  menu.
 - **Polls** can be anonymous to everyone in the den, its owner included; the
   den itself still knows, since it counts each vote once. With **After
   voting**, each person sees the totals once they vote, and their vote is
@@ -230,6 +239,10 @@ and the keys. What's different:
 - **Links to messages**: **Copy message link**, in a message's **⋯**,
   copies one. Pasted anywhere in Dens, it shows the channel the message is
   in, and opens it for anyone who can see it.
+- **Links to channels**: `#` and a letter or two offers the den's channels;
+  pick one and its link goes in. It shows as the channel's name and opens
+  it for anyone who can see it, and still works after the channel is
+  renamed. **Copy link**, in a channel's **⋯**, copies one too.
 - **Mentions**: `@` and a username tells someone, if they can see the
   channel; inside code or a link it's only text. Staff write `@everyone` to
   tell everyone who can see the channel, which anyone turns off under

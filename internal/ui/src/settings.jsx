@@ -36,7 +36,7 @@ import { BUFFER_HIGH, BUFFER_LOW, bufferChoice, listen, setBufferChoice, stopLis
 import { useRelay } from './voice/relay.jsx';
 import { useHoldsButton } from './core/touch.js';
 import {
-    RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
+    KEY_NAMES, RELEASE_MOST, RELEASE_STEP, callLimits, callVolume, cancelCapture, captureKey, chooseMic, chooseSpeaker, desktopKeys, devices,
     inCall as callNow, keyLabel, keysElsewhere, micProblem, noiseSuppression, onCall, onKeys, onVoiceLevel, setCallVolume, setKeys, setRNNoise,
     setShareSettings, setVoice, shareSettings, startMicTest, stopMicTest, voiceSettings,
 } from './voice/voice.js';
@@ -562,12 +562,7 @@ export function VoiceSettings() {
     );
 }
 
-const KEYS = [
-    ['ptt', 'Push to talk'],
-    ['toggleMute', 'Toggle mute'],
-    ['pushMute', 'Push to mute'],
-    ['toggleDeafen', 'Toggle deafen'],
-];
+const KEYS = Object.entries(KEY_NAMES);
 
 // ROLES are what the call's button may do, its default first.
 const ROLES = [

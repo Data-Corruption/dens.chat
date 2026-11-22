@@ -11,7 +11,9 @@
 //
 // A microphone may come with two channels or more, as some USB mics and
 // laptops' microphone arrays do, and the processor takes their mix, as the
-// browser would: the call carries one voice, in one channel.
+// browser would: the call carries one voice, in one channel. A block with
+// no channels, as Firefox gives for a disabled track, is silence, so the
+// gate closes and the meter goes on.
 //
 // processorOptions.module is RNNoise's compiled module (wasm/rnnoise.wasm),
 // which the page compiles under its CSP and posts here; it imports nothing.
@@ -122,16 +124,15 @@ class VoiceProcessor extends AudioWorkletProcessor {
         const input = inputs[0];
         const output = outputs[0]?.[0];
         if (!output) return true;
-        if (input?.length) {
-            const channels = input.length;
-            for (let i = 0; i < input[0].length; i++) {
-                let x = input[0][i];
-                for (let c = 1; c < channels; c++) x += input[c][i];
-                this.in[this.inLength++] = x / channels;
-                if (this.inLength === FRAME) {
-                    this.frame();
-                    this.inLength = 0;
-                }
+        const channels = input?.length || 0;
+        const length = channels ? input[0].length : output.length;
+        for (let i = 0; i < length; i++) {
+            let x = 0;
+            for (let c = 0; c < channels; c++) x += input[c][i];
+            this.in[this.inLength++] = channels ? x / channels : 0;
+            if (this.inLength === FRAME) {
+                this.frame();
+                this.inLength = 0;
             }
         }
         for (let i = 0; i < output.length; i++) {

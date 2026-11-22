@@ -733,7 +733,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.den.limits, c.den.callLimits, c.den.retention, c.den.soundLimits = d.Limits, d.CallLimits, d.Retention, d.SoundLimits
 			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
 			c.den.spoilers, c.den.moveMembers, c.den.eventLimits = d.Spoilers, d.MoveMembers, d.EventLimits
-			c.den.nameStyles, c.den.relay, c.den.away = d.NameStyles, d.Relay, d.Away
+			c.den.nameStyles, c.den.relay, c.den.away, c.den.readAll = d.NameStyles, d.Relay, d.Away, d.ReadAll
 		}
 		c.mu.Unlock()
 		c.m.relayChanged()

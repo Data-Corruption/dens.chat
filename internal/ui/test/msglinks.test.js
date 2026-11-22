@@ -1,11 +1,11 @@
-// Links to messages: reading one, what its chip reads, and where a
-// click leads, or why it can't, against a fake local service.
+// Links to messages and to channels: reading one, what its chip reads,
+// and where a click leads, or why it can't, against a fake local service.
 
 import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
-import { linkTo, messageLink } from '../src/chat/links.js';
+import { channelLink, channelLinkTo, linkTo, messageLink } from '../src/chat/links.js';
 import { CHANNEL_GONE, LinkContext, MESSAGE_GONE, MessageLink, chipLabel, follow, notJoined, place } from '../src/chat/msglinks.jsx';
 
 // Dens' IDs, 32 bytes in base64url.
@@ -167,6 +167,49 @@ test("a chip opens where it points on a click, and says why when it can't", asyn
     assert.equal(prevented, 2);
     assert.deepEqual(opened, [[HOME, '41', '100']]);
     assert.equal(root.find((n) => n.attributes.role === 'status')?.textContent, MESSAGE_GONE);
+    mount(null, root);
+});
+
+test("a link to a channel is a den's address with the den and channel in the fragment", () => {
+    assert.deepEqual(channelLink(`https://den.example.com/#c/${HOME}/41`), { den: HOME, host: 'den.example.com', channel: '41' });
+    assert.equal(channelLink(`https://Den.Example.com#c/${HOME}/41`).host, 'den.example.com');
+    assert.equal(channelLink(`http://127.0.0.1:8485/#c/${HOME}/7`).host, '127.0.0.1:8485');
+    for (const other of [
+        `https://den.example.com/x#c/${HOME}/41`, `https://den.example.com/?q=1#c/${HOME}/41`, `https://den.example.com/#c/${HOME}/041`,
+        `https://den.example.com/#c/${HOME}/41/`, `https://den.example.com/#c/${HOME}/41/90210`, `https://den.example.com/#c/${HOME}`,
+        `https://u@den.example.com/#c/${HOME}/41`, `https://den.example.com/#c/${HOME}/9223372036854775808`, `https://den.example.com/#m/${HOME}/41`,
+    ]) {
+        assert.equal(channelLink(other), null, other);
+    }
+    const link = channelLinkTo('https://den.example.com', HOME, '41');
+    assert.equal(link, `https://den.example.com/#c/${HOME}/41`);
+    assert.equal(channelLink(link).channel, '41');
+    assert.equal(messageLink(link), null);
+});
+
+test("a channel's link names it as a message's does, and opens it, but never a call", async () => {
+    const chan = (url, viewOf = () => there) => chipLabel(channelLink(url), place(channelLink(url), links, viewOf), HOME);
+    assert.equal(chan(`https://den.example.com/#c/${HOME}/41`), '#general');
+    assert.equal(chan(`https://den.example.com/#c/${HOME}/90`), '@bob');
+    assert.equal(chan(`https://other.example/#c/${OTHER}/5`), 'Other › #random');
+    assert.equal(chan(`https://den.example.com/#c/${HOME}/99`), '#unknown');
+    // Any member can send one, so a voice channel's reads as out of sight
+    // and a click joins nothing.
+    assert.equal(chan(`https://den.example.com/#c/${HOME}/42`), '#unknown');
+    const { opened, links: following } = opener();
+    const asked = service({ [`/api/dens/${OTHER}/state`]: there });
+    const open = (url) => follow(channelLink(url), following);
+    assert.equal(await open(`https://den.example.com/#c/${HOME}/41`), '');
+    assert.equal(await open(`https://den.example.com/#c/${HOME}/42`), CHANNEL_GONE);
+    assert.equal(await open(`https://other.example/#c/${OTHER}/5`), '');
+    assert.equal(await open(`https://elsewhere.example/#c/${ELSEWHERE}/5`), "You haven't joined the den at elsewhere.example.");
+    assert.deepEqual(opened, [[HOME, '41', ''], [OTHER, '5', '']]);
+    assert.ok(asked.every((p) => !p.includes('/messages')), `a channel's link fetches no message: ${asked}`);
+    const root = document.createElement('div');
+    const url = `https://den.example.com/#c/${HOME}/41`;
+    mount(h(LinkContext.Provider, { value: following }, h(MessageLink, { url, link: channelLink(url) })), root);
+    assert.equal(root.childNodes[0].textContent, '#general');
+    assert.equal(root.childNodes[0].attributes.href, url);
     mount(null, root);
 });
 

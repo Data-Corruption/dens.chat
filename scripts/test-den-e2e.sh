@@ -41,7 +41,8 @@
 # member marks Interested: as it starts the den tells the member's service,
 # and not the owner's, and End now takes it off. The owner shares a
 # checklist with the member, and the two tick different boxes at the same
-# moment, all of which must stay. A second instance on the member's machine
+# moment, all of which must stay. The owner writes in the channel and the
+# DM, and the member's Mark all as read reads both at one request. A second instance on the member's machine
 # stands in for a fresh one: it signs in by the den's address with a
 # recovery code, whose new password must sign the first install out at once,
 # and reads the DM only once the member types their DM seal, and their notes
@@ -726,6 +727,13 @@ run() {
   [[ "$text" == "[x] item 0|[x] item 1|[x] item 2|[x] item 3|[x] item 4|[x] item 5" ]] ||
     { echo "error: the checklist reads: $text" >&2; return 1; }
   echo ">> Every tick from both members stayed"
+
+  echo ">> Mark all as read, through Caddy"
+  guest "$DEN" send "$den_id" "$channel" "one to read" >/dev/null
+  guest "$DEN" send "$den_id" "$dm" "and one more" >/dev/null
+  member wait-unread "$den_id" "$channel" "$dm"
+  member read-all "$den_id"
+  echo ">> The channel and the DM waiting unread read as read at one request"
 
   echo ">> Moving the den to a server on $DEN_DISTRO"
   local before refusal said server_ip moved_at

@@ -1,7 +1,8 @@
 // The app: pairing, the first local password, unlocking the Flatpak,
 // link previews in a browser new to Dens, and the pages
 // (home and a den's), chosen from what /api/status says about this
-// browser, with the app's settings and a den's Manage dialog over them.
+// browser, with the app's settings, a den's Manage dialog, the quick
+// switcher and the list of keys over them.
 // A den's page reaches home and the settings from its channel
 // list; home has a cog of its own for the settings. Which page shows, and
 // which of a den's panes, is the page's history's.
@@ -12,7 +13,10 @@ import { api } from './core/api.js';
 import { startBackground } from './appearance/background.js';
 import { onConnection, onUnpaired } from './core/events.js';
 import { Card, DocsTip, ErrorText, Field, Lead, Notice, PasswordFields, SubmitButton, TextInput, checkPasswords, useAction } from './ui/components.jsx';
-import { onOpenManage } from './ui/dialogs.js';
+import { onOpenManage, onOpenShortcuts, onOpenSwitcher } from './ui/dialogs.js';
+import { listenForPageKeys, onPageKey } from './core/keys.js';
+import { ShortcutsDialog } from './ui/shortcuts.jsx';
+import { Switcher } from './ui/switcher.jsx';
 import { Home } from './home.jsx';
 import { asksLinkPreviews, setLinkPreviews } from './chat/links.js';
 import { ALL_PREVIEWS, LinkPreviews, previewsKept } from './chat/linkpreviews.jsx';
@@ -73,12 +77,18 @@ export function App({ instance, version, pair, pairLink }) {
     const narrow = useNarrow();
     const [live, setLive] = useState(true);
     const [manage, setManage] = useState(null);
+    const [switching, setSwitching] = useState(false);
+    const [shortcuts, setShortcuts] = useState(false);
     // asked says a browser new to Dens answered about link previews on the
     // screen that asks, which then goes.
     const [asked, setAsked] = useState(false);
     useEffect(() => onOpenSettings(setSettings), []);
     useEffect(() => onOpenManage(setManage), []);
+    useEffect(() => onOpenSwitcher(() => setSwitching(true)), []);
+    useEffect(() => onOpenShortcuts(() => setShortcuts(true)), []);
     const closeSettings = useCallback(() => setSettings(null), []);
+    const closeSwitcher = useCallback(() => setSwitching(false), []);
+    const closeShortcuts = useCallback(() => setShortcuts(false), []);
 
     async function load() {
         try {
@@ -147,6 +157,17 @@ export function App({ instance, version, pair, pairLink }) {
     // with it the chat's background and the notifications this page shows,
     // whose click opens their message.
     useEffect(() => (open ? onConnection(setLive) : undefined), [open]);
+    // Ctrl+K and Ctrl+/ open the switcher and the list of keys, unless
+    // something else is open, and close them again.
+    useEffect(() => {
+        if (!open) return undefined;
+        const stops = [
+            listenForPageKeys(window),
+            onPageKey('switcher', ({ layer }) => setSwitching((on) => (on ? false : !layer))),
+            onPageKey('keys', ({ layer }) => setShortcuts((on) => (on ? false : !layer))),
+        ];
+        return () => stops.forEach((stop) => stop());
+    }, [open]);
     useEffect(() => (open ? watchTab() : undefined), [open]);
     useEffect(() => {
         if (!open) return;
@@ -250,6 +271,8 @@ export function App({ instance, version, pair, pairLink }) {
                     onSection={(section) => setSettings((v) => ({ ...v, section }))} onClose={closeSettings} instance={instance} version={version}
                     pair={pair} />
             )}
+            {open && switching && <Switcher onClose={closeSwitcher} />}
+            {open && shortcuts && <ShortcutsDialog onClose={closeShortcuts} />}
             {open && manage && (
                 <ManageDialog key={manage.denID} denID={manage.denID} section={manage.section}
                     onSection={(section) => setManage((m) => ({ ...m, section }))} onClose={() => setManage(null)} />

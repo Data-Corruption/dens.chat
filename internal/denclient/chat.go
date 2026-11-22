@@ -422,6 +422,16 @@ func (m *Manager) MarkRead(ctx context.Context, denID, channelID, messageID stri
 	return c.call(ctx, http.MethodPut, "/api/channels/"+channelID+"/read", denproto.ReadRequest{MessageID: messageID}, nil)
 }
 
+// MarkAllRead moves this member's read position in every channel and DM
+// they see in a den to its newest message.
+func (m *Manager) MarkAllRead(ctx context.Context, denID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	return c.call(ctx, http.MethodPost, "/api/read", nil, nil)
+}
+
 // CallRecord reads a voice channel's longest call, as staff.
 func (m *Manager) CallRecord(ctx context.Context, denID, channelID string) (denproto.CallRecord, error) {
 	var rec denproto.CallRecord
