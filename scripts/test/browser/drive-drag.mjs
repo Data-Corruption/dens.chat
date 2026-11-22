@@ -80,6 +80,13 @@ async function hoverOver(b, x) {
 
 // MENU_ROW is a row of the menu open, by its key.
 const MENU_ROW = (key) => `document.querySelector('[data-menu-item=${JSON.stringify(key)}]')`;
+// toItem moves the focus down a menu open by the keyboard to its item key,
+// past those before it, which may be off.
+async function toItem(b, key) {
+    await waitFor(() => b.eval(`!!document.activeElement?.closest('[role=menu]')`), 'a menu, by the keyboard', 5000);
+    for (let i = 0; i < 6 && (await b.eval('document.activeElement?.dataset.menuItem')) !== key; i++) await b.key('ArrowDown');
+    await waitFor(() => b.eval(`document.activeElement?.dataset.menuItem === ${JSON.stringify(key)}`), `the menu's ${key}`, 3000);
+}
 const DIALOG = (title) => `document.querySelector('[role=dialog][aria-label=${JSON.stringify(title)}]')`;
 
 // makeFromMenus has alice make channels and groups from each menu with the
@@ -132,8 +139,7 @@ async function makeFromMenus(b) {
     // to New channel.
     await b.eval(`${NAME}.focus(), true`);
     await b.key('ArrowDown');
-    await waitFor(() => b.eval(`document.activeElement?.dataset.menuItem === 'manage'`), "the den's menu, by the keyboard", 5000);
-    await b.key('ArrowDown');
+    await toItem(b, 'channel');
     await b.key('Enter');
     await name('New channel', `keys-${tag}`);
     const v = state();
@@ -158,7 +164,7 @@ async function makeFromMenus(b) {
     };
     await toDots();
     await b.key('Enter');
-    await waitFor(() => b.eval(`document.activeElement?.dataset.menuItem === 'edit'`), "the channel's menu, by the keyboard", 5000);
+    await toItem(b, 'edit');
     const up = await b.eval(`${MENU_ROW('up')}.disabled`);
     await b.key('ArrowDown');
     await b.key('Enter');
@@ -167,7 +173,7 @@ async function makeFromMenus(b) {
     await waitFor(async () => {
         await toDots();
         await b.key('Enter');
-        await waitFor(() => b.eval(`document.activeElement?.dataset.menuItem === 'edit'`), "the channel's menu again", 5000);
+        await toItem(b, 'edit');
         if (await b.eval(`!${MENU_ROW('down')}.disabled`)) return true;
         await b.key('Escape');
         return false;

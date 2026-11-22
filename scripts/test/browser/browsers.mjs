@@ -172,9 +172,9 @@ export async function openManage(b, section) {
     await b.eval(`${item}.click(), true`);
 }
 
-// The den's name opens its menu, whose first row is Manage, and a
-// channel's or a group's ⋯ its menu; a menu's rows are named by their
-// keys. manageFromName opens Manage from the name, and fromMenu picks a
+// The den's name opens its menu, Mark all as read, Manage and staff's
+// rows, and a channel's or a group's ⋯ its menu; a menu's rows are named
+// by their keys. manageFromName opens Manage from the name, and fromMenu picks a
 // row from the menu a button opens, as expressions for a page's eval.
 export const DEN_NAME = `document.querySelector('[data-den-menu]')`;
 export const menuRow = (key) => `document.querySelector('[data-menu-item=${JSON.stringify(key)}]')`;
@@ -330,6 +330,8 @@ const CHROMIUM_KEYS = {
     Home: ['Home', 36],
     End: ['End', 35],
     v: ['KeyV', 86, 'v'],
+    k: ['KeyK', 75, 'k'],
+    '/': ['Slash', 191, '/'],
 };
 
 async function chromium(port, { media, screen, autoplay, preload, size = [1400, 900], downloads, hover, camera }) {
@@ -525,6 +527,8 @@ const FIREFOX_KEYS = {
     Home: '\uE011',
     End: '\uE010',
     v: 'v',
+    k: 'k',
+    '/': '/',
 };
 const FIREFOX_BUTTONS = { left: 0, right: 2, back: 3 };
 const FIREFOX_MODIFIERS = { Control: '\uE009', Shift: '\uE008', Alt: '\uE00A', Meta: '\uE03D' };

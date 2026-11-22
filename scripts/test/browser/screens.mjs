@@ -1168,7 +1168,7 @@ export async function staffPress(h, ctx, d, report) {
     const rows = await waitFor(async () => (await sheet()) && h.ev(`[...document.querySelectorAll('[data-sheet] [data-menu-item]')].map((r) => r.textContent.trim()).join(' | ')`),
         "general's menu", 5000).catch(() => '');
     await h.snap('staff-press-channel');
-    did(rows === 'Edit channel | Move up | Move down', `a long press on a channel's row opens its menu: ${rows || 'nothing'}`);
+    did(rows === 'Mark as read | Copy link | Edit channel | Move up | Move down', `a long press on a channel's row opens its menu: ${rows || 'nothing'}`);
     await d.tap(MENU_ROW('edit'));
     const channel = await waitFor(dialog, "general's settings", 5000).catch(() => '');
     did(channel === '#general', `whose Edit channel opens its settings: ${channel || 'nothing'}`);
@@ -1185,6 +1185,38 @@ export async function staffPress(h, ctx, d, report) {
     const opened = await waitFor(async () => (await h.ev('location.pathname')) === `/den/${den}/${random}` && !(await dialog()), 'random', 5000).catch(() => false);
     did(opened, 'a tap on a row still opens its channel');
     await makeFromMenus(h, ctx, d, did);
+}
+
+// switching opens the quick switcher from the magnifier atop the den's
+// list, a touch screen having no Ctrl, and a channel in it by a few
+// letters and a tap; and with a finger, as a member, a channel's menu by a
+// long press on its row.
+export async function switching(h, ctx, d, report) {
+    const { den, random } = ctx;
+    const did = (good, what) => report(good, `${d.name}: ${what}`);
+    const switcher = `document.querySelector('[role=dialog][data-switcher]')`;
+    await h.go(`/den/${den}`);
+    if (!(await h.has(IN_LIST('general')))) await h.click(h.byText('[role=tab]', 'Den'));
+    await h.wait(IN_LIST('general'), 'the channel list');
+    await d.tap(`document.querySelector('[data-pane=list] [data-switcher-button]')`);
+    const opened = await waitFor(() => h.has(switcher), 'the switcher', 5000).catch(() => false);
+    await h.ev(typeIn(`${switcher}.querySelector('input')`, 'rand'));
+    const entry = `document.querySelector('[data-switch$=":text:${random}"]')`;
+    await h.wait(entry, 'random in the switcher', 5000);
+    await h.snap('switcher');
+    await d.tap(entry);
+    const there = await waitFor(async () => (await h.ev('location.pathname')) === `/den/${den}/${random}` && !(await h.has(switcher)), 'random', 5000).catch(() => false);
+    did(opened && there, `the magnifier atop the list opens the switcher (${opened}), and a tap on what "rand" found opens random (${there})`);
+    if (!d.touch) return;
+    await h.go(`/den/${den}`);
+    await h.wait(IN_LIST('general'), 'the channel list');
+    await d.press(IN_LIST('general'));
+    const rows = await waitFor(async () => (await h.has(`document.querySelector('[data-sheet]')`)) &&
+        h.ev(`[...document.querySelectorAll('[data-sheet] [data-menu-item]')].map((r) => r.textContent.trim()).join(' | ')`), "general's menu", 5000).catch(() => '');
+    await h.snap('member-press-channel');
+    did(rows === 'Mark as read | Copy link', `a member's long press on a channel's row opens its menu: ${rows || 'nothing'}`);
+    await d.back();
+    await waitFor(async () => !(await h.has(`document.querySelector('[data-sheet]')`)), 'the menu closed', 5000).catch(() => false);
 }
 
 // typeIn sets a field's value as typing does, for the page's onInput.

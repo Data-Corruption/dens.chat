@@ -7,7 +7,7 @@
 //
 //   run.sh keys chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, HOME, checks, helper, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, HOME, checks, helper, launch, lib, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, LOUNGE: lounge } = process.env;
@@ -36,8 +36,9 @@ try {
     const home = await b.eval('location.href');
 
     step('binding V and Mouse 4 in the settings');
-    await clickOn(button('Settings'), 'the settings button');
-    await clickOn(button('Voice'), 'the voice tab');
+    // By the tab itself: the den's own sections come in above Voice once
+    // the den's status does, which would move a click by its place.
+    await openSettings(b, 'Voice');
     await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's field");
     await waitFor(() => b.eval(`document.body.innerText.includes("Press a key, or a mouse's side button")`), 'the capture prompt');
     await b.key('v', 'down');

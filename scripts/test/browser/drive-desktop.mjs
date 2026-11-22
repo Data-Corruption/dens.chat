@@ -9,7 +9,7 @@
 //
 //   run.sh desktop chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, HOME, checks, helper, launch, pair, waitFor } from './browsers.mjs';
+import { ALICE, HOME, checks, helper, launch, openSettings, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
 const { DEN: den, LOUNGE: lounge } = process.env;
@@ -39,8 +39,9 @@ try {
     await waitFor(() => h.state(), "the service's state for the helper");
     // A Wayland desktop with the portal, not set up.
     h.send('source', { covers: [], confirms: true, bindable: true, configurable: true });
-    await clickOn(button('Settings'), 'the settings button');
-    await clickOn(button('Voice'), 'the voice tab');
+    // By the tab itself: the den's own sections come in above Voice once
+    // the den's status does, which would move a click by its place.
+    await openSettings(b, 'Voice');
     await clickOn(`${row('Push to talk')}?.querySelector('button')`, "push to talk's field");
     await waitFor(() => has("Press a key, or a mouse's side button"), 'the capture prompt');
     await b.key('v', 'down');

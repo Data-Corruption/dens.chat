@@ -45,6 +45,13 @@
 #                               right clicks on a message, a link and a member; and the message
 #                               bar as its box, the box growing with wrapped lines to half its pane, a
 #                               reaction's chip square on a square theme, and file names on hover
+#   switcher BROWSER            Ctrl+K pressed as keys, the switcher listing the unread and opening a
+#                               channel in another den by a few letters and back; Alt+↓ and Alt+↑ past
+#                               a voice channel; Esc marking a channel scrolled up in read, at its newest;
+#                               Mark all as read; a member's channel menu copying its link; and a
+#                               channel's link completed from #, opened by alice, and #unknown to bob
+#                               for a staff-only channel; and a voice channel's Enter opening its call's
+#                               pane, from a channel, which Back returns to, and from Home
 #   messages BROWSER            each message's ⋯ menu by keyboard, and by touch through a long
 #                               press, its delete dialog, and links to messages, in a den and
 #                               from another; a link underlined only on hover and focus
@@ -102,7 +109,8 @@
 #                               with a mouse (MODE chromium, firefox or firefox-mouse; all three unless
 #                               given), failing on anything past the right edge, a control under 24
 #                               pixels, and with a finger a list's row under 44 or a control only a hover
-#                               shows; getting around the panes by swipes, taps and Back; touch, a
+#                               shows; getting around the panes by swipes, taps and Back, the switcher
+#                               from its button, and a member's channel menu by a long press; touch, a
 #                               long press, a sheet's swipe down, three lines sent and a tip's tap;
 #                               and pages, the settings and Manage as lists of pages Back walks
 #                               out of, the viewer swiped and zoomed, and a dialog's sheet swiped down;
