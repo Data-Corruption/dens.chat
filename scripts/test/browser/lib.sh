@@ -8,6 +8,7 @@
 #   m2c  carol, a member when a check needs one: page 18487
 #   m2d  dave, a member when a check needs one: page 18489
 #   m2e  bob's laptop, his second device when a check needs one: page 18490
+#   m2f  alice's laptop, her second device when a check needs one: page 18491
 #
 # The instances run in the background with their PIDs in ~/<instance>.pid
 # and their output in ~/<instance>.log.
@@ -16,8 +17,8 @@ set -euo pipefail
 cd "$HOME"
 export XDG_RUNTIME_DIR=/run/user/$UID
 
-declare -A PORT=([alice]=18484 [bob]=18486 [carol]=18487 [dave]=18489 [laptop]=18490)
-declare -A INSTANCE=([alice]=m2a [bob]=m2b [carol]=m2c [dave]=m2d [laptop]=m2e)
+declare -A PORT=([alice]=18484 [bob]=18486 [carol]=18487 [dave]=18489 [laptop]=18490 [alicelaptop]=18491)
+declare -A INSTANCE=([alice]=m2a [bob]=m2b [carol]=m2c [dave]=m2d [laptop]=m2e [alicelaptop]=m2f)
 DEN_URL=${DEN_URL:-http://127.0.0.1:18485}
 
 # api WHO METHOD PATH [JSON] calls WHO's page API as their paired browser.
@@ -87,7 +88,7 @@ join() {
 # channel Lounge, and bob in it. It sets DEN and LOUNGE.
 fresh() {
     local name
-    for name in m2a m2b m2c m2d m2e; do stop "$name"; done
+    for name in m2a m2b m2c m2d m2e m2f; do stop "$name"; done
     rm -rf "$HOME/.local/share/dens-dev"/m2? "$HOME"/jar-m2?
     pgrep -u "$(id -u)" -x Xvfb >/dev/null || { nohup Xvfb :99 -screen 0 1600x900x24 >xvfb.log 2>&1 & }
     pulseaudio --check 2>/dev/null || pulseaudio --start --exit-idle-time=-1
@@ -172,35 +173,37 @@ open_dm() {
     return 1
 }
 
-# laptop signs bob in on his laptop, m2e, with his den password, and has
-# his first device approve it, each typing the other's digits as he would,
-# so the laptop holds his seal.
+# laptop [WHO] signs WHO, bob unless named, in on their laptop, m2e for
+# bob and m2f for alice, with their den password, and has their first
+# device approve it, each typing the other's digits as they would, so the
+# laptop holds their seal.
 laptop() {
-    local id req="" a="" b=""
-    start m2e --port "${PORT[laptop]}"
-    pair laptop
-    id=$(api laptop POST /api/dens/signin "{\"den\":\"$DEN_URL\",\"username\":\"bob\",\"password\":\"bob password\"}" | json 'd["pending"]["id"]')
+    local who=${1:-bob} on=laptop id req="" a="" b="" password="bob password"
+    [[ $who == alice ]] && on=alicelaptop password="den password"
+    start "${INSTANCE[$on]}" --port "${PORT[$on]}"
+    pair "$on"
+    id=$(api "$on" POST /api/dens/signin "{\"den\":\"$DEN_URL\",\"username\":\"$who\",\"password\":\"$password\"}" | json 'd["pending"]["id"]')
     for _ in $(seq 80); do
-        req=$(api bob GET /api/dens | json "next((r['id'] for x in d['dens'] if x['den_id'] == '$DEN' for r in x.get('requests') or [] if not r.get('approved')), '')")
+        req=$(api "$who" GET /api/dens | json "next((r['id'] for x in d['dens'] if x['den_id'] == '$DEN' for r in x.get('requests') or [] if not r.get('approved')), '')")
         [[ -n $req ]] && break
         sleep 0.25
     done
-    [[ -n $req ]] || { echo "bob's first device never heard of the sign-in" >&2; return 1; }
-    api bob POST "/api/dens/$DEN/requests/$req/answer" >/dev/null
+    [[ -n $req ]] || { echo "$who's first device never heard of the sign-in" >&2; return 1; }
+    api "$who" POST "/api/dens/$DEN/requests/$req/answer" >/dev/null
     for _ in $(seq 80); do
-        a=$(api laptop GET /api/dens | json "next((s.get('half', '') for s in d.get('sign_ins') or [] if s['id'] == '$id'), '')")
-        b=$(api bob GET /api/dens | json "next((r.get('half', '') for x in d['dens'] if x['den_id'] == '$DEN' for r in x.get('requests') or [] if r['id'] == '$req'), '')")
+        a=$(api "$on" GET /api/dens | json "next((s.get('half', '') for s in d.get('sign_ins') or [] if s['id'] == '$id'), '')")
+        b=$(api "$who" GET /api/dens | json "next((r.get('half', '') for x in d['dens'] if x['den_id'] == '$DEN' for r in x.get('requests') or [] if r['id'] == '$req'), '')")
         [[ -n $a && -n $b ]] && break
         sleep 0.25
     done
     [[ -n $a && -n $b ]] || { echo "the sign-in's digits never came" >&2; return 1; }
-    api bob POST "/api/dens/$DEN/requests/$req/approve" "{\"digits\":\"$a\"}" >/dev/null
-    api laptop POST "/api/dens/signin/$id/check" "{\"digits\":\"$b\"}" >/dev/null
+    api "$who" POST "/api/dens/$DEN/requests/$req/approve" "{\"digits\":\"$a\"}" >/dev/null
+    api "$on" POST "/api/dens/signin/$id/check" "{\"digits\":\"$b\"}" >/dev/null
     for _ in $(seq 80); do
-        [[ $(api laptop GET /api/dens | json "any(x['den_id'] == '$DEN' and x['state'] == 'connected' for x in d['dens'])") == True ]] && return 0
+        [[ $(api "$on" GET /api/dens | json "any(x['den_id'] == '$DEN' and x['state'] == 'connected' for x in d['dens'])") == True ]] && return 0
         sleep 0.25
     done
-    echo "bob's laptop never connected" >&2
+    echo "$who's laptop never connected" >&2
     return 1
 }
 
