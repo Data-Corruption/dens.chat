@@ -66,11 +66,16 @@ json() {
 # dens service run, and not the short ones, as the service's own that asks
 # the newest build installed its version.
 services() {
-    n=0
+    service_pids | grep -c . || :
+}
+
+# service_pids lists those services' processes, a line each.
+service_pids() {
     for pid in $(as_alice flatpak ps --columns=application,child-pid | awk -v app="$APP" '$1 == app { print $2 }'); do
-        tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q ' service run' && n=$((n + 1))
+        if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q ' service run'; then
+            echo "$pid"
+        fi
     done
-    echo "$n"
 }
 
 wait_stopped() {
@@ -303,6 +308,38 @@ wait-installed)
     # which Dens asks the newest build installed, where Flatpak's update
     # monitor names commits alone.
     wait_status "d.get('flatpakUpdate', {}).get('version') == '$1'"
+    ;;
+restarts)
+    # restarts N: restart from the page N times over, while other
+    # sandboxes of the app start and end beside it. A sandbox's mounts
+    # going can fail another's start, as Debian 13's Flatpak fails one
+    # whose GL extension it resolves just then, and the service stops for
+    # the one it starts, so each restart must still take over.
+    rm -f /tmp/restarts-done
+    churn() {
+        while [ ! -e /tmp/restarts-done ]; do
+            as_alice flatpak run --command=true "$APP" >/dev/null 2>&1 || :
+        done
+    }
+    churn &
+    churn &
+    for i in $(seq 1 "$1"); do
+        before=$(service_pids)
+        api POST /api/restart >/dev/null || { touch /tmp/restarts-done; fail "restart $i of $1 was refused"; }
+        took=false
+        for _ in $(seq 1 240); do
+            now=$(service_pids)
+            if [ -n "$now" ] && [ "$now" != "$before" ] && [ "$(echo "$now" | wc -l)" = 1 ] &&
+                api GET /api/status >/dev/null 2>&1; then
+                took=true
+                break
+            fi
+            sleep 0.25
+        done
+        $took || { touch /tmp/restarts-done; fail "restart $i of $1 never took over: services $(service_pids)"; }
+    done
+    touch /tmp/restarts-done
+    wait
     ;;
 restart)
     # restart VERSION: restart from the page into VERSION, which starts
