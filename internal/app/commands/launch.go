@@ -96,15 +96,41 @@ func olderThan(service, launch string) bool {
 	return semver.IsValid(service) && semver.IsValid(launch) && semver.Compare(service, launch) < 0
 }
 
+// spawnTries is how many times a launch starts the service where Flatpak
+// doesn't start its sandbox.
+const spawnTries = 5
+
 // spawnService starts the Flatpak's service from the newest build
 // installed, and waits for it to say it's ready, or why it stopped, on a
 // pipe it hands it. Another service of this build or newer may answer
 // first, as one starting at sign-in: then the one this starts waits for its
-// lock, and the launch takes whichever answers.
+// lock, and the launch takes whichever answers. A sandbox Flatpak didn't
+// start, which says nothing, is started again: Flatpak can fail to set one
+// up while another's mounts change, as an older service's do as it quits
+// for this one.
 func spawnService(ctx context.Context, bi build.BuildInfo, client control.Client, l layout.Layout) error {
+	for try := 1; ; try++ {
+		unstarted, err := spawnServiceOnce(ctx, bi, client, l)
+		if !unstarted {
+			return err
+		}
+		if try == spawnTries {
+			return fmt.Errorf("Flatpak didn't start Dens in %d tries; its journal says why", spawnTries)
+		}
+		select {
+		case <-time.After(500 * time.Millisecond):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// spawnServiceOnce is one start of the service, and unstarted says that
+// its sandbox never started and it said nothing.
+func spawnServiceOnce(ctx context.Context, bi build.BuildInfo, client control.Client, l layout.Layout) (unstarted bool, err error) {
 	r, w, err := os.Pipe()
 	if err != nil {
-		return err
+		return false, err
 	}
 	defer r.Close()
 	argv := []string{bi.Name}
@@ -112,12 +138,12 @@ func spawnService(ctx context.Context, bi build.BuildInfo, client control.Client
 		argv = append(argv, "--instance", l.Instance)
 	}
 	argv = append(argv, "service", "run", "--ready-fd", "3")
-	err = spawnLatest(argv, w)
+	started, err := spawnLatest(argv, w)
 	// The new process has its own copy now, so the read ends when it
 	// closes that.
 	w.Close()
 	if err != nil {
-		return fmt.Errorf("start Dens: %w", err)
+		return false, fmt.Errorf("start Dens: %w", err)
 	}
 	said := make(chan string, 1)
 	go func() {
@@ -132,20 +158,20 @@ func spawnService(ctx context.Context, bi build.BuildInfo, client control.Client
 		case answer := <-said:
 			switch answer {
 			case readyWord:
-				return nil
+				return false, nil
 			case "":
-				return fmt.Errorf("Dens stopped as it started; its log in %s says why", l.Logs)
+				return !started, fmt.Errorf("Dens stopped as it started; its log in %s says why", l.Logs)
 			}
-			return errors.New(answer)
+			return false, errors.New(answer)
 		case <-poll.C:
 			var status control.Status
 			if client.Call(control.Request{Op: control.OpStatus}, &status) == nil && !olderThan(status.Version, bi.Version) {
-				return nil
+				return false, nil
 			}
 		case <-timeout:
-			return fmt.Errorf("Dens didn't start within %v; its log in %s says why", startWait, l.Logs)
+			return false, fmt.Errorf("Dens didn't start within %v; its log in %s says why", startWait, l.Logs)
 		case <-ctx.Done():
-			return ctx.Err()
+			return false, ctx.Err()
 		}
 	}
 }

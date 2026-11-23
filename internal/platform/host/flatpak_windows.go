@@ -27,7 +27,7 @@ func SetBackgroundStatus(string) error { return errors.ErrUnsupported }
 
 func Notify(string, string, string) error { return errors.ErrUnsupported }
 
-func SpawnLatest([]string, ...*os.File) error { return errors.ErrUnsupported }
+func SpawnLatest([]string, ...*os.File) (bool, error) { return false, errors.ErrUnsupported }
 
 func SpawnLatestOutput(context.Context, []string) ([]byte, error) { return nil, errors.ErrUnsupported }
 

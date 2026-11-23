@@ -24,18 +24,28 @@ type fakeSpawn struct {
 	argv   [][]string
 	answer string
 	after  time.Duration
+	// unstarted is how many spawns Flatpak fails to start the sandbox of,
+	// which say nothing, before one starts.
+	unstarted int
 }
 
-func (f *fakeSpawn) spawn(argv []string, files ...*os.File) error {
+func (f *fakeSpawn) spawn(argv []string, files ...*os.File) (bool, error) {
 	f.mu.Lock()
 	f.argv = append(f.argv, argv)
 	answer, after := f.answer, f.after
+	failed := f.unstarted > 0
+	if failed {
+		f.unstarted--
+	}
 	f.mu.Unlock()
+	if failed {
+		return false, nil
+	}
 	// The launch closes its copy as Spawn returns, as the portal keeps
 	// its own.
 	fd, err := syscall.Dup(int(files[0].Fd()))
 	if err != nil {
-		return err
+		return false, err
 	}
 	pipe := os.NewFile(uintptr(fd), "ready")
 	go func() {
@@ -45,7 +55,7 @@ func (f *fakeSpawn) spawn(argv []string, files ...*os.File) error {
 			_, _ = pipe.WriteString(answer + "\n")
 		}
 	}()
-	return nil
+	return true, nil
 }
 
 // A launch starts the Flatpak's service through Flatpak's Spawn when none
@@ -94,6 +104,24 @@ func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 	f.mu.Unlock()
 	if argv != "dens service run --ready-fd 3" {
 		t.Fatalf("spawned %q", argv)
+	}
+	// A sandbox Flatpak didn't start is started again, spawnTries times
+	// in all.
+	for _, c := range []struct {
+		unstarted, spawns int
+		want              string
+	}{{2, 3, ""}, {spawnTries, spawnTries, "didn't start"}} {
+		f.mu.Lock()
+		f.argv, f.answer, f.unstarted = nil, readyWord, c.unstarted
+		f.mu.Unlock()
+		err := ensureFlatpakService(ctx, bi, client, l)
+		f.mu.Lock()
+		spawns := len(f.argv)
+		f.unstarted = 0
+		f.mu.Unlock()
+		if spawns != c.spawns || c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("with %d sandboxes unstarted: %d spawns, %v", c.unstarted, spawns, err)
+		}
 	}
 
 	// A running service answers the launch.
@@ -192,13 +220,13 @@ func TestTwoLaunchesStartOneService(t *testing.T) {
 	saved := spawnLatest
 	// The "service" each spawn starts answers on the control endpoint, and
 	// says it's ready.
-	spawnLatest = func(argv []string, files ...*os.File) error {
+	spawnLatest = func(argv []string, files ...*os.File) (bool, error) {
 		mu.Lock()
 		spawned++
 		mu.Unlock()
 		ln, err := host.ListenControl(l.ControlEndpoint, me)
 		if err != nil {
-			return err
+			return false, err
 		}
 		server := &control.Server{Allowed: me, Log: logs, Handlers: map[string]control.Handler{
 			control.OpStatus: func(context.Context, control.Request) (control.Reply, error) {
@@ -207,7 +235,7 @@ func TestTwoLaunchesStartOneService(t *testing.T) {
 		}}
 		go func() { _ = server.Serve(serving, ln) }()
 		_, err = files[0].WriteString(readyWord + "\n")
-		return err
+		return err == nil, err
 	}
 	t.Cleanup(func() { spawnLatest = saved })
 	bi := build.BuildInfo{Name: "dens", Version: "v1.1.0"}

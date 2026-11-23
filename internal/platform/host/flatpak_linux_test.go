@@ -39,7 +39,12 @@ type fakeFlatpakPortals struct {
 
 	spawned [][]string
 	flags   uint32
-	monitor dbus.ObjectPath
+	// spawnWords are what the portal says of each spawn in turn,
+	// SpawnStarted once they run out, and "" nothing; oldPortal is one from
+	// before it said anything, which refuses the flag that asks.
+	spawnWords []string
+	oldPortal  bool
+	monitor    dbus.ObjectPath
 	// updateAnswer is the monitor's Update: a D-Bus error's name, or the
 	// Progress statuses it sends.
 	updateError  string
@@ -163,17 +168,44 @@ type fakeFlatpak fakeFlatpakPortals
 // Spawn records what it starts. godbus can't take a call that passes
 // descriptors inside a map, as Spawn's do, so the fake is never given any;
 // the Flatpak e2e passes them to Flatpak's own portal.
-func (f *fakeFlatpak) Spawn(cwd []byte, argv [][]byte, fds map[uint32]dbus.UnixFDIndex, envs map[string]string, flags uint32, opts map[string]dbus.Variant) (uint32, *dbus.Error) {
+func (f *fakeFlatpak) Spawn(sender dbus.Sender, cwd []byte, argv [][]byte, fds map[uint32]dbus.UnixFDIndex, envs map[string]string, flags uint32, opts map[string]dbus.Variant) (uint32, *dbus.Error) {
 	p := (*fakeFlatpakPortals)(f)
 	args := []string{}
 	for _, a := range argv {
 		args = append(args, strings.TrimSuffix(string(a), "\x00"))
 	}
 	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.oldPortal && flags&spawnNotifyStart != 0 {
+		return 0, dbus.NewError("org.freedesktop.DBus.Error.InvalidArgs", []any{"Unsupported flags enabled: 0x40"})
+	}
 	p.spawned = append(p.spawned, args)
 	p.flags = flags
-	p.mu.Unlock()
+	word := "SpawnStarted"
+	if len(p.spawnWords) > 0 {
+		word, p.spawnWords = p.spawnWords[0], p.spawnWords[1:]
+	}
+	if flags&spawnNotifyStart != 0 && word != "" {
+		// To the caller alone, as the portal sends them, after another
+		// spawn's, which isn't this one's to heed.
+		go func() {
+			time.Sleep(20 * time.Millisecond)
+			p.tell(sender, "SpawnExited", uint32(41), uint32(256))
+			p.tell(sender, word, uint32(42), uint32(0))
+		}()
+	}
 	return 42, nil
+}
+
+// tell sends one of the Flatpak portal's signals to one client.
+func (f *fakeFlatpakPortals) tell(to dbus.Sender, member string, body ...any) {
+	f.conn.Send(&dbus.Message{Type: dbus.TypeSignal, Headers: map[dbus.HeaderField]dbus.Variant{
+		dbus.FieldPath:        dbus.MakeVariant(dbus.ObjectPath(flatpakPortalPath)),
+		dbus.FieldInterface:   dbus.MakeVariant(flatpakPortal),
+		dbus.FieldMember:      dbus.MakeVariant(member),
+		dbus.FieldDestination: dbus.MakeVariant(string(to)),
+		dbus.FieldSignature:   dbus.MakeVariant(dbus.SignatureOf(body...)),
+	}, Body: body}, nil)
 }
 
 func (f *fakeFlatpak) CreateUpdateMonitor(sender dbus.Sender, opts map[string]dbus.Variant) (dbus.ObjectPath, *dbus.Error) {
@@ -296,16 +328,48 @@ func TestBackgroundSpawnAndNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SpawnLatest([]string{"dens", "service", "run"}); err != nil {
-		t.Fatal(err)
+	if started, err := SpawnLatest([]string{"dens", "service", "run"}); err != nil || !started {
+		t.Fatalf("SpawnLatest: started %v, %v", started, err)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.status != "Connected to 2 dens" || len(f.notified) != 1 || !strings.Contains(f.notified[0], "Dens didn't start") {
 		t.Fatalf("status %q, notified %v", f.status, f.notified)
 	}
-	if len(f.spawned) != 1 || strings.Join(f.spawned[0], " ") != "dens service run" || f.flags != spawnLatestVersion {
+	if len(f.spawned) != 1 || strings.Join(f.spawned[0], " ") != "dens service run" || f.flags != spawnLatestVersion|spawnNotifyStart {
 		t.Fatalf("spawned %v, flags %d", f.spawned, f.flags)
+	}
+}
+
+// A spawn hears from the portal whether its sandbox started, or ended
+// before it ran anything, as Debian 13's Flatpak ends one set up while
+// another's mounts go; a portal that says nothing, or is too old to be
+// asked, is taken as having started it.
+func TestSpawnHearsWhetherItsSandboxStarted(t *testing.T) {
+	conn := sessionBus(t)
+	f := startFlatpakPortals(t, conn)
+	saved := spawnStartWait
+	spawnStartWait = 300 * time.Millisecond
+	defer func() { spawnStartWait = saved }()
+	argv := []string{"dens", "service", "run"}
+	f.mu.Lock()
+	f.spawnWords = []string{"SpawnExited", "SpawnStarted", ""}
+	f.mu.Unlock()
+	for i, want := range []bool{false, true, true} {
+		if started, err := SpawnLatest(argv); err != nil || started != want {
+			t.Fatalf("spawn %d: started %v, %v; want %v", i+1, started, err, want)
+		}
+	}
+	f.mu.Lock()
+	f.oldPortal = true
+	f.mu.Unlock()
+	if started, err := SpawnLatest(argv); err != nil || !started {
+		t.Fatalf("through an older portal: started %v, %v", started, err)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.spawned) != 4 || f.flags != spawnLatestVersion {
+		t.Fatalf("spawned %d times, the last with flags %d", len(f.spawned), f.flags)
 	}
 }
 

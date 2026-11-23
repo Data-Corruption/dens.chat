@@ -44,8 +44,11 @@ type flatpak struct {
 	gnome bool
 	// openMonitor, spawn and output are Flatpak's portal's, or a test's.
 	openMonitor func() (updateMonitor, error)
-	spawn       func(argv []string, files ...*os.File) error
-	output      func(ctx context.Context, argv []string) ([]byte, error)
+	spawn       func(argv []string, files ...*os.File) (started bool, err error)
+	// respawnAfter is the pause before starting again a sandbox Flatpak
+	// didn't start; tests shorten it.
+	respawnAfter time.Duration
+	output       func(ctx context.Context, argv []string) ([]byte, error)
 
 	// wg is what run waits for as it ends; once closed, nothing more
 	// starts.
@@ -77,10 +80,11 @@ type updateMonitor interface {
 func newFlatpak(ctx context.Context, a *app.App, quit func(why string)) *flatpak {
 	return &flatpak{
 		a: a, ctx: ctx, quit: quit,
-		gnome:       strings.Contains(strings.ToUpper(os.Getenv("XDG_CURRENT_DESKTOP")), "GNOME"),
-		openMonitor: func() (updateMonitor, error) { return host.OpenUpdateMonitor() },
-		spawn:       host.SpawnLatest,
-		output:      host.SpawnLatestOutput,
+		gnome:        strings.Contains(strings.ToUpper(os.Getenv("XDG_CURRENT_DESKTOP")), "GNOME"),
+		openMonitor:  func() (updateMonitor, error) { return host.OpenUpdateMonitor() },
+		spawn:        host.SpawnLatest,
+		respawnAfter: 500 * time.Millisecond,
+		output:       host.SpawnLatestOutput,
 	}
 }
 
@@ -330,12 +334,30 @@ func (f *flatpak) StartNewest() error {
 	if f.a.Layout.Instance != layout.DefaultInstance {
 		argv = append(argv, "--instance", f.a.Layout.Instance)
 	}
-	if err := f.spawn(append(argv, "service", "run")); err != nil {
-		return fmt.Errorf("start the newest build of Dens: %w", err)
+	// This service stops for the one it starts, so it makes sure of it
+	// first: Flatpak can fail to set a sandbox up while another's mounts
+	// change, as this one's do when it stops, and a start that nothing
+	// came of would leave Dens not running.
+	for try := 1; ; try++ {
+		started, err := f.spawn(append(argv, "service", "run"))
+		if err != nil {
+			return fmt.Errorf("start the newest build of Dens: %w", err)
+		}
+		if started {
+			f.a.Log.Info("Started the newest build installed, which takes over once this one stops")
+			return nil
+		}
+		if try == spawnTries {
+			return fmt.Errorf("start the newest build of Dens: Flatpak didn't start it in %d tries", spawnTries)
+		}
+		f.a.Log.Warnf("Flatpak didn't start the newest build (try %d of %d); starting it again", try, spawnTries)
+		time.Sleep(f.respawnAfter)
 	}
-	f.a.Log.Info("Started the newest build installed, which takes over once this one stops")
-	return nil
 }
+
+// spawnTries is how many times a restart starts the newest build before it
+// gives up and stays.
+const spawnTries = 5
 
 func (f *flatpak) Quit(why string) { f.quit(why) }
 

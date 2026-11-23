@@ -52,10 +52,20 @@ func TestFlatpakUpdateNotice(t *testing.T) {
 	f.gnome = false
 	f.openMonitor = func() (updateMonitor, error) { return m, nil }
 	var spawned []string
-	f.spawn = func(argv []string, _ ...*os.File) error {
+	// starts are whether each spawn's sandbox starts, in turn, and true
+	// once they run out.
+	var starts []bool
+	spawns := 0
+	f.spawn = func(argv []string, _ ...*os.File) (bool, error) {
 		spawned = argv
-		return nil
+		spawns++
+		started := true
+		if len(starts) > 0 {
+			started, starts = starts[0], starts[1:]
+		}
+		return started, nil
 	}
+	f.respawnAfter = time.Millisecond
 	f.start(f.watchUpdates)
 	notice := func(u host.FlatpakUpdate) app.FlatpakUpdate {
 		t.Helper()
@@ -112,8 +122,18 @@ func TestFlatpakUpdateNotice(t *testing.T) {
 	if err := f.StartNewest(); err != nil {
 		t.Fatal(err)
 	}
-	if strings.Join(spawned, " ") != "dens --instance second service run" {
-		t.Fatalf("restarted with %v", spawned)
+	if strings.Join(spawned, " ") != "dens --instance second service run" || spawns != 1 {
+		t.Fatalf("restarted with %v, in %d spawns", spawned, spawns)
+	}
+	// A sandbox Flatpak didn't start is started again, and one that never
+	// starts leaves this service running, with an error for the page.
+	spawns, starts = 0, []bool{false, false, true}
+	if err := f.StartNewest(); err != nil || spawns != 3 {
+		t.Fatalf("a restart whose sandbox starts at the third try: %v, after %d spawns", err, spawns)
+	}
+	spawns, starts = 0, make([]bool, spawnTries+1)
+	if err := f.StartNewest(); err == nil || spawns != spawnTries {
+		t.Fatalf("a restart whose sandbox never starts: %v, after %d spawns", err, spawns)
 	}
 }
 
