@@ -97,8 +97,9 @@ finish() {
     >"$RUN_LOG_DIR/flatpak-service.log" 2>/dev/null || :
   # What the member's session said, and what still ran: a build the portal
   # starts to take over from another prints why it couldn't there, not in
-  # the service's log.
-  "${INCUS[@]}" exec "$FLATPAK" -- sh -c "journalctl --no-pager -o short-precise -n 500 _UID=\$(id -u alice); echo; ps -eo pid,etimes,args" \
+  # the service's log. Each sandbox's scope starting is left out: the
+  # restarts' other sandboxes start thousands.
+  "${INCUS[@]}" exec "$FLATPAK" -- sh -c "journalctl --no-pager -o short-precise _UID=\$(id -u alice) | grep -v 'Started app-flatpak-' | tail -n 500; echo; ps -eo pid,etimes,args" \
     >"$RUN_LOG_DIR/flatpak-session.log" 2>&1 || :
   if ! $passed && $KEEP_FAILED; then
     echo ">> Kept $DEN and $FLATPAK, and $PUBLISHER unless it passed, for inspection: incus exec <name> -- bash"

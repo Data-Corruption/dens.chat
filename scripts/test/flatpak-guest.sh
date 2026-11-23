@@ -72,7 +72,8 @@ services() {
 # service_pids lists those services' processes, a line each.
 service_pids() {
     for pid in $(as_alice flatpak ps --columns=application,child-pid | awk -v app="$APP" '$1 == app { print $2 }'); do
-        if tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q ' service run'; then
+        # A sandbox that ended since flatpak ps listed it has no cmdline.
+        if { tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null | grep -q ' service run'; then
             echo "$pid"
         fi
     done
@@ -314,7 +315,12 @@ restarts)
     # sandboxes of the app start and end beside it. A sandbox's mounts
     # going can fail another's start, as Debian 13's Flatpak fails one
     # whose GL extension it resolves just then, and the service stops for
-    # the one it starts, so each restart must still take over.
+    # the one it starts, so each restart must still take over. The log
+    # says each handover from here on, and a failure prints what the
+    # member's session said meanwhile, without the churn's scopes, which
+    # would bury it.
+    dens logs --level info >/dev/null
+    began=$(date '+%Y-%m-%d %H:%M:%S')
     rm -f /tmp/restarts-done
     churn() {
         while [ ! -e /tmp/restarts-done ]; do
@@ -323,9 +329,16 @@ restarts)
     }
     churn &
     churn &
+    lost() {
+        touch /tmp/restarts-done
+        wait
+        journalctl --no-pager -o short-precise --since "$began" "_UID=$(uid)" |
+            grep -v 'Started app-flatpak-' | tail -n 60 >&2
+        fail "$*"
+    }
     for i in $(seq 1 "$1"); do
         before=$(service_pids)
-        api POST /api/restart >/dev/null || { touch /tmp/restarts-done; fail "restart $i of $1 was refused"; }
+        api POST /api/restart >/dev/null || lost "restart $i of $1 was refused"
         took=false
         for _ in $(seq 1 240); do
             now=$(service_pids)
@@ -336,7 +349,7 @@ restarts)
             fi
             sleep 0.25
         done
-        $took || { touch /tmp/restarts-done; fail "restart $i of $1 never took over: services $(service_pids)"; }
+        $took || lost "restart $i of $1 never took over: services $(service_pids)"
     done
     touch /tmp/restarts-done
     wait
