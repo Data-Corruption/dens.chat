@@ -146,6 +146,26 @@ func (h *handler) bans(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusOK, list)
 }
 
+// membersSeen answers staff with when each member was last seen, by day.
+func (h *handler) membersSeen(w http.ResponseWriter, r *http.Request) {
+	list, err := h.d.MembersSeen(r.Context(), session(r))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, list)
+}
+
+// auditLog answers staff with a page of the audit log.
+func (h *handler) auditLog(w http.ResponseWriter, r *http.Request) {
+	log, err := h.d.AuditLog(r.Context(), session(r), r.URL.Query().Get("before"))
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, log)
+}
+
 func (h *handler) unban(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

@@ -327,11 +327,25 @@ func (d *Den) ClearReactions(ctx context.Context, s *Session, messageID string, 
 		if len(cleared) == 0 {
 			return nil
 		}
-		return logMessage(ctx, tx, mid, cid, d.now())
+		if err := logMessage(ctx, tx, mid, cid, d.now()); err != nil {
+			return err
+		}
+		line := auditLine{kind: denproto.AuditReactionsCleared, by: s.MemberID,
+			details: denproto.AuditDetails{ChannelID: c.ID, Channel: c.Name, Ref: denproto.FormatID(mid), Emoji: req.Emoji}}
+		if err := tx.QueryRowContext(ctx, `SELECT author_id FROM den_messages WHERE id = ?`, mid).Scan(&line.member); err != nil {
+			return err
+		}
+		if emojiID != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT name FROM den_named_files WHERE id = ?`, emojiID).Scan(&line.details.Name); err != nil {
+				return err
+			}
+		}
+		return d.audit(ctx, tx, line)
 	})
 	if err != nil || len(cleared) == 0 {
 		return err
 	}
+	d.audited()
 	d.log.Infof("Member %d took %d reactions off message %d", s.MemberID, len(cleared), mid)
 	return d.Hub.Publish(denproto.EventReactionCleared, denproto.ReactionCleared{MessageID: denproto.FormatID(mid), ChannelID: c.ID,
 		Emoji: req.Emoji, EmojiID: req.EmojiID, Members: formatIDs(cleared)}, audienceOf(c))

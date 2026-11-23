@@ -154,12 +154,15 @@ func (d *Den) AddSound(ctx context.Context, s *Session, req denproto.SoundReques
 		if err != nil {
 			return err
 		}
-		sound, err = d.sound(ctx, tx, id)
-		return err
+		if sound, err = d.sound(ctx, tx, id); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, namedLine(denproto.AuditSoundAdded, s, id, name, ""))
 	})
 	if err != nil {
 		return denproto.Sound{}, err
 	}
+	d.audited()
 	d.log.Infof("Member %d added sound %s", s.MemberID, sound.ID)
 	return sound, d.Hub.Publish(denproto.EventSoundCreated, sound, Everyone)
 }
@@ -208,22 +211,31 @@ func (d *Den) RenameSound(ctx context.Context, s *Session, id string, req denpro
 		return denproto.Sound{}, invalid("name: %v", err)
 	}
 	var sound denproto.Sound
+	var was string
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if taken, err := nameTaken(ctx, tx, name, sid); err != nil || taken {
 			return cmp.Or(err, errSoundNameTaken)
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE den_named_files SET name = ? WHERE id = ? AND kind = ?`, name, sid, kindSound)
+		err := tx.QueryRowContext(ctx, `SELECT name FROM den_named_files WHERE id = ? AND kind = ?`, sid, kindSound).Scan(&was)
+		if errors.Is(err, sql.ErrNoRows) {
+			return errSoundNotFound
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errSoundNotFound
+		if _, err := tx.ExecContext(ctx, `UPDATE den_named_files SET name = ? WHERE id = ?`, name, sid); err != nil {
+			return err
 		}
-		sound, err = d.sound(ctx, tx, sid)
-		return err
+		if sound, err = d.sound(ctx, tx, sid); err != nil || was == name {
+			return err
+		}
+		return d.audit(ctx, tx, namedLine(denproto.AuditSoundRenamed, s, sid, name, was))
 	})
 	if err != nil {
 		return denproto.Sound{}, err
+	}
+	if was != name {
+		d.audited()
 	}
 	return sound, d.Hub.Publish(denproto.EventSoundUpdated, sound, Everyone)
 }
@@ -241,19 +253,23 @@ func (d *Den) DeleteSound(ctx context.Context, s *Session, id string) error {
 	var blobs [][]byte
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var file int64
-		err := tx.QueryRowContext(ctx, `DELETE FROM den_named_files WHERE id = ? AND kind = ? RETURNING file_id`, sid, kindSound).Scan(&file)
+		var name string
+		err := tx.QueryRowContext(ctx, `DELETE FROM den_named_files WHERE id = ? AND kind = ? RETURNING file_id, name`, sid, kindSound).Scan(&file, &name)
 		if errors.Is(err, sql.ErrNoRows) {
 			return errSoundNotFound
 		}
 		if err != nil {
 			return err
 		}
-		blobs, err = deleteFiles(ctx, tx, `id = ?`, file)
-		return err
+		if blobs, err = deleteFiles(ctx, tx, `id = ?`, file); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, namedLine(denproto.AuditSoundDeleted, s, sid, name, ""))
 	})
 	if err != nil {
 		return err
 	}
+	d.audited()
 	d.files.remove(blobs)
 	d.log.Infof("Member %d deleted sound %d", s.MemberID, sid)
 	return d.Hub.Publish(denproto.EventSoundDeleted, denproto.SoundDeleted{ID: denproto.FormatID(sid)}, Everyone)

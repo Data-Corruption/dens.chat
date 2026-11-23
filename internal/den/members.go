@@ -230,18 +230,29 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 	if mid == s.MemberID {
 		return denproto.Member{}, invalid("the owner stays the owner until the den changes hands")
 	}
+	var was string
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		res, err := tx.ExecContext(ctx, `UPDATE den_members SET role = ? WHERE id = ? AND left_at IS NULL AND role != 'owner'`, req.Role, mid)
+		err := tx.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ? AND left_at IS NULL AND role != 'owner'`, mid).Scan(&was)
+		if errors.Is(err, sql.ErrNoRows) {
+			return errMemberNotFound
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errMemberNotFound
+		if _, err := tx.ExecContext(ctx, `UPDATE den_members SET role = ? WHERE id = ?`, req.Role, mid); err != nil {
+			return err
 		}
-		return logMember(ctx, tx, mid, d.now())
+		if err := logMember(ctx, tx, mid, d.now()); err != nil || was == req.Role {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditRoleChanged, by: s.MemberID, member: mid,
+			details: denproto.AuditDetails{Changes: []denproto.AuditChange{{Field: "role", From: was, To: req.Role}}}})
 	})
 	if err != nil {
 		return denproto.Member{}, err
+	}
+	if was != req.Role {
+		d.audited()
 	}
 	m, err := d.Member(ctx, mid)
 	if err != nil {
@@ -351,6 +362,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	var unreacted []denproto.ReactionChange
 	var blobs [][]byte
 	var gone departure
+	var audited bool
 	// The reactions a ban takes off wait their turn with edits.
 	if req.DeleteMessages > 0 {
 		d.changes.Lock()
@@ -376,15 +388,28 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		if denproto.Rank(role) >= denproto.Rank(s.Role) {
 			return forbidden("only the owner removes moderators, and nobody removes the owner")
 		}
+		line := auditLine{kind: denproto.AuditMemberRemoved, by: s.MemberID, member: mid,
+			details: denproto.AuditDetails{DeleteMessages: req.DeleteMessages}}
 		if req.Ban && !bannedAt.Valid {
 			if _, err := tx.ExecContext(ctx, `UPDATE den_members SET banned_at = ?, banned_by = ? WHERE id = ?`, now, s.MemberID, mid); err != nil {
 				return err
 			}
+			line.details.Ban = true
 		}
 		if req.RevokeInvite && inviteID.Valid {
-			if _, err := tx.ExecContext(ctx, `DELETE FROM den_invites WHERE id = ? AND role = 'member'`, inviteID.Int64); err != nil {
+			res, err := tx.ExecContext(ctx, `DELETE FROM den_invites WHERE id = ? AND role = 'member'`, inviteID.Int64)
+			if err != nil {
 				return err
 			}
+			n, _ := res.RowsAffected()
+			line.details.RevokeInvite = n > 0
+		}
+		// For a member who left, only these change anything.
+		if !leftAt.Valid || line.details.Ban || line.details.DeleteMessages > 0 || line.details.RevokeInvite {
+			if err := d.audit(ctx, tx, line); err != nil {
+				return err
+			}
+			audited = true
 		}
 		if req.DeleteMessages > 0 {
 			// DMs too: the den deletes them without reading them, and
@@ -408,6 +433,9 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 	})
 	if err != nil {
 		return err
+	}
+	if audited {
+		d.audited()
 	}
 	d.files.remove(blobs)
 	d.cancelRequests(mid)
@@ -578,7 +606,7 @@ func (d *Den) Unban(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return errMemberNotFound
 	}
-	return d.tx(ctx, func(tx *sql.Tx) error {
+	err = d.tx(ctx, func(tx *sql.Tx) error {
 		// NULL when nobody placed it, or whoever did is gone from the table.
 		var placer sql.NullString
 		err := tx.QueryRowContext(ctx, `SELECT b.role FROM den_members m LEFT JOIN den_members b ON b.id = m.banned_by
@@ -592,7 +620,14 @@ func (d *Den) Unban(ctx context.Context, s *Session, id string) error {
 		if placer.Valid && denproto.Rank(placer.String) > denproto.Rank(s.Role) {
 			return forbidden("only staff of the rank of whoever placed a ban, or higher, lift it")
 		}
-		_, err = tx.ExecContext(ctx, `UPDATE den_members SET banned_at = NULL, banned_by = NULL WHERE id = ?`, mid)
-		return err
+		if _, err = tx.ExecContext(ctx, `UPDATE den_members SET banned_at = NULL, banned_by = NULL WHERE id = ?`, mid); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditBanLifted, by: s.MemberID, member: mid})
 	})
+	if err != nil {
+		return err
+	}
+	d.audited()
+	return nil
 }

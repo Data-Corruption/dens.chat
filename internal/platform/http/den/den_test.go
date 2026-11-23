@@ -374,6 +374,13 @@ func TestSocketClosesAreLogged(t *testing.T) {
 // their token.
 func (f *fixture) member(ownerToken denproto.Bytes, username string) denproto.Bytes {
 	f.t.Helper()
+	token, _ := f.memberWithKey(ownerToken, username)
+	return token
+}
+
+// memberWithKey is member, returning the device's key too.
+func (f *fixture) memberWithKey(ownerToken denproto.Bytes, username string) (denproto.Bytes, ed25519.PrivateKey) {
+	f.t.Helper()
 	owner, err := f.d.Authenticate(context.Background(), ownerToken)
 	if err != nil {
 		f.t.Fatal(err)
@@ -396,7 +403,7 @@ func (f *fixture) member(ownerToken denproto.Bytes, username string) denproto.By
 	if err != nil {
 		f.t.Fatal(err)
 	}
-	return joined.Token
+	return joined.Token, key
 }
 
 // waitPresence reads frames until a presence event matches.

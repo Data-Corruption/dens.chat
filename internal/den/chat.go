@@ -600,12 +600,15 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 		if err := renumber(ctx, tx, "den_channels", order); err != nil {
 			return err
 		}
-		c, err = d.channel(ctx, tx, id)
-		return err
+		if c, err = d.channel(ctx, tx, id); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditChannelCreated, by: s.MemberID, details: denproto.AuditDetails{ChannelID: c.ID, Channel: c.Name}})
 	})
 	if err != nil {
 		return c, err
 	}
+	d.audited()
 	if err := d.Hub.Publish(denproto.EventChannelCreated, c, audienceOf(c)); err != nil {
 		return c, err
 	}
@@ -645,6 +648,7 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 	moving := !sameGroup(oldGroup, newGroup) || req.Position != nil
 	var after denproto.Channel
 	var lists []reorderedList
+	var changes []denproto.AuditChange
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if req.Name != nil {
 			if _, err := tx.ExecContext(ctx, `UPDATE den_channels SET name = ? WHERE id = ?`, *req.Name, cid); err != nil {
@@ -695,11 +699,22 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 			}
 			lists = append(lists, reorderedList{newGroup, order})
 		}
-		after, err = d.channel(ctx, tx, cid)
-		return err
+		if after, err = d.channel(ctx, tx, cid); err != nil {
+			return err
+		}
+		// A move within its list alone writes no line: it changes nothing
+		// anyone sees or reads.
+		if changes, err = channelChanges(ctx, tx, before, after); err != nil || len(changes) == 0 {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditChannelUpdated, by: s.MemberID,
+			details: denproto.AuditDetails{ChannelID: after.ID, Channel: after.Name, Changes: changes}})
 	})
 	if err != nil {
 		return after, err
+	}
+	if len(changes) > 0 {
+		d.audited()
 	}
 	if before.Bitrate != after.Bitrate {
 		d.callBitrateChanged(after)
@@ -771,11 +786,15 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 			return err
 		}
 		order = ids
-		return renumber(ctx, tx, "den_channels", order)
+		if err := renumber(ctx, tx, "den_channels", order); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditChannelDeleted, by: s.MemberID, details: denproto.AuditDetails{ChannelID: c.ID, Channel: c.Name}})
 	})
 	if err != nil {
 		return err
 	}
+	d.audited()
 	d.files.remove(blobs)
 	d.channelChanged(c, true)
 	if err := d.publishGone(ctx, events); err != nil {
@@ -857,12 +876,15 @@ func (d *Den) CreateGroup(ctx context.Context, s *Session, req denproto.GroupReq
 		if err := renumber(ctx, tx, "den_groups", order); err != nil {
 			return err
 		}
-		g, err = d.group(ctx, tx, id)
-		return err
+		if g, err = d.group(ctx, tx, id); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditGroupCreated, by: s.MemberID, details: denproto.AuditDetails{Ref: g.ID, Name: g.Name}})
 	})
 	if err != nil {
 		return g, err
 	}
+	d.audited()
 	if err := d.Hub.Publish(denproto.EventGroupCreated, g, Everyone); err != nil {
 		return g, err
 	}
@@ -883,10 +905,10 @@ func (d *Den) UpdateGroup(ctx context.Context, s *Session, id string, req denpro
 			return denproto.Group{}, invalid("name: %v", err)
 		}
 	}
-	var g denproto.Group
+	var g, was denproto.Group
 	var order []int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		if _, err := d.group(ctx, tx, gid); err != nil {
+		if was, err = d.group(ctx, tx, gid); err != nil {
 			return err
 		}
 		if req.Name != nil {
@@ -904,11 +926,17 @@ func (d *Den) UpdateGroup(ctx context.Context, s *Session, id string, req denpro
 				return err
 			}
 		}
-		g, err = d.group(ctx, tx, gid)
-		return err
+		if g, err = d.group(ctx, tx, gid); err != nil || g.Name == was.Name {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditGroupUpdated, by: s.MemberID, details: denproto.AuditDetails{Ref: g.ID, Name: g.Name,
+			Changes: []denproto.AuditChange{{Field: "name", From: was.Name, To: g.Name}}}})
 	})
 	if err != nil {
 		return g, err
+	}
+	if g.Name != was.Name {
+		d.audited()
 	}
 	if err := d.Hub.Publish(denproto.EventGroupUpdated, g, Everyone); err != nil {
 		return g, err
@@ -931,7 +959,11 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 	}
 	var groups, ungrouped []int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		if _, err := d.group(ctx, tx, gid); err != nil {
+		g, err := d.group(ctx, tx, gid)
+		if err != nil {
+			return err
+		}
+		if err := d.audit(ctx, tx, auditLine{kind: denproto.AuditGroupDeleted, by: s.MemberID, details: denproto.AuditDetails{Ref: g.ID, Name: g.Name}}); err != nil {
 			return err
 		}
 		// Take both lists before the delete: ON DELETE SET NULL ungroups
@@ -959,6 +991,7 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return err
 	}
+	d.audited()
 	if err := d.Hub.Publish(denproto.EventGroupDeleted, denproto.ChannelDeleted{ID: denproto.FormatID(gid)}, Everyone); err != nil {
 		return err
 	}
@@ -1888,6 +1921,9 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	if err != nil {
 		return err
 	}
+	// Whose message staff deleted is what the log is asked, so its line
+	// names the author, where the den keeps nothing else of them.
+	staffs := m.AuthorID != denproto.FormatID(s.MemberID)
 	var readers []reader
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var err error
@@ -1900,10 +1936,18 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 		if err := passDeleted(ctx, tx, readers, map[int64][]int64{cid: {mid}}); err != nil {
 			return err
 		}
-		return logMessage(ctx, tx, mid, cid, d.now())
+		if err := logMessage(ctx, tx, mid, cid, d.now()); err != nil || !staffs {
+			return err
+		}
+		author, _ := denproto.ParseID(m.AuthorID)
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditMessageDeleted, by: s.MemberID, member: author,
+			details: denproto.AuditDetails{ChannelID: c.ID, Channel: c.Name}})
 	})
 	if err != nil {
 		return err
+	}
+	if staffs {
+		d.audited()
 	}
 	d.files.remove(blobs)
 	if err := d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid]}, audienceOf(c)); err != nil {

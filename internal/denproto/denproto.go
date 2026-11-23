@@ -329,6 +329,12 @@ type Den struct {
 	// Relay says the den passes boxes between a member's devices, so
 	// their installs ask only a den that does.
 	Relay bool `json:"relay,omitempty"`
+	// AuditLog says the den keeps staff's acts for staff to read, at GET
+	// /api/audit, and MembersSeen that it tells staff when each member was
+	// last seen, at GET /api/members/seen; a den older than them has
+	// neither route.
+	AuditLog    bool `json:"audit_log,omitempty"`
+	MembersSeen bool `json:"members_seen,omitempty"`
 }
 
 // Roles.

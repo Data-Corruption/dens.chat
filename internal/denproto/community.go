@@ -3,6 +3,7 @@ package denproto
 import (
 	"errors"
 	"fmt"
+	"time"
 	"unicode/utf8"
 )
 
@@ -124,4 +125,20 @@ func Rank(role string) int {
 		return 1
 	}
 	return 0
+}
+
+// SeenDay is what a member's last seen is told by: the day, in UTC.
+const SeenDay = 24 * time.Hour
+
+// Seen is when a member was last seen, by any of their devices, as the
+// start of that day in UTC.
+type Seen struct {
+	MemberID string `json:"member_id"`
+	Day      int64  `json:"day"`
+}
+
+// SeenList is when each member in the den was last seen, which staff
+// read.
+type SeenList struct {
+	Seen []Seen `json:"seen"`
 }
