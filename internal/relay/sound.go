@@ -63,10 +63,13 @@ type Listening struct {
 	why     string
 	// Guarded by Relay.mu: whether a link with the device came up during
 	// it; how many hellos have gone unanswered or found no link since;
-	// and when it may ask again.
+	// when it may ask again; and when it began, and whether the link's
+	// state said the device shares since.
 	linked bool
 	tries  int
 	retry  time.Time
+	at     time.Time
+	shared bool
 	// The packets that came, and those lost on the way, by the gaps in
 	// their places; next is the place the next is due at, which a link
 	// replacing another may reach for at once with it.
@@ -134,7 +137,10 @@ func (r *Relay) Listen(device string) (*Listening, error) {
 		return nil, ErrNotSharing
 	}
 	old := r.listening
-	l := &Listening{r: r, device: id, Name: d.name, packets: make(chan []byte, listenQueue), done: make(chan struct{})}
+	l := &Listening{r: r, device: id, Name: d.name, packets: make(chan []byte, listenQueue), done: make(chan struct{}), at: now}
+	if p := r.peers[id]; p != nil && p.heard && p.theirs.Share {
+		l.shared = true
+	}
 	r.listening = l
 	var dropped *attempt
 	if a := r.listenAsk; a != nil && a.to != id {

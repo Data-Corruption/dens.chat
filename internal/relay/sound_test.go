@@ -4,10 +4,12 @@ import (
 	"encoding/binary"
 	"errors"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/shortcuts"
+	"github.com/pion/webrtc/v4"
 )
 
 // piece is a piece of sound as the helper cuts it: 48 kHz, and 240 frames
@@ -191,11 +193,121 @@ func TestOneListenerAtATime(t *testing.T) {
 
 	laptop.relay.SetSound(true)
 	lists(t, desk, laptop, true)
+	start := time.Now()
 	if _, err := desk.relay.Listen(laptop.relay.cfg.ID.String()); err != nil {
 		t.Fatal(err)
 	}
 	ended(t, third, WhyUnshared)
+	// It shared during the phone's listening, so its stopping ends it at once.
+	if d := time.Since(start); d >= time.Second {
+		t.Errorf("the phone's listening ended %s after the desk stopped sharing", d)
+	}
 	lists(t, phone, desk, false)
+}
+
+// linkOf waits until an install's link with another is up and has heard
+// its state, and returns it.
+func linkOf(t *testing.T, i, other *install) *peer {
+	t.Helper()
+	var p *peer
+	waitFor(t, "the link up", func() bool {
+		i.relay.mu.Lock()
+		defer i.relay.mu.Unlock()
+		p = i.relay.peers[other.relay.cfg.ID]
+		return p != nil && p.up && p.heard
+	})
+	return p
+}
+
+// holdCtl holds back what a link's ctl channel carries to an install, as a
+// slow path would, until the function it returns passes it on, in order.
+func holdCtl(i *install, p *peer) func() {
+	var mu sync.Mutex
+	var held [][]byte
+	holding := true
+	p.link.ctl.OnMessage(func(m webrtc.DataChannelMessage) {
+		mu.Lock()
+		defer mu.Unlock()
+		if holding {
+			held = append(held, m.Data)
+			return
+		}
+		i.relay.onCtl(p, m.Data)
+	})
+	return func() {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, b := range held {
+			i.relay.onCtl(p, b)
+		}
+		held, holding = nil, false
+	}
+}
+
+// keysLinked is a desk holding the member's call and a laptop linked to it
+// for keys, the laptop sharing its sound or not.
+func keysLinked(t *testing.T, sharing bool) (s *standIn, desk, laptop *install) {
+	s = newStandIn(t)
+	desk, laptop = s.install("Desk"), s.install("Laptop")
+	desk.call = "den"
+	s.calls = []string{"den"}
+	laptop.relay.SetSound(sharing)
+	desk.run()
+	laptop.run()
+	waitFor(t, "the laptop handing its keys over", func() bool { return laptop.hub.taker() != nil })
+	return s, desk, laptop
+}
+
+// A listening started over a link whose last state says the device doesn't
+// share, while the den's list already says it does, goes on once its state
+// comes: the laptop starts sharing, and the desk listens before the
+// laptop's state crosses their link.
+func TestListeningOutlastsAStaleState(t *testing.T) {
+	_, desk, laptop := keysLinked(t, false)
+	release := holdCtl(desk, linkOf(t, desk, laptop))
+	laptop.relay.SetSound(true)
+	lists(t, desk, laptop, true)
+	l, err := desk.relay.Listen(laptop.relay.cfg.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-l.Done():
+		t.Fatalf("the listening ended %q before the laptop's state came", l.Why())
+	case <-time.After(800 * time.Millisecond):
+	}
+	release()
+	sends(t, laptop, 20, -1)
+	if places, _ := heard(l, 300*time.Millisecond); len(places) == 0 {
+		t.Fatal("the desk heard nothing")
+	}
+}
+
+// A listening started while the den's list still says a device shares,
+// though the link's state says it stopped, ends as unshared two seconds in.
+func TestListeningToADeviceThatStopped(t *testing.T) {
+	s, desk, laptop := keysLinked(t, true)
+	p := linkOf(t, desk, laptop)
+	lists(t, desk, laptop, true)
+	shares := func() bool {
+		desk.relay.mu.Lock()
+		defer desk.relay.mu.Unlock()
+		return p.theirs.Share
+	}
+	waitFor(t, "the laptop's state saying it shares", shares)
+	s.hold()
+	defer s.letGo()
+	laptop.relay.SetSound(false)
+	waitFor(t, "the laptop's state saying it stopped", func() bool { return !shares() })
+	start := time.Now()
+	l, err := desk.relay.Listen(laptop.relay.cfg.ID.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	ended(t, l, WhyUnshared)
+	if d := time.Since(start); d < grace {
+		t.Errorf("the listening ended %s in", d)
+	}
 }
 
 // Two hellos that cross, each install asking the other at once, as the
