@@ -85,6 +85,64 @@ func runFlatpak(t *testing.T, bi build.BuildInfo, port int) (*app.App, control.C
 	return a, client, stop
 }
 
+// A start of the Flatpak's service that finds another holding its
+// instance tells it so over the control endpoint, which the running
+// service takes, then waits, and starts once that one stops. A service
+// that isn't the Flatpak's takes no such word.
+func TestFlatpakStartSaysItWaits(t *testing.T) {
+	flatpakHome(t)
+	port := freePort(t)
+	_, client, stop := runFlatpak(t, flatpakBuild("v1.1.0"), port)
+
+	next := app.New(flatpakBuild("v1.1.0"))
+	next.RetrieveSecret = func(context.Context, time.Duration) ([]byte, error) { return nil, errors.ErrUnsupported }
+	form := layout.Flatpak
+	said := make(chan error, 2)
+	opened := make(chan error, 1)
+	go func() {
+		opened <- next.Open(app.OpenOptions{Instance: "main", DevClientPort: port, Form: &form, Waiting: func() {
+			said <- client.Call(control.Request{Op: control.OpTakeOver}, nil)
+		}})
+	}()
+	select {
+	case err := <-said:
+		if err != nil {
+			t.Fatalf("the running service, told another waits: %v", err)
+		}
+	case err := <-opened:
+		t.Fatalf("a start beside a running service didn't wait: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("a start beside a running service never said it waits")
+	}
+	select {
+	case err := <-opened:
+		t.Fatalf("a start opened beside a running service: %v", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	stop()
+	if err := <-opened; err != nil {
+		t.Fatalf("the start that waited: %v", err)
+	}
+	if err := next.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if len(said) != 0 {
+		t.Fatal("the start said it waits twice")
+	}
+
+	// A start that finds its instance free has nobody to tell.
+	alone := app.New(flatpakBuild("v1.1.0"))
+	alone.RetrieveSecret = next.RetrieveSecret
+	if err := alone.Open(app.OpenOptions{Instance: "main", DevClientPort: port, Form: &form, Waiting: func() {
+		t.Error("a start that found its instance free said it waits")
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := alone.Close(); err != nil {
+		t.Fatal(err)
+	}
+}
+
 // The Flatpak updated to a new build starts locked: the page gets its
 // unlock screen and nothing else until the local password opens Dens, and
 // the update, migrated after a snapshot, is done once it has. It hosts no

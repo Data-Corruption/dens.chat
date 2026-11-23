@@ -292,13 +292,53 @@ func Notify(id, title, body string) error {
 // SpawnLatest starts argv as a sandbox of its own, from the newest build of
 // this Flatpak the system has, through Flatpak's portal: nothing
 // that ran this process holds it, as a terminal would. files become the new
-// process's descriptors from 3 on.
-func SpawnLatest(argv []string, files ...*os.File) error {
+// process's descriptors from 3 on. The channel it returns closes once the
+// portal says the sandbox ended, which it watches for until ctx is done:
+// Flatpak can fail to set a sandbox up, as while another's mounts change,
+// and then nothing ran in it. The portal can also say when a sandbox
+// starts, but says so as bubblewrap forks, before it has mounted
+// anything, so a caller that must know the process runs hears it from the
+// process.
+func SpawnLatest(ctx context.Context, argv []string, files ...*os.File) (ended <-chan struct{}, err error) {
+	// The portal sends a spawn's signals to its caller alone, so they need
+	// this connection, and may come before the call's own answer.
+	words := make(chan *dbus.Signal, 16)
+	p, err := dialPortal(func(s *dbus.Signal) {
+		select {
+		case words <- s:
+		default:
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	fds := map[uint32]*os.File{}
 	for i, f := range files {
 		fds[uint32(3+i)] = f
 	}
-	return spawnLatest(argv, fds)
+	pid, err := p.spawnLatest(argv, fds)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+	gone := make(chan struct{})
+	go func() {
+		defer p.Close()
+		for {
+			select {
+			case s := <-words:
+				if of, ok := firstUint32(s.Body); ok && of == pid && s.Name == flatpakPortal+".SpawnExited" {
+					close(gone)
+					return
+				}
+			case <-p.done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return gone, nil
 }
 
 // SpawnLatestOutput runs argv as SpawnLatest does, and returns what it
@@ -309,7 +349,13 @@ func SpawnLatestOutput(ctx context.Context, argv []string) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	err = spawnLatest(argv, map[uint32]*os.File{1: w})
+	p, err := dialPortal(nil)
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
+	_, err = p.spawnLatest(argv, map[uint32]*os.File{1: w})
+	p.Close()
 	// The new process holds the pipe's end now, and closes it as it ends.
 	w.Close()
 	if err != nil {
@@ -324,13 +370,9 @@ func SpawnLatestOutput(ctx context.Context, argv []string) ([]byte, error) {
 }
 
 // spawnLatest has Flatpak's portal start argv from the newest build, with
-// files as the new process's descriptors.
-func spawnLatest(argv []string, files map[uint32]*os.File) error {
-	p, err := dialPortal(nil)
-	if err != nil {
-		return err
-	}
-	defer p.Close()
+// files as the new process's descriptors, and returns the portal's
+// number for it, which its signals carry.
+func (p *portalConn) spawnLatest(argv []string, files map[uint32]*os.File) (pid uint32, err error) {
 	cstring := func(s string) []byte { return append([]byte(s), 0) }
 	args := make([][]byte, 0, len(argv))
 	for _, a := range argv {
@@ -340,9 +382,19 @@ func spawnLatest(argv []string, files map[uint32]*os.File) error {
 	for n, f := range files {
 		fds[n] = dbus.UnixFD(f.Fd())
 	}
-	var pid uint32
-	return p.conn.Object(flatpakPortalName, flatpakPortalPath).Call(flatpakPortal+".Spawn", 0,
+	err = p.conn.Object(flatpakPortalName, flatpakPortalPath).Call(flatpakPortal+".Spawn", 0,
 		cstring("/"), args, fds, map[string]string{}, uint32(spawnLatestVersion), map[string]dbus.Variant{}).Store(&pid)
+	return pid, err
+}
+
+// firstUint32 is a signal's first argument, where it's a uint32, as the
+// process a spawn's signal is about.
+func firstUint32(body []any) (uint32, bool) {
+	if len(body) == 0 {
+		return 0, false
+	}
+	v, ok := body[0].(uint32)
+	return v, ok
 }
 
 // InheritedPipe is the pipe a process was given as descriptor fd, as dens

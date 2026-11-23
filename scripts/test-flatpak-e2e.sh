@@ -17,7 +17,10 @@
 # container, as the den e2e's is hosted, trusting its certificate
 # authority. Flatpak's update monitor then finds the fixture's next version,
 # once it's published, which the page installs, restarting into it, which
-# migrates after a snapshot of the data; the den reconnects. Rolled back to
+# migrates after a snapshot of the data; the den reconnects. Restarted
+# forty times over while other sandboxes of the app start and end beside
+# it, each restart takes over; restarted while the newest build can't
+# run, Dens stays as it was. Rolled back to
 # the build before, Dens refuses the newer data and names the snapshot,
 # whose restore the rolled-back build takes, starting locked. Updated
 # again outside Dens, as the software center does, the page's next look
@@ -95,8 +98,9 @@ finish() {
     >"$RUN_LOG_DIR/flatpak-service.log" 2>/dev/null || :
   # What the member's session said, and what still ran: a build the portal
   # starts to take over from another prints why it couldn't there, not in
-  # the service's log.
-  "${INCUS[@]}" exec "$FLATPAK" -- sh -c "journalctl --no-pager -o short-precise -n 500 _UID=\$(id -u alice); echo; ps -eo pid,etimes,args" \
+  # the service's log. Each sandbox's scope starting is left out: the
+  # restarts' other sandboxes start thousands.
+  "${INCUS[@]}" exec "$FLATPAK" -- sh -c "journalctl --no-pager -o short-precise _UID=\$(id -u alice) | grep -v 'Started app-flatpak-' | tail -n 500; echo; ps -eo pid,etimes,args" \
     >"$RUN_LOG_DIR/flatpak-session.log" 2>&1 || :
   if ! $passed && $KEEP_FAILED; then
     echo ">> Kept $DEN and $FLATPAK, and $PUBLISHER unless it passed, for inspection: incus exec <name> -- bash"
@@ -255,6 +259,17 @@ run() {
   flatpak publish "$next"
   flatpak wait-update
   flatpak update "$next"
+  flatpak wait-connected
+
+  # The update brought the runtime's GL extension, whose start Debian
+  # 13's Flatpak can fail while another sandbox's mounts go: about one
+  # start in ten here, so forty restarts meet it.
+  echo ">> Restarted forty times over while other sandboxes come and go, each restart takes over"
+  flatpak restarts 40
+  # Flatpak's portal calls a sandbox started before it has anything
+  # mounted, so one that then fails mustn't be stopped for.
+  echo ">> Restarted while the newest build can't run, each restart fails and Dens stays"
+  flatpak unstartable 4
   flatpak wait-connected
 
   echo ">> Rolled back to $first, Dens refuses the newer data and names the snapshot"

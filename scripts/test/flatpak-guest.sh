@@ -66,11 +66,33 @@ json() {
 # dens service run, and not the short ones, as the service's own that asks
 # the newest build installed its version.
 services() {
-    n=0
+    service_pids | grep -c . || :
+}
+
+# service_pids lists those services' processes, a line each.
+service_pids() {
     for pid in $(as_alice flatpak ps --columns=application,child-pid | awk -v app="$APP" '$1 == app { print $2 }'); do
-        tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null | grep -q ' service run' && n=$((n + 1))
+        # A sandbox that ended since flatpak ps listed it has no cmdline.
+        if { tr '\0' ' ' < "/proc/$pid/cmdline"; } 2>/dev/null | grep -q ' service run'; then
+            echo "$pid"
+        fi
     done
-    echo "$n"
+}
+
+# churn starts and ends other sandboxes of the app, two at a time, until
+# churn_stop, as other apps' do beside Dens on a member's desktop.
+churn() {
+    rm -f /tmp/churn-done
+    for _ in 1 2; do
+        while [ ! -e /tmp/churn-done ]; do
+            as_alice flatpak run --command=true "$APP" >/dev/null 2>&1 || :
+        done &
+    done
+}
+
+churn_stop() {
+    touch /tmp/churn-done
+    wait
 }
 
 wait_stopped() {
@@ -303,6 +325,67 @@ wait-installed)
     # which Dens asks the newest build installed, where Flatpak's update
     # monitor names commits alone.
     wait_status "d.get('flatpakUpdate', {}).get('version') == '$1'"
+    ;;
+restarts)
+    # restarts N: restart from the page N times over, while other
+    # sandboxes of the app start and end beside it. A sandbox's mounts
+    # going can fail another's start, as Debian 13's Flatpak fails one
+    # whose GL extension it resolves just then, and the service stops for
+    # the one it starts, so each restart must still take over. The log
+    # says each handover from here on, and a failure prints what the
+    # member's session said meanwhile, without the churn's scopes, which
+    # would bury it.
+    dens logs --level info >/dev/null
+    began=$(date '+%Y-%m-%d %H:%M:%S')
+    churn
+    lost() {
+        churn_stop
+        journalctl --no-pager -o short-precise --since "$began" "_UID=$(uid)" |
+            grep -v 'Started app-flatpak-' | tail -n 60 >&2
+        fail "$*"
+    }
+    for i in $(seq 1 "$1"); do
+        before=$(service_pids)
+        api POST /api/restart >/dev/null || lost "restart $i of $1 was refused"
+        took=false
+        for _ in $(seq 1 240); do
+            now=$(service_pids)
+            if [ -n "$now" ] && [ "$now" != "$before" ] && [ "$(echo "$now" | wc -l)" = 1 ] &&
+                api GET /api/status >/dev/null 2>&1; then
+                took=true
+                break
+            fi
+            sleep 0.25
+        done
+        $took || lost "restart $i of $1 never took over: services $(service_pids)"
+    done
+    churn_stop
+    ;;
+unstartable)
+    # unstartable N: restart from the page N times over while the newest
+    # build can't run, its binary moved aside, beside other sandboxes as
+    # the restarts are. Flatpak starts each sandbox, and its portal says
+    # so, before the sandbox finds it has nothing to run, so a service that
+    # stopped on the portal's word would leave Dens not running: each
+    # restart fails, and the service stays.
+    bin=/home/alice/.local/share/flatpak/app/$APP/current/active/files/bin/dens
+    [ -x "$bin" ] || fail "the Flatpak's binary isn't at $bin"
+    before=$(service_pids)
+    [ -n "$before" ] || fail "no service of Dens runs to restart"
+    mv "$bin" "$bin.aside"
+    churn
+    for i in $(seq 1 "$1"); do
+        status=$(code POST /api/restart)
+        now=$(service_pids)
+        if [ "$status" != 500 ] || [ "$now" != "$before" ]; then
+            churn_stop
+            mv "$bin.aside" "$bin"
+            fail "restart $i of $1 into a build that can't run answered $status, and left services $now of $before"
+        fi
+    done
+    churn_stop
+    mv "$bin.aside" "$bin"
+    api GET /api/status >/dev/null || fail "Dens stopped answering after restarts that failed"
     ;;
 restart)
     # restart VERSION: restart from the page into VERSION, which starts

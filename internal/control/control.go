@@ -68,6 +68,11 @@ const (
 	// the desktop user's shortcut helper to the service, in frames, while
 	// Relay shares it.
 	OpSound = "sound"
+	// OpTakeOver is a service that has started saying it waits for the
+	// one that holds its instance. The Flatpak's service stops for the
+	// build a restart started only once that build says so: a sandbox
+	// Flatpak failed to set up never does.
+	OpTakeOver = "take-over"
 )
 
 const maxLine = 64 * 1024

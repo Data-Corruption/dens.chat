@@ -25,6 +25,7 @@
 ### Fixed
 
 - In Firefox, the microphone's meter in the settings' Voice froze at its last level while you were muted. It falls silent now.
+- Since v1.2.0, the Flatpak's Restart, and its restart into an update, could leave Dens closed, on Debian 13 at least, where Flatpak sometimes fails to start an app just as another copy of it closes. Dens now waits until the new one has started before it closes, and starts it again if it didn't.
 
 ## [v1.14.1] - 2026-11-21
 

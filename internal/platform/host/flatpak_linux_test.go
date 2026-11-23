@@ -39,6 +39,9 @@ type fakeFlatpakPortals struct {
 
 	spawned [][]string
 	flags   uint32
+	// ends are whether each spawn's sandbox ends, in turn; none does once
+	// they run out.
+	ends    []bool
 	monitor dbus.ObjectPath
 	// updateAnswer is the monitor's Update: a D-Bus error's name, or the
 	// Progress statuses it sends.
@@ -163,17 +166,41 @@ type fakeFlatpak fakeFlatpakPortals
 // Spawn records what it starts. godbus can't take a call that passes
 // descriptors inside a map, as Spawn's do, so the fake is never given any;
 // the Flatpak e2e passes them to Flatpak's own portal.
-func (f *fakeFlatpak) Spawn(cwd []byte, argv [][]byte, fds map[uint32]dbus.UnixFDIndex, envs map[string]string, flags uint32, opts map[string]dbus.Variant) (uint32, *dbus.Error) {
+func (f *fakeFlatpak) Spawn(sender dbus.Sender, cwd []byte, argv [][]byte, fds map[uint32]dbus.UnixFDIndex, envs map[string]string, flags uint32, opts map[string]dbus.Variant) (uint32, *dbus.Error) {
 	p := (*fakeFlatpakPortals)(f)
 	args := []string{}
 	for _, a := range argv {
 		args = append(args, strings.TrimSuffix(string(a), "\x00"))
 	}
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.spawned = append(p.spawned, args)
 	p.flags = flags
-	p.mu.Unlock()
+	ends := false
+	if len(p.ends) > 0 {
+		ends, p.ends = p.ends[0], p.ends[1:]
+	}
+	// To the caller alone, as the portal sends them: another spawn's end,
+	// which isn't this one's to heed, then this one's.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		p.tell(sender, "SpawnExited", uint32(41), uint32(256))
+		if ends {
+			p.tell(sender, "SpawnExited", uint32(42), uint32(256))
+		}
+	}()
 	return 42, nil
+}
+
+// tell sends one of the Flatpak portal's signals to one client.
+func (f *fakeFlatpakPortals) tell(to dbus.Sender, member string, body ...any) {
+	f.conn.Send(&dbus.Message{Type: dbus.TypeSignal, Headers: map[dbus.HeaderField]dbus.Variant{
+		dbus.FieldPath:        dbus.MakeVariant(dbus.ObjectPath(flatpakPortalPath)),
+		dbus.FieldInterface:   dbus.MakeVariant(flatpakPortal),
+		dbus.FieldMember:      dbus.MakeVariant(member),
+		dbus.FieldDestination: dbus.MakeVariant(string(to)),
+		dbus.FieldSignature:   dbus.MakeVariant(dbus.SignatureOf(body...)),
+	}, Body: body}, nil)
 }
 
 func (f *fakeFlatpak) CreateUpdateMonitor(sender dbus.Sender, opts map[string]dbus.Variant) (dbus.ObjectPath, *dbus.Error) {
@@ -296,7 +323,7 @@ func TestBackgroundSpawnAndNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := SpawnLatest([]string{"dens", "service", "run"}); err != nil {
+	if _, err := SpawnLatest(t.Context(), []string{"dens", "service", "run"}); err != nil {
 		t.Fatal(err)
 	}
 	f.mu.Lock()
@@ -306,6 +333,37 @@ func TestBackgroundSpawnAndNotify(t *testing.T) {
 	}
 	if len(f.spawned) != 1 || strings.Join(f.spawned[0], " ") != "dens service run" || f.flags != spawnLatestVersion {
 		t.Fatalf("spawned %v, flags %d", f.spawned, f.flags)
+	}
+}
+
+// A spawn hears from the portal once its sandbox ends, as one Flatpak
+// failed to set up does before it runs anything, and nothing of one that
+// runs on, or of another spawn's.
+func TestSpawnHearsItsSandboxEnd(t *testing.T) {
+	conn := sessionBus(t)
+	f := startFlatpakPortals(t, conn)
+	argv := []string{"dens", "service", "run"}
+	f.mu.Lock()
+	f.ends = []bool{true, false}
+	f.mu.Unlock()
+	ended, err := SpawnLatest(t.Context(), argv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a sandbox that ended was never said to have")
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if ended, err = SpawnLatest(ctx, argv); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ended:
+		t.Fatal("a sandbox that runs on was said to have ended")
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

@@ -24,18 +24,31 @@ type fakeSpawn struct {
 	argv   [][]string
 	answer string
 	after  time.Duration
+	// unstarted is how many spawns' sandboxes end before the service runs
+	// in them, which says nothing, before one starts.
+	unstarted int
 }
 
-func (f *fakeSpawn) spawn(argv []string, files ...*os.File) error {
+func (f *fakeSpawn) spawn(_ context.Context, argv []string, files ...*os.File) (<-chan struct{}, error) {
 	f.mu.Lock()
 	f.argv = append(f.argv, argv)
 	answer, after := f.answer, f.after
+	failed := f.unstarted > 0
+	if failed {
+		f.unstarted--
+	}
 	f.mu.Unlock()
+	ended := make(chan struct{})
+	if failed {
+		// Nothing holds the pipe once the launch closes its own copy.
+		close(ended)
+		return ended, nil
+	}
 	// The launch closes its copy as Spawn returns, as the portal keeps
 	// its own.
 	fd, err := syscall.Dup(int(files[0].Fd()))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	pipe := os.NewFile(uintptr(fd), "ready")
 	go func() {
@@ -45,13 +58,14 @@ func (f *fakeSpawn) spawn(argv []string, files ...*os.File) error {
 			_, _ = pipe.WriteString(answer + "\n")
 		}
 	}()
-	return nil
+	return ended, nil
 }
 
 // A launch starts the Flatpak's service through Flatpak's Spawn when none
 // runs, and hears from it that it's ready, or why it stopped; one that
-// finds an older build's service has it quit first, and one that finds
-// its own build's or a newer one starts nothing.
+// ended saying nothing is started again; one that finds an older build's
+// service has it quit first, and one that finds its own build's or a
+// newer one starts nothing.
 func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 	dir := t.TempDir()
 	t.Setenv("XDG_DATA_HOME", filepath.Join(dir, "data"))
@@ -79,7 +93,7 @@ func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 	for _, c := range []struct{ answer, want string }{
 		{readyWord, ""},
 		{"service start refused: Dens was rolled back to v1.1.0", "rolled back"},
-		{"", "stopped as it started"},
+		{"", "didn't start"},
 	} {
 		f.mu.Lock()
 		f.answer = c.answer
@@ -95,6 +109,37 @@ func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 	if argv != "dens service run --ready-fd 3" {
 		t.Fatalf("spawned %q", argv)
 	}
+	// A service that says nothing, like the last, never ran, or stopped
+	// with no word: its sandbox ended before Flatpak had set it up, which
+	// the portal may still have called started. It's started again,
+	// spawnTries times in all.
+	f.mu.Lock()
+	silent := len(f.argv) - 2
+	f.mu.Unlock()
+	if silent != spawnTries {
+		t.Fatalf("a service that said nothing was started %d times", silent)
+	}
+	for _, c := range []struct {
+		unstarted, spawns int
+		want              string
+	}{{2, 3, ""}, {spawnTries, spawnTries, "didn't start"}} {
+		f.mu.Lock()
+		f.argv, f.answer, f.unstarted = nil, readyWord, c.unstarted
+		f.mu.Unlock()
+		err := ensureFlatpakService(ctx, bi, client, l)
+		f.mu.Lock()
+		spawns := len(f.argv)
+		f.unstarted = 0
+		f.mu.Unlock()
+		if spawns != c.spawns || c.want == "" && err != nil || c.want != "" && (err == nil || !strings.Contains(err.Error(), c.want)) {
+			t.Errorf("with %d sandboxes unstarted: %d spawns, %v", c.unstarted, spawns, err)
+		}
+	}
+
+	// A start that finds its instance held and nothing answering, as a
+	// service from before v1.15.0 that has stopped answering, goes on
+	// to wait.
+	tellRunning(client)
 
 	// A running service answers the launch.
 	ln, err := host.ListenControl(l.ControlEndpoint, me)
@@ -107,7 +152,7 @@ func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 	}
 	defer logs.Close()
 	var mu sync.Mutex
-	version, quits := "v1.1.0", 0
+	version, quits, waits := "v1.1.0", 0, 0
 	server := &control.Server{Allowed: me, Log: logs, Handlers: map[string]control.Handler{
 		control.OpStatus: func(context.Context, control.Request) (control.Reply, error) {
 			mu.Lock()
@@ -118,6 +163,12 @@ func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 			mu.Lock()
 			defer mu.Unlock()
 			quits++
+			return control.Reply{}, nil
+		},
+		control.OpTakeOver: func(context.Context, control.Request) (control.Reply, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			waits++
 			return control.Reply{}, nil
 		},
 	}}
@@ -159,6 +210,13 @@ func TestLaunchStartsTheFlatpaksService(t *testing.T) {
 	if err := spawnService(ctx, bi, client, l); err != nil {
 		t.Fatalf("a launch whose service lost to another's: %v", err)
 	}
+	// A start that finds its instance held tells the service holding it.
+	tellRunning(client)
+	mu.Lock()
+	defer mu.Unlock()
+	if waits != 1 {
+		t.Fatalf("the running service was told %d times that a start waits", waits)
+	}
 }
 
 // Two launches at once start one service between them: the second waits
@@ -192,13 +250,13 @@ func TestTwoLaunchesStartOneService(t *testing.T) {
 	saved := spawnLatest
 	// The "service" each spawn starts answers on the control endpoint, and
 	// says it's ready.
-	spawnLatest = func(argv []string, files ...*os.File) error {
+	spawnLatest = func(_ context.Context, argv []string, files ...*os.File) (<-chan struct{}, error) {
 		mu.Lock()
 		spawned++
 		mu.Unlock()
 		ln, err := host.ListenControl(l.ControlEndpoint, me)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		server := &control.Server{Allowed: me, Log: logs, Handlers: map[string]control.Handler{
 			control.OpStatus: func(context.Context, control.Request) (control.Reply, error) {
@@ -207,7 +265,7 @@ func TestTwoLaunchesStartOneService(t *testing.T) {
 		}}
 		go func() { _ = server.Serve(serving, ln) }()
 		_, err = files[0].WriteString(readyWord + "\n")
-		return err
+		return make(chan struct{}), err
 	}
 	t.Cleanup(func() { spawnLatest = saved })
 	bi := build.BuildInfo{Name: "dens", Version: "v1.1.0"}
