@@ -130,7 +130,7 @@ function Devices({ den }) {
                                         {d.current && <span class="badge badge-soft badge-success badge-sm ml-2">This device</span>}
                                         {!d.current && Date.now() - d.created_at < NEW_FOR && <span class="badge badge-soft badge-info badge-sm ml-2" data-new-device>New</span>}
                                         {detail && <span class="block text-base-content/70">{detail}</span>}
-                                        <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last signed in {day(d.last_seen_at)}</span>
+                                        <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last seen {day(d.last_seen_at)}</span>
                                     </span>
                                     {confirm !== d.key_id && <Button kind="danger" size="xs" onClick={() => setConfirm(d.key_id)}>Sign out</Button>}
                                 </div>

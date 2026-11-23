@@ -158,9 +158,12 @@ function DenList({ dens, hosting, navigate, onChanged, onSignIn, onAdd }) {
     return (
         <section class="card bg-base-200">
             <div class="card-body gap-3">
-                <div class="flex items-center gap-2">
-                    <h2 class="card-title flex-1">Your dens</h2>
-                    <Button kind="primary" onClick={onAdd}>Add a den</Button>
+                {/* A phone's width can't hold the title, Add a den and the
+                    three buttons in a row, so there Add a den takes a row
+                    of its own under them. */}
+                <div class="flex flex-wrap items-center gap-2">
+                    <h2 class="card-title flex-1 whitespace-nowrap">Your dens</h2>
+                    <Button kind="primary" class="max-sm:order-last max-sm:w-full" onClick={onAdd}>Add a den</Button>
                     <SwitcherButton />
                     <QuietButton class={`${buttonClass('quiet')} btn-square`} />
                     <SettingsCog />

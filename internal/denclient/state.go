@@ -72,9 +72,11 @@ type denState struct {
 	spoilers, moveMembers, away, readAll bool
 	// nameStyles says the den keeps a style for each member's name.
 	nameStyles bool
-	// relay says the den passes boxes between the member's devices.
-	// The cache doesn't keep it: it matters only while connected.
-	relay bool
+	// relay says the den passes boxes between the member's devices,
+	// auditLog that it keeps staff's acts for staff to read, and
+	// membersSeen that it tells staff when each member was last seen. The
+	// cache keeps none of them: they matter only while connected.
+	relay, auditLog, membersSeen bool
 	// groupDMs says the snapshot came on a socket speaking the protocol's
 	// version with group DMs, and notes the one with notes to self.
 	groupDMs, notes bool
@@ -133,6 +135,11 @@ type View struct {
 	// NameStyles says the den keeps a style for each member's name, which
 	// the page offers only then.
 	NameStyles bool `json:"name_styles"`
+	// AuditLog says the den keeps staff's acts, and MembersSeen that it
+	// tells staff when each member was last seen, which Manage offers
+	// only then.
+	AuditLog    bool `json:"audit_log"`
+	MembersSeen bool `json:"members_seen"`
 	// HasGroupDMs says the den has group DMs for this Dens, and GroupDMs
 	// are this member's, as their changes make them.
 	HasGroupDMs bool                 `json:"has_group_dms"`
@@ -216,7 +223,7 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
 		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
 		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Events: sortedEvents(s.events),
-		EventLimits: s.eventLimits}
+		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -471,7 +478,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.sealedCalls, next.disappearing = r.Den.SealedCalls, r.Den.Disappearing
 	next.spoilers, next.moveMembers, next.away, next.nameStyles = r.Den.Spoilers, r.Den.MoveMembers, r.Den.Away, r.Den.NameStyles
 	next.readAll = r.Den.ReadAll
-	next.relay = r.Den.Relay
+	next.relay, next.auditLog, next.membersSeen = r.Den.Relay, r.Den.AuditLog, r.Den.MembersSeen
 	sounds, ok := cleanSounds(r.Sounds)
 	if !ok {
 		return errMalformed

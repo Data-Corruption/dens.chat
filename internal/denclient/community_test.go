@@ -347,3 +347,36 @@ func TestProfilesAndBans(t *testing.T) {
 		t.Fatalf("bans after lifting: %+v", bans)
 	}
 }
+
+// Staff read the den's audit log and when each member was last seen
+// through their Dens, which checks each answer, and a member is refused;
+// a page's cursor that isn't a line's ID asks the den nothing.
+func TestAuditLogAndLastSeen(t *testing.T) {
+	_, owner, member, denID, _ := chatDen(t)
+	ctx := context.Background()
+	bob := me(t, member, denID).ID
+	if v, _ := owner.View(denID); !v.AuditLog || !v.MembersSeen {
+		t.Fatal("the den's view doesn't say it keeps the log and last seen")
+	}
+	var perr *denproto.Error
+	if _, err := member.AuditLog(ctx, denID, ""); !errors.As(err, &perr) || perr.Status != http.StatusForbidden {
+		t.Errorf("a member reading the log: %v", err)
+	}
+	if _, err := member.MembersSeen(ctx, denID); !errors.As(err, &perr) || perr.Status != http.StatusForbidden {
+		t.Errorf("a member reading when members were last seen: %v", err)
+	}
+	if _, err := owner.AuditLog(ctx, denID, "not a line"); err == nil || errors.As(err, &perr) {
+		t.Errorf("a cursor that isn't a line's ID: %v", err)
+	}
+	seen, err := owner.MembersSeen(ctx, denID)
+	if err != nil || len(seen) != 2 || seen[0].Day <= 0 {
+		t.Fatalf("seen: %+v %v", seen, err)
+	}
+	if err := owner.RemoveMember(ctx, denID, bob, denproto.RemoveRequest{Ban: true}); err != nil {
+		t.Fatal(err)
+	}
+	log, err := owner.AuditLog(ctx, denID, "")
+	if err != nil || len(log.Lines) == 0 || log.Lines[0].Kind != denproto.AuditMemberRemoved || log.Lines[0].MemberID != bob || !log.Lines[0].Ban {
+		t.Fatalf("the log: %+v %v", log, err)
+	}
+}

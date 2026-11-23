@@ -11,6 +11,10 @@ First, what M23.1's security checklist found and left, each a den's doing, alone
 - A hold that outlasts a new device: a device reads the member's record before it meets anyone after a snapshot. One that never kept a member keeps their new identity unheld now, and its next write of the record lifts the hold on the member's other devices, with nobody choosing.
 - The checklist's last probes: a test each for a group message's first signer and for fetched keys hashing to the identity kept, and the lines read behind the items ticked on a citation alone.
 
+Then a race in Relay, which its test met once in CI:
+
+- A listening ended by a stale word: listening to a device over a link that's already up ends at once as unshared while the link's last state says the device doesn't share, though the den's list, which Listen checks, already says it does, its state still on the way. To settle in its plan: which word holds while the two disagree, and for how long.
+
 Then what M23 left of M22's review of every screen, and of what it found members would want.
 
 - Pinned messages: a channel's own, pinned by staff and listed from its header, with no cap on how many. A pin is one more of staff's acts for M23's audit log.

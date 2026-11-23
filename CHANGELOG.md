@@ -1,5 +1,31 @@
 # Changelog
 
+## [v1.15.0] - 2026-11-22
+
+### Added
+
+- A call has a pane of its own. Joining a voice channel opens it: everyone in the call as a tile that lights while they talk, the shares you watch large on a stage, two side by side, and the call's controls along its foot. Leave for a text channel and the call goes on; click the voice channel to come back to it. On a phone, tap the call's bar.
+- Away, in a call: it mutes you and shows z's beside your name to everyone who sees the call, until you unmute or talk. A den that hasn't been updated yet shows you muted.
+- A quick switcher: Ctrl+K, or the magnifier atop a den's list and on Home, finds a channel, a DM, a group or a den by a few letters, across every den you're in, with what's unread first.
+- Keys for getting around: Alt+↑ and Alt+↓ go to the channel before and after, Esc marks the open one read, and Ctrl+/ lists every key.
+- Mark as read, in the menu of a channel, a DM or a group, and Mark all as read, from the den's name, once the den is updated.
+- Links to channels: type # and a few letters to complete one, or Copy link from a channel's menu. It shows as the channel's name and opens it.
+- A channel's notifications have three levels, from its bell or its menu: All messages, Mentions, as before, and Nothing.
+- Do not disturb, from the moon beside the cog and on Home: for an hour, until tomorrow at 8:00, or until you turn it off. Nothing notifies or sounds meanwhile, and unread marks go on as ever. It's this device's alone.
+- Members, in Manage, for moderators and the owner: everyone in the den with their role, when they joined and the day they were last seen, found by a few letters, sorted by any column, each with their menu.
+- An audit log, in Manage, for moderators and the owner: what staff did and to whom, for 90 days. Removals and bans, roles, invites, channels, a member's message deleted, calls, emoji, sounds, events and the den's settings. Never what a message said, and nothing of DMs. It starts as the den is updated.
+
+### Changed
+
+- A channel's menu is every member's now, from its ⋯, a right click or a long press: Mark as read, Notifications and Copy link, with staff's rows after them.
+- A den's moderators and owner can see the day you were last there, and nothing closer than the day.
+- The Voice settings open from the call's pane and the settings; the call's block under the channel list no longer has a cog.
+- Devices says when each device was last seen, where it said last signed in.
+
+### Fixed
+
+- In Firefox, the microphone's meter in the settings' Voice froze at its last level while you were muted. It falls silent now.
+
 ## [v1.14.1] - 2026-11-21
 
 ### Fixed

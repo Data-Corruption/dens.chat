@@ -176,8 +176,16 @@ func (d *Den) ResetCallRecord(ctx context.Context, s *Session, id string) error 
 	if err != nil {
 		return err
 	}
+	stored, err := storedRecord(ctx, d.db, cid)
+	if err != nil {
+		return err
+	}
 	r := &d.calls
 	r.mu.Lock()
+	had := stored
+	if v, ok := r.records[cid]; ok {
+		had = v
+	}
 	r.records[cid] = 0
 	r.writes = append(r.writes, recordWrite{channel: cid})
 	if room := r.rooms[cid]; room != nil {
@@ -188,5 +196,8 @@ func (d *Den) ResetCallRecord(ctx context.Context, s *Session, id string) error 
 		return err
 	}
 	d.log.Infof("Member %d reset the call record of channel %d", s.MemberID, cid)
-	return nil
+	if had == 0 {
+		return nil
+	}
+	return d.auditCall(ctx, denproto.AuditRecordReset, s, 0, cid, "")
 }

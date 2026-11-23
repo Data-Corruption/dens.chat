@@ -59,6 +59,21 @@ DELETE /api/bans/{id}                                                           
 - **Coming back.** A former member who isn't banned can join again with a new invite, as themselves: their username with the right password (the verifier) reclaims their record, history and first join time, with a new device and recovery codes. A wrong password gets `username_taken`, the same as a name in use, so an invite can't reveal who used to be here.
 - The den stores no IP addresses, and a client makes a new key for each join, so a ban can't stop someone who joins under a new name with a valid invite. Invites are the real door.
 
+### Staff's tools
+
+```
+GET /api/members/seen          200 {"seen": [{"member_id", "day"}]}
+GET /api/audit?before={id}?    200 {"lines": [line], "next"?}
+line = {"id", "at", "kind", "by"?, "member_id"?, "channel_id"?, "channel"?, "ref"?, "name"?,
+        "changes"?: [{"field", "from"?, "to"?}], "ban"?, "delete_messages"?, "revoke_invite"?, "emoji"?, "owner"?}
+```
+
+- Both are staff's, and a member gets `403 forbidden`; a den says it has them in its info, `members_seen` and `audit_log`.
+- `seen` lists each member in the den who has a device, once, by the latest time any of their devices signed in or renewed its session, as the start of that day in UTC, in milliseconds.
+- The log answers newest first, at most 50 lines a page; `next` is the line to give as `before` for the page after, until the last. A `before` that isn't an ID is `400 invalid_field`. A line goes 90 days after its `at`, and isn't read after that.
+- A line is one of staff's acts: `kind`, who acted (`by`, left out for the den's machine, as through its owner invite), on whom (`member_id`), the channel by ID and its name as it was, the ID of what else it was on (`ref`: an invite, a group, an emoji, a sound, an event or a message) and its name as it was, and what changed, each value as text, a description's with neither. A removal says whether it banned, the seconds of messages it deleted and whether it revoked the member's invite; a reactions' line names the Unicode `emoji`, or a den emoji by `name`; an event's change lists its name, place, channel and times, and its description, banner or badge with no values; a call's line holds the channel the member was in, where they were in one; and an owner invite's role change says who took over (`owner`). The kinds are `member.removed`, `ban.lifted`, `role.changed`, `invite.created`, `invite.revoked`, `channel.created`, `channel.updated`, `channel.deleted`, `group.created`, `group.updated`, `group.deleted`, `message.deleted`, `reactions.cleared`, `call.disconnected`, `call.muted`, `call.unmuted`, `call.moved`, `record.reset`, `emoji.added`, `emoji.renamed`, `emoji.deleted`, `sound.added`, `sound.renamed`, `sound.deleted`, `event.updated`, `event.canceled`, `event.ended` and `den.updated`. A later den may add kinds and fields, which a client shows as it can.
+- A client checks each line: its IDs, a kind of up to 32 of a-z and `_` in dotted parts, a field of up to 32 of the same, names up to 100 characters and values up to 200, each as cleaning leaves an event's name, emoji whole, at most 32 changes, a window of 0 or more, and an emoji from the list. One that fails refuses the whole page.
+
 ### DMs
 
 ```

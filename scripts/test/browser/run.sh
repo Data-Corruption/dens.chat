@@ -64,6 +64,11 @@
 #   notify BROWSER              a DM's notification from a tab in the background, its click,
 #                               taken back once read, none on screen or muted; and with no tab open,
 #                               the helper's through the desktop's notifications, and its click
+#   audit BROWSER               alice, in Chromium, finding carol in Manage's Members by a few letters and
+#                               promoting her from her row's menu, removing dave from his, and deleting bob's
+#                               message and a channel; carol, a moderator, in BROWSER, reading each line in
+#                               Manage's Audit log, nothing of the message's words; and bob, a member, offered
+#                               neither section and refused the log
 #   sounds BROWSER              the page's sounds in a call, as each change plays them, from
 #                               a file of the member's own, quieted and off, and a DM's sound, once
 #                               with the browser's popup, alone with DMs off, none muted or on screen
@@ -175,7 +180,8 @@
 #                               den's database holding alice's award alone, the badge's title sealed; and
 #                               Interested colored until marked, then plain with a tick
 #   settings BROWSER [PART...]  every section of the settings and of Manage opened from the list down
-#                               the side, with the layout audit, every hint in them reading in a line; and
+#                               the side, with the layout audit, every hint in them reading in a line, and
+#                               bob found in Manage's Members by two letters, his row's menu opened; and
 #                               Appearance's sizes, a photo and a YouTube player each shown at the size
 #                               chosen, a large photo drawn itself over its preview; and a theme of the member's
 #                               own made in the editor, saved, edited, its code copied and pasted into bob's

@@ -523,6 +523,7 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 	now := d.now()
 	var before, after *eventRow
 	var blobs [][]byte
+	var audited bool
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		e, err := d.visibleEvent(ctx, tx, s, id)
 		if err != nil {
@@ -586,11 +587,21 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 			return err
 		}
 		blobs = append(blobs, gone...)
-		after, err = d.event(ctx, tx, e.id)
-		return err
+		if after, err = d.event(ctx, tx, e.id); err != nil || e.madeBy == s.MemberID {
+			return err
+		}
+		changes, err := d.eventChanges(ctx, tx, before, after)
+		if err != nil || len(changes) == 0 {
+			return err
+		}
+		audited = true
+		return d.audit(ctx, tx, eventLine(denproto.AuditEventUpdated, s, after, changes))
 	})
 	if err != nil {
 		return none, err
+	}
+	if audited {
+		d.audited()
 	}
 	d.files.remove(blobs)
 	if before.staffOnly != after.staffOnly {
@@ -662,8 +673,10 @@ func (d *Den) CancelEvent(ctx context.Context, s *Session, id string) error {
 			return forbidden("an event that started can only be ended")
 		}
 		gone = e
-		blobs, err = deleteEvents(ctx, tx, `id = ?`, e.id)
-		return err
+		if blobs, err = deleteEvents(ctx, tx, `id = ?`, e.id); err != nil || e.madeBy == s.MemberID {
+			return err
+		}
+		return d.audit(ctx, tx, eventLine(denproto.AuditEventCanceled, s, e, nil))
 	})
 	if err != nil {
 		return err
@@ -753,7 +766,10 @@ func (d *Den) EndEvent(ctx context.Context, s *Session, id string) error {
 			return forbidden("an event that hasn't started is canceled, not ended")
 		}
 		ended = e
-		return endEvent(ctx, tx, e, d.now())
+		if err := endEvent(ctx, tx, e, d.now()); err != nil || e.madeBy == s.MemberID {
+			return err
+		}
+		return d.audit(ctx, tx, eventLine(denproto.AuditEventEnded, s, e, nil))
 	})
 	if err != nil || ended == nil {
 		return err

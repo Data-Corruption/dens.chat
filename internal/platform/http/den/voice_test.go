@@ -578,6 +578,26 @@ func TestStaffInCalls(t *testing.T) {
 	bob = f.voiceSocket(bobToken, nil)
 	bob.join(lounge.ID)
 	alice.wait(inCall(lounge.ID, alice.me, bob.me))
+
+	// Each act writes its line, where it took effect, and a refused one or
+	// one on a member in no call none.
+	at := "#Lounge=" + lounge.ID
+	wantLines(t, f.audit(aliceToken, "call."), []string{
+		"call.disconnected by carol on bob " + at,
+		"call.unmuted by alice on bob " + at,
+		"call.muted by carol on bob " + at,
+	})
+	if resp := act(carolToken, bob.me, "voice-mute", denproto.VoiceMuteRequest{Muted: true}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("muting bob: %d", resp.StatusCode)
+	}
+	bob.send(denproto.EventVoiceLeave, struct{}{})
+	alice.wait(inCall(lounge.ID, alice.me))
+	if resp := act(carolToken, bob.me, "voice-mute", denproto.VoiceMuteRequest{Muted: false}); resp.StatusCode != http.StatusNoContent {
+		t.Fatalf("unmuting bob: %d", resp.StatusCode)
+	}
+	if got := f.audit(aliceToken, "call."); len(got) != 5 || got[0] != "call.unmuted by carol on bob" {
+		t.Fatalf("the log's calls, newest first: %q", got)
+	}
 }
 
 // moved matches the den telling a socket that staff moved its member's
@@ -690,6 +710,13 @@ func TestStaffMoveMembers(t *testing.T) {
 	wantError(t, move(carolToken, alice.me, lounge.ID), http.StatusForbidden, denproto.CodeForbidden)
 	wantError(t, move(carolToken, carol.me, lounge.ID), http.StatusForbidden, denproto.CodeForbidden)
 	wantError(t, move(aliceToken, alice.me, lounge.ID), http.StatusForbidden, denproto.CodeForbidden)
+	// A move told to a page writes its line, from the call it was in.
+	from := "#Lounge=" + lounge.ID
+	wantLines(t, f.audit(aliceToken, "call."), []string{
+		"call.moved by carol on dave " + from + " channel:Lounge>Raid",
+		"call.moved by alice on dave " + from + " channel:Lounge>Staff",
+		"call.moved by carol on bob " + from + " channel:Lounge>Games",
+	})
 
 	// A held call has no page to tell.
 	bob.c.Close(websocket.StatusGoingAway, "")

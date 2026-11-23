@@ -100,7 +100,7 @@ The raw password never leaves the client. For each den, the client derives `veri
 
 A new device names the den with any invite from it, even a used one, which pins its identity, or with its address, which trusts the key the den proves there. Trusting an address is safe for the password, since a verifier made for one den is worthless at another. The page shows each den's ID, the start of its identity, so a member can compare it with someone else's.
 
-Among a den's sections in the settings are **Devices** and **Password and recovery**. Devices lists each registered key with its label, when it was added and when it last signed in, and signs any of them out, this one included, closing their sockets at once. Password and recovery changes the password, which signs out every other device, and makes new recovery codes. A device that was signed out says so and offers to sign in again.
+Among a den's sections in the settings are **Devices** and **Password and recovery**. Devices lists each registered key with its label, when it was added and when it was last seen, its last sign-in or renewal, and signs any of them out, this one included, closing their sockets at once. Password and recovery changes the password, which signs out every other device, and makes new recovery codes. A device that was signed out says so and offers to sign in again.
 
 ### Approving new devices
 

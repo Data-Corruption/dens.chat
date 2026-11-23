@@ -21,6 +21,8 @@ func (rt *router) mountMembers(r chi.Router) {
 	r.Post("/api/dens/{den}/members/{member}/compare", rt.handleCompare)
 	r.Post("/api/dens/{den}/members/{member}/send-anyway", rt.handleSendAnyway)
 	r.Get("/api/dens/{den}/bans", rt.handleBans)
+	r.Get("/api/dens/{den}/audit", rt.handleAuditLog)
+	r.Get("/api/dens/{den}/seen", rt.handleMembersSeen)
 	r.Delete("/api/dens/{den}/bans/{member}", rt.handleUnban)
 	r.Post("/api/dens/{den}/dms", rt.handleOpenDM)
 	r.Post("/api/dens/{den}/notes", rt.handleOpenNotes)
@@ -131,6 +133,26 @@ func (rt *router) handleBans(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]any{"bans": bans})
+}
+
+// handleAuditLog answers staff with a page of the den's audit log.
+func (rt *router) handleAuditLog(w http.ResponseWriter, r *http.Request) {
+	log, err := rt.a.Dens.AuditLog(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("before"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, log)
+}
+
+// handleMembersSeen answers staff with when each member was last seen.
+func (rt *router) handleMembersSeen(w http.ResponseWriter, r *http.Request) {
+	seen, err := rt.a.Dens.MembersSeen(r.Context(), chi.URLParam(r, "den"))
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, map[string]any{"seen": seen})
 }
 
 func (rt *router) handleUnban(w http.ResponseWriter, r *http.Request) {

@@ -26,6 +26,8 @@ protect you from.
 | Who DMs whom, who's in which group DMs, when, and how much | The den |
 | How long a DM's or a group DM's messages last before they disappear | Its members, and the den, which deletes them when their time comes |
 | Your IP address | Each den you're connected to, while you're connected. Other members never see it, even in calls |
+| When you were last seen | The den, and its moderators and owner by the day: the last day any of your devices used it. Members see only who's online now |
+| What staff do: removals and bans, roles, channels, someone's message deleted, the den's settings | Moderators, the owner and the den, for 90 days, in the den's audit log. Never what a message said, and nothing of DMs |
 | What your devices relay to each other: your voice keys and your computer's sound | Only your own devices. The den passes the notes that introduce them, which only they can open, and learns that two of your devices spoke, and when; the keys and the sound go straight between them on your network, encrypted ([Relay](../relay/)) |
 | Your profile | Members of that den. You have a separate one in each den, and no den can link it to your others |
 | Your email or phone number | Nobody: Dens never asks for them |

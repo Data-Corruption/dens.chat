@@ -1126,13 +1126,17 @@ func (d *Den) DisconnectFromCall(ctx context.Context, s *Session, id string) err
 	}
 	r := &d.calls
 	r.mu.Lock()
-	defer d.unlockCalls()
+	var channel int64
 	if c := r.byMember[mid]; c != nil {
+		channel = c.channel
 		d.endCallLocked(c, denproto.VoiceDisconnectedByStaff)
 		d.publishCallsLocked(c.channel)
 		d.log.Infof("Member %d disconnected member %d from the call in channel %d", s.MemberID, mid, c.channel)
 	}
-	return nil
+	if err := d.unlockCalls(); err != nil || channel == 0 {
+		return err
+	}
+	return d.auditCall(ctx, denproto.AuditCallDisconnected, s, mid, channel, "")
 }
 
 // staffMove returns the member staff move between calls: anyone but the
@@ -1172,25 +1176,36 @@ func (d *Den) MoveMember(ctx context.Context, s *Session, id string, req denprot
 	if c.Kind != denproto.KindVoice || !visible(c, s.MemberID, IsStaff(s.Role)) {
 		return errChannelNotFound
 	}
+	from, err := d.moveLocked(s, mid, c, cid)
+	if err != nil || from == 0 {
+		return err
+	}
+	return d.auditCall(ctx, denproto.AuditCallMoved, s, mid, from, c.Name)
+}
+
+// moveLocked tells the socket holding a member's call to join a voice
+// channel, under the registry's lock, and returns the channel the call
+// was in, or 0 where nothing changes.
+func (d *Den) moveLocked(s *Session, mid int64, c denproto.Channel, cid int64) (int64, error) {
 	r := &d.calls
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	mc := r.byMember[mid]
 	if mc == nil || mc.channel == cid {
-		return nil
+		return 0, nil
 	}
 	if !visible(c, mid, mc.staff) {
-		return errChannelNotFound
+		return 0, errChannelNotFound
 	}
 	sock := mc.sock.Load()
 	if sock == nil {
-		return denproto.Errorf(http.StatusConflict, denproto.CodeCallHeld, "their call is held while their connection is away")
+		return 0, denproto.Errorf(http.StatusConflict, denproto.CodeCallHeld, "their call is held while their connection is away")
 	}
 	// The member leaves one call for the other, so the den's calls hold as
 	// many as before.
 	info, _ := d.Info()
 	if room := r.rooms[cid]; room != nil && len(room.members) >= info.CallLimits.Members {
-		return denproto.Errorf(http.StatusConflict, denproto.CodeCallFull, "that call is full")
+		return 0, denproto.Errorf(http.StatusConflict, denproto.CodeCallFull, "that call is full")
 	}
 	now := d.now()
 	for member, mv := range r.moves {
@@ -1201,7 +1216,7 @@ func (d *Den) MoveMember(ctx context.Context, s *Session, id string, req denprot
 	r.moves[mid] = pendingMove{channel: cid, until: now.Add(moveWindow)}
 	sock.voice(denproto.EventVoiceMove, denproto.VoiceMove{ChannelID: denproto.FormatID(mc.channel), To: denproto.FormatID(cid)})
 	d.log.Infof("Member %d moved member %d from the call in channel %d to channel %d", s.MemberID, mid, mc.channel, cid)
-	return nil
+	return mc.channel, nil
 }
 
 // SetStaffMute mutes a member in calls, the one they're in and any they
@@ -1211,18 +1226,36 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 	if err != nil {
 		return err
 	}
+	changed, channel := d.staffMuteLocked(mid, muted)
+	if !changed {
+		return nil
+	}
+	d.log.Infof("Member %d set member %d's staff mute to %t", s.MemberID, mid, muted)
+	kind := denproto.AuditCallMuted
+	if !muted {
+		kind = denproto.AuditCallUnmuted
+	}
+	return d.auditCall(ctx, kind, s, mid, channel, "")
+}
+
+// staffMuteLocked sets a member's staff mute under the registry's lock,
+// and returns whether it changed and the channel of the call they're in,
+// 0 for none.
+func (d *Den) staffMuteLocked(mid int64, muted bool) (bool, int64) {
 	r := &d.calls
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if r.staffMuted[mid] == muted {
-		return nil
+		return false, 0
 	}
 	if muted {
 		r.staffMuted[mid] = true
 	} else {
 		delete(r.staffMuted, mid)
 	}
+	var channel int64
 	if c := r.byMember[mid]; c != nil {
+		channel = c.channel
 		c.peer.SetMuted(muted)
 		if muted {
 			// The den forwards nothing from a muted member, their screen
@@ -1236,8 +1269,7 @@ func (d *Den) SetStaffMute(ctx context.Context, s *Session, id string, muted boo
 		}
 		d.publishCallsLocked(c.channel)
 	}
-	d.log.Infof("Member %d set member %d's staff mute to %t", s.MemberID, mid, muted)
-	return nil
+	return true, channel
 }
 
 // publishCallsLocked tells everyone who can see each of the channels who

@@ -5,20 +5,24 @@ import (
 	"database/sql"
 	"sync"
 	"time"
+
+	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
 // The den's timer: set for whatever comes due next, it ends polls at their
 // time, deletes disappearing messages at theirs, starts and
 // ends events at theirs, gives a live event's badge as a member's
-// stretch in its call comes due, and writes a call's length each
-// minute it runs past its channel's record. It's set as the den
-// starts, which catches up on what came due while it was stopped, as for a
-// den restored from a backup, and again as polls are posted and ended,
-// messages that disappear are sent, events are made, moved, canceled and
-// ended, badges attached, and calls joined.
+// stretch in its call comes due, writes a call's length each
+// minute it runs past its channel's record, and sweeps each line of the
+// audit log as its 90 days pass. It's set as the den starts, which
+// catches up on what came due while it was stopped, as for a den restored
+// from a backup, and again as polls are posted and ended, messages that
+// disappear are sent, events are made, moved, canceled and ended, badges
+// attached, calls joined, and lines written.
 
 // dueTimer runs the passes that end polls, delete disappearing messages,
-// start and end events, give badges, and write calls' records.
+// start and end events, give badges, write calls' records, and sweep the
+// audit log.
 type dueTimer struct {
 	// pass lets one pass run at a time, and Stop wait for one under way.
 	pass sync.Mutex
@@ -85,7 +89,8 @@ func (d *Den) planTimer() {
 	if err := d.db.QueryRow(`SELECT min(at) FROM (SELECT min(ends_at) AS at FROM den_polls WHERE ended = 0
 		UNION ALL SELECT min(expires_at) FROM den_messages WHERE expires_at IS NOT NULL
 		UNION ALL SELECT min(starts_at) FROM den_events WHERE state = 'coming'
-		UNION ALL SELECT min(ends_at) FROM den_events WHERE state = 'live')`).Scan(&next); err != nil {
+		UNION ALL SELECT min(ends_at) FROM den_events WHERE state = 'live'
+		UNION ALL SELECT min(at) + ? FROM den_audit)`, denproto.AuditKept.Milliseconds()).Scan(&next); err != nil {
 		d.log.Errorf("plan the den's timer: %v", err)
 		next = sql.NullInt64{Int64: d.now().Add(time.Minute).UnixMilli(), Valid: true}
 	}
@@ -144,6 +149,9 @@ func (d *Den) runTimer() {
 	}
 	if err := d.startDue(ctx); err != nil {
 		d.log.Errorf("start events: %v", err)
+	}
+	if err := d.sweepAudit(ctx); err != nil {
+		d.log.Errorf("sweep the audit log: %v", err)
 	}
 	d.planTimer()
 }

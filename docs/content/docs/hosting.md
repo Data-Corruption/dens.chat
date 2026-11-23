@@ -134,6 +134,10 @@ what's different:
 - **Staff act only on people of a lower rank.** The exception is moving
   someone between calls, which staff do to anyone but the owner. The owner
   promotes moderators from **⋯** on a profile, and sets the den's limits.
+- **Members** lists everyone, with the day each was last seen, and its **⋯**
+  promotes or removes them. The **Audit log** shows moderators and the owner
+  what staff did and to whom, for 90 days: never what a message said, and
+  nothing of DMs, where staff can't act.
 - **Limits** cap files, storage, and how big calls and screen shares get; the
   calls section shows the upload they need when full. Lower them if calls
   stutter. The soundboard's, emoji's and events' limits are in their own

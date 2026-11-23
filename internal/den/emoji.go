@@ -144,12 +144,15 @@ func (d *Den) AddEmoji(ctx context.Context, s *Session, req denproto.EmojiReques
 		if err != nil {
 			return err
 		}
-		emoji, err = d.emoji(ctx, tx, id)
-		return err
+		if emoji, err = d.emoji(ctx, tx, id); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, namedLine(denproto.AuditEmojiAdded, s, id, name, ""))
 	})
 	if err != nil {
 		return denproto.Emoji{}, err
 	}
+	d.audited()
 	d.log.Infof("Member %d added emoji %s", s.MemberID, emoji.ID)
 	return emoji, d.Hub.Publish(denproto.EventEmojiCreated, emoji, Everyone)
 }
@@ -191,22 +194,31 @@ func (d *Den) RenameEmoji(ctx context.Context, s *Session, id string, req denpro
 		return denproto.Emoji{}, invalid("name: %v", err)
 	}
 	var emoji denproto.Emoji
+	var was string
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		if taken, err := emojiNameTaken(ctx, tx, name, eid); err != nil || taken {
 			return cmp.Or(err, errEmojiNameTaken)
 		}
-		res, err := tx.ExecContext(ctx, `UPDATE den_named_files SET name = ? WHERE id = ? AND kind = ?`, name, eid, kindEmoji)
+		err := tx.QueryRowContext(ctx, `SELECT name FROM den_named_files WHERE id = ? AND kind = ?`, eid, kindEmoji).Scan(&was)
+		if errors.Is(err, sql.ErrNoRows) {
+			return errEmojiNotFound
+		}
 		if err != nil {
 			return err
 		}
-		if n, _ := res.RowsAffected(); n == 0 {
-			return errEmojiNotFound
+		if _, err := tx.ExecContext(ctx, `UPDATE den_named_files SET name = ? WHERE id = ?`, name, eid); err != nil {
+			return err
 		}
-		emoji, err = d.emoji(ctx, tx, eid)
-		return err
+		if emoji, err = d.emoji(ctx, tx, eid); err != nil || was == name {
+			return err
+		}
+		return d.audit(ctx, tx, namedLine(denproto.AuditEmojiRenamed, s, eid, name, was))
 	})
 	if err != nil {
 		return denproto.Emoji{}, err
+	}
+	if was != name {
+		d.audited()
 	}
 	return emoji, d.Hub.Publish(denproto.EventEmojiUpdated, emoji, Everyone)
 }
@@ -234,7 +246,8 @@ func (d *Den) DeleteEmoji(ctx context.Context, s *Session, id string) error {
 			return err
 		}
 		var file int64
-		err = tx.QueryRowContext(ctx, `DELETE FROM den_named_files WHERE id = ? AND kind = ? RETURNING file_id`, eid, kindEmoji).Scan(&file)
+		var name string
+		err = tx.QueryRowContext(ctx, `DELETE FROM den_named_files WHERE id = ? AND kind = ? RETURNING file_id, name`, eid, kindEmoji).Scan(&file, &name)
 		if errors.Is(err, sql.ErrNoRows) {
 			return errEmojiNotFound
 		}
@@ -247,12 +260,15 @@ func (d *Den) DeleteEmoji(ctx context.Context, s *Session, id string) error {
 				return err
 			}
 		}
-		blobs, err = deleteFiles(ctx, tx, `id = ?`, file)
-		return err
+		if blobs, err = deleteFiles(ctx, tx, `id = ?`, file); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, namedLine(denproto.AuditEmojiDeleted, s, eid, name, ""))
 	})
 	if err != nil {
 		return err
 	}
+	d.audited()
 	d.files.remove(blobs)
 	d.log.Infof("Member %d deleted emoji %d", s.MemberID, eid)
 	return d.Hub.Publish(denproto.EventEmojiDeleted, denproto.EmojiDeleted{ID: denproto.FormatID(eid)}, Everyone)

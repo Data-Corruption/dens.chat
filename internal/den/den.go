@@ -8,10 +8,12 @@
 // files, spoilers among them, and retention; the den's emoji and its
 // soundboard's sounds; calls' rules, staff moving members between calls,
 // and each call's length and each voice channel's longest call
-// (callrecords.go); events and their badges (events.go, badges.go); and
-// members' profiles and name styles. One timer (timer.go) ends polls,
-// deletes disappearing messages, starts and ends events, gives badges, and
-// writes the length of a call past its channel's record, each at its time.
+// (callrecords.go); events and their badges (events.go, badges.go);
+// members' profiles and name styles; and staff's audit log, with when each
+// member was last seen (audit.go). One timer (timer.go) ends polls,
+// deletes disappearing messages, starts and ends events, gives badges,
+// writes the length of a call past its channel's record, and sweeps the
+// audit log, each at its time.
 //
 // What members seal it keeps without reading, and passes on: DMs and group
 // DMs, with the keys sealed to their members' identities and each group's
@@ -250,12 +252,18 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
 		SoundLimits: sounds, EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, Away: true,
-		NameStyles: true, Relay: true, ReadAll: true}
+		NameStyles: true, Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
 	}
 	return d, nil
+}
+
+// SetClock has the den read the time from now, for tests that move it.
+func (d *Den) SetClock(now func() time.Time) {
+	d.now = now
+	d.Hub.now = now
 }
 
 // holdKey keeps the identity key in locked memory, after checking it
@@ -391,7 +399,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
 		EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, Away: true, NameStyles: true,
-		Relay: true, ReadAll: true}
+		Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true}
 	d.log.Infof("Den created")
 	return code, nil
 }
@@ -610,13 +618,23 @@ func (d *Den) Update(ctx context.Context, s *Session, req denproto.DenUpdateRequ
 	if info.EventLimits != nil {
 		vl = *info.EventLimits
 	}
-	if _, err := d.db.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ?,
-		call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ?,
-		retention = ?, sounds = ?, sound_longest = ?, sound_wait = ?, emojis = ?, member_events = ? WHERE id = 1`,
-		info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage,
-		c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS, info.Retention,
-		sl.Sounds, sl.Longest, sl.Wait, el.Emojis, vl.MemberEvents); err != nil {
+	changes := denChanges(before, info)
+	err = d.tx(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `UPDATE den SET name = ?, url = ?, file_size = ?, member_storage = ?, den_storage = ?,
+			call_members = ?, den_callers = ?, shares = ?, share_viewers = ?, share_bitrate = ?, share_height = ?, share_fps = ?,
+			retention = ?, sounds = ?, sound_longest = ?, sound_wait = ?, emojis = ?, member_events = ? WHERE id = 1`,
+			info.Name, info.URL, info.Limits.FileSize, info.Limits.MemberStorage, info.Limits.DenStorage,
+			c.Members, c.Callers, c.Shares, c.ShareViewers, c.ShareBitrate, c.ShareHeight, c.ShareFPS, info.Retention,
+			sl.Sounds, sl.Longest, sl.Wait, el.Emojis, vl.MemberEvents); err != nil || len(changes) == 0 {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditDenUpdated, by: s.MemberID, details: denproto.AuditDetails{Changes: changes}})
+	})
+	if err != nil {
 		return denproto.Den{}, err
+	}
+	if len(changes) > 0 {
+		d.audited()
 	}
 	d.mu.Lock()
 	d.info = &info
@@ -845,6 +863,14 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 		if err := logMember(ctx, tx, id, now); err != nil {
 			return err
 		}
+		// The den changed hands by an invite its machine made.
+		for _, owner := range demoted {
+			if err := d.audit(ctx, tx, auditLine{kind: denproto.AuditRoleChanged, member: owner, details: denproto.AuditDetails{
+				Changes: []denproto.AuditChange{{Field: "role", From: denproto.RoleOwner, To: denproto.RoleModerator}},
+				Owner:   denproto.FormatID(id)}}); err != nil {
+				return err
+			}
+		}
 		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO den_devices (key_id, member_id, public_key, label, created_at, last_seen_at) VALUES (?, ?, ?, ?, ?, ?)`,
 			[]byte(keyID), id, []byte(req.PublicKey), label, now.UnixMilli(), now.UnixMilli()); err != nil {
@@ -867,6 +893,9 @@ func (d *Den) Join(ctx context.Context, req denproto.JoinRequest) (denproto.Join
 	})
 	if err != nil {
 		return denproto.JoinResponse{}, err
+	}
+	if len(demoted) > 0 {
+		d.audited()
 	}
 	shown := make([]string, len(codes))
 	for i, code := range codes {
@@ -1038,14 +1067,24 @@ func (d *Den) Renew(ctx context.Context, s *Session, nonce, proof []byte) (time.
 	if err := d.checkProof(pub, nonce, proof); err != nil {
 		return time.Time{}, err
 	}
-	expires := d.now().Add(d.TokenLifetime)
-	res, err := d.db.ExecContext(ctx, `UPDATE den_sessions SET expires_at = ? WHERE token_hash = ? AND expires_at > ?`,
-		expires.UnixMilli(), s.TokenHash, d.now().UnixMilli())
+	now := d.now()
+	expires := now.Add(d.TokenLifetime)
+	// A session renews on its socket for as long as that stays up, so its
+	// device was last seen now, not at its sign-in.
+	err = d.tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `UPDATE den_sessions SET expires_at = ? WHERE token_hash = ? AND expires_at > ?`,
+			expires.UnixMilli(), s.TokenHash, now.UnixMilli())
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return errUnauthorized
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE den_devices SET last_seen_at = ? WHERE key_id = ?`, now.UnixMilli(), s.KeyID)
+		return err
+	})
 	if err != nil {
 		return time.Time{}, err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return time.Time{}, errUnauthorized
 	}
 	return expires, nil
 }
@@ -1080,16 +1119,23 @@ func (d *Den) CreateInvite(ctx context.Context, s *Session, req denproto.InviteC
 	}
 	now := d.now()
 	code := denproto.Random(denproto.InviteCodeSize)
-	res, err := d.db.ExecContext(ctx,
-		`INSERT INTO den_invites (code_hash, role, created_by, created_at, expires_at, max_uses) VALUES (?, 'member', ?, ?, ?, ?)`,
-		denproto.Hash(code), s.MemberID, now.UnixMilli(), now.Add(expiry).UnixMilli(), uses)
+	var id int64
+	err := d.tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx,
+			`INSERT INTO den_invites (code_hash, role, created_by, created_at, expires_at, max_uses) VALUES (?, 'member', ?, ?, ?, ?)`,
+			denproto.Hash(code), s.MemberID, now.UnixMilli(), now.Add(expiry).UnixMilli(), uses)
+		if err != nil {
+			return err
+		}
+		if id, err = res.LastInsertId(); err != nil {
+			return err
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditInviteCreated, by: s.MemberID, details: denproto.AuditDetails{Ref: denproto.FormatID(id)}})
+	})
 	if err != nil {
 		return denproto.Invite{}, err
 	}
-	id, err := res.LastInsertId()
-	if err != nil {
-		return denproto.Invite{}, err
-	}
+	d.audited()
 	return denproto.Invite{
 		ID: strconv.FormatInt(id, 10), Code: code, CreatedBy: denproto.FormatID(s.MemberID), CreatedAt: now.UnixMilli(),
 		ExpiresAt: now.Add(expiry).UnixMilli(), MaxUses: uses,
@@ -1130,13 +1176,20 @@ func (d *Den) RevokeInvite(ctx context.Context, s *Session, id int64) error {
 	if !IsStaff(s.Role) {
 		return forbidden("only moderators and the owner manage invites")
 	}
-	res, err := d.db.ExecContext(ctx, `DELETE FROM den_invites WHERE id = ? AND role = 'member'`, id)
+	err := d.tx(ctx, func(tx *sql.Tx) error {
+		res, err := tx.ExecContext(ctx, `DELETE FROM den_invites WHERE id = ? AND role = 'member'`, id)
+		if err != nil {
+			return err
+		}
+		if n, _ := res.RowsAffected(); n == 0 {
+			return denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such invite")
+		}
+		return d.audit(ctx, tx, auditLine{kind: denproto.AuditInviteRevoked, by: s.MemberID, details: denproto.AuditDetails{Ref: denproto.FormatID(id)}})
+	})
 	if err != nil {
 		return err
 	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such invite")
-	}
+	d.audited()
 	return nil
 }
 

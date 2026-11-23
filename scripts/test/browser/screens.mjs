@@ -357,6 +357,12 @@ export async function memberScreens(h, ctx) {
         await h.go('/');
         await h.wait(HOME, 'home');
         await h.snap('home', { scroll: `document.querySelector('main')` });
+        // A phone's width gives Add a den a row of its own, so the title
+        // stays on one line beside the header's buttons.
+        await h.wait(`(() => {
+            const title = [...document.querySelectorAll('h2')].find((t) => t.textContent === 'Your dens');
+            return !!title && title.getBoundingClientRect().height < 1.5 * parseFloat(getComputedStyle(title).lineHeight);
+        })()`, "Home's title on one line", 3000);
     });
     await h.step('home-add', async () => {
         await h.click(h.byText('button', 'Add a den'));
@@ -681,9 +687,12 @@ export async function ownerScreens(h, ctx) {
         await h.click(h.byText('button', 'Manage'));
         await h.wait(MANAGE, 'Manage');
         if (await h.has(`document.querySelector('${MANAGE_FRAME} [data-section]')`)) await h.snap('manage-list');
+        // Members and the Audit log are shot with their rows and lines in.
+        const filled = { Members: '[data-members] [data-member]', 'Audit log': '[data-audit] [data-audit-line]' };
         for (const s of await sections(h, MANAGE_FRAME)) {
             if (s === 'Leave den') continue;
             await openSection(h, MANAGE_FRAME, s);
+            if (filled[s]) await h.wait(`document.querySelector('${MANAGE_FRAME} ${filled[s]}')`, `what ${s} lists`);
             await sleep(500);
             await h.snap(`manage-${s.toLowerCase().replace(/[^a-z]+/g, '-')}`, { scroll: MANAGE_PANEL, max: 4 });
         }
