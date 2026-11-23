@@ -113,7 +113,8 @@ Whether the check shows beside people in lists is yours to choose, under
 
 If someone's keys change, as when they reset their DM recovery key, the DM says
 so where it happened, and their check goes. If you'd compared codes with
-them, the DM waits until you compare again, or choose **Send anyway**.
+them, the DM waits on all your devices until you compare again, or choose
+**Send anyway**, on any of them.
 
 {{% /details %}}
 
