@@ -2,6 +2,7 @@ package denclient
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"slices"
@@ -15,10 +16,10 @@ import (
 func hashOf(b byte) denproto.Bytes { return bytes.Repeat([]byte{b}, denproto.IdentityHashSize) }
 
 // Two devices that kept the same identity for someone agree on it: the
-// mark where either compared, the hold only while both have it. Two that
-// kept different ones show it as a change: the one kept later stands, the
-// other joins the past, and where the member verified the older, the DM
-// holds.
+// mark where either compared, the hold where either holds, unless either
+// verified them or sent anyway at it. Two that kept different ones show it
+// as a change: the one kept later stands, the other joins the past, and
+// where the member verified the older, the DM holds.
 func TestMergingWhatDevicesKept(t *testing.T) {
 	x, y := hashOf(1), hashOf(2)
 	for _, c := range []struct {
@@ -29,8 +30,10 @@ func TestMergingWhatDevicesKept(t *testing.T) {
 		{"one side", nil, &keptIdentity{Hash: x, KeptAt: 5, Verified: true}, keptIdentity{Hash: x, KeptAt: 5, Verified: true}},
 		{"the same, compared on one", &keptIdentity{Hash: x, KeptAt: 5}, &keptIdentity{Hash: x, KeptAt: 3, Verified: true},
 			keptIdentity{Hash: x, KeptAt: 3, Verified: true}},
+		{"the same, never held on one", &keptIdentity{Hash: x, KeptAt: 5, Held: true, Changes: []int64{5}},
+			&keptIdentity{Hash: x, KeptAt: 5, Changes: []int64{5}}, keptIdentity{Hash: x, KeptAt: 5, Held: true, Changes: []int64{5}}},
 		{"the same, sent anyway on one", &keptIdentity{Hash: x, KeptAt: 5, Held: true, Changes: []int64{5}},
-			&keptIdentity{Hash: x, KeptAt: 5, Changes: []int64{5}}, keptIdentity{Hash: x, KeptAt: 5, Changes: []int64{5}}},
+			&keptIdentity{Hash: x, KeptAt: 5, LetGo: x, Changes: []int64{5}}, keptIdentity{Hash: x, KeptAt: 5, LetGo: x, Changes: []int64{5}}},
 		{"a change one saw", &keptIdentity{Hash: x, KeptAt: 1, Verified: true},
 			&keptIdentity{Hash: y, KeptAt: 9, Held: true, Past: []denproto.Bytes{x}, Changes: []int64{9}},
 			keptIdentity{Hash: y, KeptAt: 9, Held: true, Past: []denproto.Bytes{x}, Changes: []int64{9}}},
@@ -52,6 +55,275 @@ func TestMergingWhatDevicesKept(t *testing.T) {
 			a, _ := json.Marshal(back)
 			t.Errorf("%s the other way round: %s", c.name, a)
 		}
+	}
+}
+
+// The four states a device's hold on a member can be in.
+type holdState int
+
+const (
+	neverHeld holdState = iota
+	holding
+	compared
+	letGo
+)
+
+func (s holdState) String() string { return [...]string{"never held", "held", "verified", "let go"}[s] }
+
+// keptAs is what a device kept for a member: identity h, kept at, in s.
+type keptAs struct {
+	h  byte
+	at int64
+	s  holdState
+}
+
+func (k keptAs) kept() *keptIdentity {
+	out := &keptIdentity{Hash: hashOf(k.h), KeptAt: k.at}
+	switch k.s {
+	case holding:
+		out.Held = true
+	case compared:
+		out.Verified = true
+	case letGo:
+		out.LetGo = hashOf(k.h)
+	}
+	return out
+}
+
+// hold is what a merge decides of a hold, leaving out the past and the
+// changes, whose order may follow the merge's.
+type hold struct {
+	h                     byte
+	verified, held, letGo bool
+}
+
+func holdOf(t *testing.T, k *keptIdentity) hold {
+	t.Helper()
+	// A let-go names the identity kept, or nothing, and never sits beside a
+	// hold.
+	if k.LetGo != nil && !bytes.Equal(k.LetGo, k.Hash) || k.Held && k.LetGo != nil {
+		t.Fatalf("merged to %+v", k)
+	}
+	return hold{k.Hash[0], k.Verified, k.Held, k.LetGo != nil}
+}
+
+// orders merges devices' entries in every order a member's devices could:
+// each order of them, folded from the left and from the right.
+func orders(ks []keptAs) [][]*keptIdentity {
+	var out [][]*keptIdentity
+	var permute func(done []keptAs, left []keptAs)
+	permute = func(done, left []keptAs) {
+		if len(left) == 0 {
+			l, r := done[0].kept(), done[len(done)-1].kept()
+			for i := 1; i < len(done); i++ {
+				l = mergeIdentity(l, done[i].kept())
+				r = mergeIdentity(done[len(done)-1-i].kept(), r)
+			}
+			out = append(out, []*keptIdentity{l, r})
+			return
+		}
+		for i := range left {
+			rest := append(slices.Clone(left[:i]), left[i+1:]...)
+			permute(append(slices.Clone(done), left[i]), rest)
+		}
+	}
+	permute(nil, ks)
+	return out
+}
+
+func allStates() []holdState { return []holdState{neverHeld, holding, compared, letGo} }
+
+// At one identity, two or three devices hold wherever any held, unless any
+// verified the member or sent anyway, in whatever order they merge.
+func TestMergingHoldsAtOneIdentity(t *testing.T) {
+	for n := 2; n <= 3; n++ {
+		var each func(ks []keptAs)
+		each = func(ks []keptAs) {
+			if len(ks) < n {
+				for _, s := range allStates() {
+					each(append(slices.Clone(ks), keptAs{1, int64(3 + len(ks)), s}))
+				}
+				return
+			}
+			var want hold
+			want.h = 1
+			for _, k := range ks {
+				want.held = want.held || k.s == holding
+				want.verified = want.verified || k.s == compared
+				want.letGo = want.letGo || k.s == letGo
+			}
+			want.held = want.held && !want.verified && !want.letGo
+			for _, merged := range orders(ks) {
+				for _, k := range merged {
+					if got := holdOf(t, k); got != want {
+						t.Errorf("%v merged to %+v, want %+v", ks, got, want)
+					}
+				}
+			}
+		}
+		each(nil)
+	}
+}
+
+// At two identities, the newer stands, held where either held or the
+// older was verified, unless the newer is verified or let go at.
+func TestMergingHoldsAtTwoIdentities(t *testing.T) {
+	for _, o := range allStates() {
+		for _, n := range allStates() {
+			older, newer := keptAs{1, 1, o}, keptAs{2, 5, n}
+			want := hold{h: 2, verified: n == compared, letGo: n == letGo,
+				held: (n == holding || o == holding || o == compared) && n != compared && n != letGo}
+			for _, got := range []*keptIdentity{mergeIdentity(older.kept(), newer.kept()), mergeIdentity(newer.kept(), older.kept())} {
+				if h := holdOf(t, got); h != want {
+					t.Errorf("older %v, newer %v: merged to %+v, want %+v", o, n, h, want)
+				}
+			}
+		}
+	}
+}
+
+// Three devices at two identities merge in an order the den's writes pick.
+// A choice at the newer identity lifts the hold in any order; otherwise the
+// hold stands wherever one stood, or the older was verified, unless a
+// let-go at the older lifted it there, which an order may miss but never
+// make up. Without such a let-go, the order doesn't matter.
+func TestMergingHoldsThroughAThirdDevice(t *testing.T) {
+	var cases [][]keptAs
+	for _, a := range []byte{1, 2} {
+		for _, b := range []byte{1, 2} {
+			for _, c := range []byte{1, 2} {
+				if a == b && b == c {
+					continue
+				}
+				for _, sa := range allStates() {
+					for _, sb := range allStates() {
+						for _, sc := range allStates() {
+							at := func(h byte) int64 { return int64(h) * 4 }
+							cases = append(cases, []keptAs{{a, at(a), sa}, {b, at(b), sb}, {c, at(c), sc}})
+						}
+					}
+				}
+			}
+		}
+	}
+	for _, ks := range cases {
+		var choseNewer, heldNewer, verifiedOlder, heldOlder, letGoOlder bool
+		for _, k := range ks {
+			switch {
+			case k.h == 2:
+				choseNewer = choseNewer || k.s == compared || k.s == letGo
+				heldNewer = heldNewer || k.s == holding
+			default:
+				verifiedOlder = verifiedOlder || k.s == compared
+				heldOlder = heldOlder || k.s == holding
+				letGoOlder = letGoOlder || k.s == letGo
+			}
+		}
+		var first *hold
+		for _, merged := range orders(ks) {
+			for _, k := range merged {
+				got := holdOf(t, k)
+				switch {
+				case got.h != 2:
+					t.Errorf("%v merged to the older identity", ks)
+				case choseNewer && got.held:
+					t.Errorf("%v: held after a choice at the newer identity", ks)
+				case !got.held && !choseNewer && (heldNewer || verifiedOlder || heldOlder && !letGoOlder):
+					t.Errorf("%v: the hold lapsed with nobody choosing", ks)
+				case got.held && !heldNewer && !heldOlder && !verifiedOlder:
+					t.Errorf("%v: held with no hold and nothing verified before", ks)
+				}
+				if !letGoOlder {
+					if first == nil {
+						first = &got
+					} else if got != *first {
+						t.Errorf("%v merged to %+v in one order and %+v in another", ks, *first, got)
+					}
+				}
+			}
+		}
+	}
+}
+
+// Merging a merge again with either side of it changes nothing.
+func TestMergingAgainChangesNothing(t *testing.T) {
+	for _, hs := range [][2]byte{{1, 1}, {1, 2}} {
+		for _, sa := range allStates() {
+			for _, sb := range allStates() {
+				a, b := keptAs{hs[0], 1, sa}.kept(), keptAs{hs[1], 5, sb}.kept()
+				m := mergeIdentity(a, b)
+				want := holdOf(t, m)
+				for _, again := range []*keptIdentity{mergeIdentity(m, a), mergeIdentity(m, b), mergeIdentity(a, m), mergeIdentity(b, m)} {
+					if got := holdOf(t, again); got != want {
+						t.Errorf("%v and %v merged to %+v, and again to %+v", sa, sb, want, got)
+					}
+				}
+			}
+		}
+	}
+}
+
+// The record and this device's copy of it, as v1.15.0 wrote them: bob, 2,
+// held since his keys changed, and carol, 3, verified.
+const (
+	recordV1150 = `{"members":{"2":{"h":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI","t":1700000000500,"held":true,` +
+		`"p":["AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"],"c":[1700000000500]},` +
+		`"3":{"h":"AwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwM","t":1700000000100,"v":true}},` +
+		`"own":["CQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQkJCQk"]}`
+	keptV1150 = `{"record":` + recordV1150 + `,"revision":4}`
+)
+
+// A record as v1.15.0 wrote it reads as it was, held where it said so;
+// one an older Dens writes after, which leaves out where its member sent
+// anyway, leaves the hold standing, and a newer device's let-go lifts it.
+func TestRecordAsV1150WroteIt(t *testing.T) {
+	var r identityRecord
+	if err := json.Unmarshal([]byte(recordV1150), &r); err != nil {
+		t.Fatal(err)
+	}
+	var k keptIdentities
+	if err := json.Unmarshal([]byte(keptV1150), &k); err != nil {
+		t.Fatal(err)
+	}
+	for what, rec := range map[string]identityRecord{"the record": r, "this device's copy": k.Record} {
+		bob, carol := rec.Members["2"], rec.Members["3"]
+		if bob == nil || !bob.Held || bob.Verified || len(bob.Past) != 1 || carol == nil || !carol.Verified || len(rec.Own) != 1 {
+			t.Fatalf("%s as v1.15.0 wrote it: %+v %+v", what, bob, carol)
+		}
+	}
+	if k.Revision != 4 {
+		t.Errorf("this device's copy at revision %d", k.Revision)
+	}
+
+	// An older Dens of the member's sent anyway, or never held: it writes
+	// bob unheld, with nothing in place of the let-go.
+	older := `{"members":{"2":{"h":"AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI","t":1700000000900,` +
+		`"p":["AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE"],"c":[1700000000900]}}}`
+	var theirs identityRecord
+	if err := json.Unmarshal([]byte(older), &theirs); err != nil {
+		t.Fatal(err)
+	}
+	r.merge(theirs)
+	if !r.Members["2"].Held {
+		t.Fatalf("an older Dens's write lifted the hold: %+v", r.Members["2"])
+	}
+	// A newer one sent anyway at bob's identity.
+	r.merge(identityRecord{Members: map[string]*keptIdentity{"2": {Hash: hashOf(2), KeptAt: 1700000000700, LetGo: hashOf(2)}}})
+	if bob := r.Members["2"]; bob.Held || !bytes.Equal(bob.LetGo, hashOf(2)) {
+		t.Fatalf("a newer device's let-go: %+v", bob)
+	}
+	// What an older Dens reads of it is a record it knows, unheld.
+	out, err := r.encode()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old struct {
+		Members map[string]struct {
+			Held bool `json:"held"`
+		} `json:"members"`
+	}
+	if err := json.Unmarshal(out, &old); err != nil || old.Members["2"].Held {
+		t.Errorf("as an older Dens reads it: %s %v", out, err)
 	}
 }
 
@@ -81,6 +353,18 @@ func TestMeetingIdentities(t *testing.T) {
 	for i := range maxChanges + 5 {
 		r.meet("2", hashOf(byte(10+i)), int64(50+i), false)
 	}
+	// A let-go goes at the next change: back at that identity, the member
+	// having compared in between, it holds.
+	r.Members["3"] = &keptIdentity{Hash: hashOf(1), KeptAt: 1, LetGo: hashOf(1)}
+	r.meet("3", hashOf(2), 2, false)
+	if kept := r.Members["3"]; kept.LetGo != nil || kept.Held {
+		t.Fatalf("after a change from where they sent anyway: %+v", kept)
+	}
+	r.Members["3"].Verified = true
+	r.meet("3", hashOf(1), 3, false)
+	if kept := r.Members["3"]; !kept.Held || kept.LetGo != nil {
+		t.Fatalf("back where they once sent anyway: %+v", kept)
+	}
 	if len(k.Past) != maxPast || len(k.Changes) != maxChanges {
 		t.Fatalf("a long history kept %d identities and %d changes", len(k.Past), len(k.Changes))
 	}
@@ -88,14 +372,16 @@ func TestMeetingIdentities(t *testing.T) {
 
 // A record past the most it holds drops the oldest of what it kept before
 // and the oldest changes, then members kept longest ago who aren't
-// verified, never one who is, and keeps the member's own identities
-// from before they started over, which signed their groups' changes.
+// verified or held, never one who is, and keeps the member's own
+// identities from before they started over, which signed their groups'
+// changes.
 func TestRecordFits(t *testing.T) {
 	r := identityRecord{Members: map[string]*keptIdentity{}, Own: []denproto.Bytes{denproto.Random(32), denproto.Random(32)}}
 	for i := range 4000 {
 		k := &keptIdentity{Hash: denproto.Random(denproto.IdentityHashSize), KeptAt: int64(i), Changes: []int64{1, 2, 3, 4},
 			Past: []denproto.Bytes{denproto.Random(32), denproto.Random(32)}}
 		k.Verified = i%100 == 0
+		k.Held = i%100 == 50
 		r.Members[fmt.Sprint(i+1)] = k
 	}
 	out, err := r.encode()
@@ -107,8 +393,8 @@ func TestRecordFits(t *testing.T) {
 		t.Fatal(err)
 	}
 	for id, k := range r.Members {
-		if k.Verified && back.Members[id] == nil {
-			t.Fatalf("verified member %s went", id)
+		if (k.Verified || k.Held) && back.Members[id] == nil {
+			t.Fatalf("verified or held member %s went", id)
 		}
 	}
 	if len(back.Own) != len(r.Own) || !bytes.Equal(back.Own[0], r.Own[0]) {
@@ -277,4 +563,15 @@ func TestAnAnswersKindHolds(t *testing.T) {
 	if _, _, err := c.den.applyEvent(nil, e, denproto.Member{ID: "1"}, time.Now()); err != errMalformed {
 		t.Errorf("a DM just opened, coming as a text channel: %v", err)
 	}
+}
+
+// WriteRecord has a member's Dens write their record to a den at once, as
+// its hourly write does, merging what their other devices wrote first, for
+// the tests of package denclient_test that order two devices' writes.
+func WriteRecord(m *Manager, denID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	return c.writeRecord(context.Background())
 }

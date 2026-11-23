@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -333,5 +334,72 @@ func TestGroupHoldOverTheirKey(t *testing.T) {
 	}
 	if after := sendDM(t, alice, denID, g, "after"); after.KeyID != theirs.KeyID {
 		t.Fatalf("sent anyway under %s, not bob's key %s", after.KeyID, theirs.KeyID)
+	}
+}
+
+// The keys a den gives for a group's members as a Dens makes the group's
+// key must hash to the identities kept for them: a den that swaps in
+// others for one member, naming the same identity, gets no group made.
+func TestGroupKeysForTheIdentityKept(t *testing.T) {
+	h, ms, ids, denID := groupDen(t)
+	alice := ms[0]
+	swapKeys(t, h, ids[2])
+	if _, err := alice.MakeGroup(context.Background(), denID, []string{ids[1], ids[2]}, ""); !isInput(err) ||
+		!strings.Contains(err.Error(), "keys just changed") {
+		t.Fatalf("making a group with keys that aren't carol's identity: %v", err)
+	}
+	var keys int
+	if err := h.s.db.QueryRow(`SELECT count(*) FROM den_dm_keys k JOIN den_channels c ON c.id = k.channel_id WHERE c.kind = 'group_dm'`).Scan(&keys); err != nil ||
+		keys != 0 {
+		t.Fatalf("groups hold %d keys: %v", keys, err)
+	}
+}
+
+// A group's message opens as its author's only where they signed its
+// first revision: one carol seals in bob's name, which the den sends as
+// bob's with carol named as its editor, doesn't open, while one she seals
+// as her own does.
+func TestGroupMessageSignedByItsAuthor(t *testing.T) {
+	h, ms, ids, denID := groupDen(t)
+	alice, carol := ms[0], ms[2]
+	ctx := context.Background()
+	g, err := alice.MakeGroup(ctx, denID, []string{ids[1], ids[2]}, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range ms[:3] {
+		groupOf(t, m, denID, g, ids[:3])
+	}
+	keyID, nonce, sealed, err := denclient.SealAs(carol, denID, g, ids[1], "bob never wrote this")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob, _ := denproto.ParseID(ids[1])
+	forged, err := h.d.Send(ctx, &den.Session{MemberID: bob, Version: denproto.Version}, g,
+		denproto.SendRequest{Nonce: nonce, Sealed: sealed, KeyID: keyID, Editors: []string{ids[2]}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if forged.Revision != 1 || forged.AuthorID != ids[1] {
+		t.Fatalf("the den sent it as %+v", forged)
+	}
+	own := sendDM(t, carol, denID, g, "carol wrote this")
+	var got []denclient.PageMessage
+	eventually(t, "both messages on alice's Dens", func() bool {
+		got = history(t, alice, denID, g)
+		return slices.ContainsFunc(got, func(m denclient.PageMessage) bool { return m.ID == own.ID }) &&
+			slices.ContainsFunc(got, func(m denclient.PageMessage) bool { return m.ID == forged.ID })
+	})
+	for _, m := range got {
+		switch m.ID {
+		case forged.ID:
+			if m.Locked != "broken" || strings.Contains(m.Text, "never wrote") {
+				t.Errorf("carol's message in bob's name opened: %+v", m)
+			}
+		case own.ID:
+			if m.Locked != "" || m.Text != "carol wrote this" {
+				t.Errorf("carol's own message: %+v", m)
+			}
+		}
 	}
 }

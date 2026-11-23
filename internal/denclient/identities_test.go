@@ -199,6 +199,125 @@ func TestHoldOverTheirKey(t *testing.T) {
 	}
 }
 
+// A DM held since the other member's keys changed holds on every device of
+// the member's until they compare or send anyway: one that never held, as
+// a device signed in after the change, holds once it reads the record, and
+// its own write lifts nothing, whichever device writes first. Send anyway
+// on one lifts it on both.
+func TestHoldOnEveryDevice(t *testing.T) {
+	for _, holderFirst := range []bool{true, false} {
+		name := map[bool]string{true: "the holding device writes first", false: "the new device writes first"}[holderFirst]
+		t.Run(name, func(t *testing.T) {
+			h, desk, member, denID, _ := chatDen(t)
+			ctx := context.Background()
+			dm := openDM(t, desk, member, denID)
+			readyDM(t, desk, member, denID, dm)
+			alice, bob := me(t, desk, denID).ID, me(t, member, denID).ID
+			sendDM(t, member, denID, dm, "before")
+			if _, err := desk.Compare(ctx, denID, bob, codeOf(t, member, denID, alice).Mine); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := member.StartOver(ctx, denID, "correct horse"); err != nil {
+				t.Fatal(err)
+			}
+			viewOf(t, desk, denID, "bob held on alice's desk", func(v denclient.View) bool { return v.Identities[bob].Held })
+			// Each write pulls what the other device wrote first, so what a
+			// device holds after it is what the merge made.
+			write := func(m *denclient.Manager) {
+				t.Helper()
+				if err := denclient.WriteRecord(m, denID); err != nil {
+					t.Fatal(err)
+				}
+			}
+			holds := func(what string, m *denclient.Manager) {
+				t.Helper()
+				if v, _ := m.View(denID); !v.Identities[bob].Held {
+					t.Fatalf("%s: bob isn't held: %+v", what, v.Identities[bob])
+				}
+				_, err := m.Send(ctx, denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Text: "held"})
+				if !isInput(err) || !strings.Contains(err.Error(), "keys changed") {
+					t.Fatalf("%s: sending while the DM holds: %v", what, err)
+				}
+			}
+
+			if holderFirst {
+				write(desk)
+			}
+			laptop := h.client(t, noOwnDen)
+			signInApproved(t, laptop, desk, denID, denclient.SignInRequest{Den: "https://example.com", Username: "alice", Password: "correct horse"}, false)
+			waitFor(t, laptop, "the laptop connected", connected)
+			if holderFirst {
+				viewOf(t, laptop, denID, "bob held on the laptop, from the record", func(v denclient.View) bool { return v.Identities[bob].Held })
+				write(laptop)
+				write(desk)
+			} else {
+				// The den holds no record yet: the laptop keeps bob unheld,
+				// as it can't know, and writes so.
+				viewOf(t, laptop, denID, "bob kept on the laptop", func(v denclient.View) bool { _, ok := v.Identities[bob]; return ok })
+				write(laptop)
+				write(desk)
+				holds("the desk after the laptop wrote", desk)
+				write(laptop)
+			}
+			holds("the desk", desk)
+			holds("the laptop", laptop)
+
+			chooser, other := laptop, desk
+			if !holderFirst {
+				chooser, other = desk, laptop
+			}
+			if err := chooser.SendAnyway(ctx, denID, bob); err != nil {
+				t.Fatal(err)
+			}
+			write(chooser)
+			write(other)
+			for what, m := range map[string]*denclient.Manager{"the desk": desk, "the laptop": laptop} {
+				if v, _ := m.View(denID); v.Identities[bob].Held {
+					t.Fatalf("%s after Send anyway on one: %+v", what, v.Identities[bob])
+				}
+				sendDM(t, m, denID, dm, "after, from "+what)
+			}
+		})
+	}
+}
+
+// The keys a den gives for a member as a Dens makes a DM's key must hash
+// to the identity kept for them: a den that swaps in others, naming the
+// same identity, gets no key made, and nothing sent.
+func TestDMKeysForTheIdentityKept(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	swapKeys(t, h, me(t, member, denID).ID)
+	_, err := owner.Send(context.Background(), denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Text: "to the den's keys"})
+	if !isInput(err) || !strings.Contains(err.Error(), "keys just changed") {
+		t.Fatalf("sending with keys that aren't bob's identity: %v", err)
+	}
+	var keys int
+	if err := h.s.db.QueryRow(`SELECT count(*) FROM den_dm_keys WHERE channel_id = ?`, dm).Scan(&keys); err != nil || keys != 0 {
+		t.Fatalf("the DM has %d keys: %v", keys, err)
+	}
+}
+
+// swapKeys has the den give another identity's keys for a member, while
+// it names the identity they published.
+func swapKeys(t *testing.T, h *denHost, member string) {
+	t.Helper()
+	info, _ := h.d.Info()
+	other, err := denproto.DeriveIdentity(denproto.NewSeal(), info.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	pub := other.Public()
+	id, _ := denproto.ParseID(member)
+	if res, err := h.s.db.Exec(`UPDATE den_identities SET kem = ?, sig = ? WHERE member_id = ?`, []byte(pub.KEM), []byte(pub.Sig), id); err != nil {
+		t.Fatal(err)
+	} else if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("swapped %d members' keys", n)
+	}
+}
+
 // A DM whose key both members checked before v1.9.0 reads and sends as it
 // did: messages go out under that key, sealed with each member's copy
 // under their seal, and no new key is made for it.

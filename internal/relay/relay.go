@@ -712,6 +712,9 @@ func (r *Relay) onCtl(p *peer, b []byte) {
 	case ctlState:
 		r.mu.Lock()
 		p.theirs, p.heard = c.state, true
+		if l := r.listening; l != nil && l.device == p.id && r.peers[p.id] == p && c.Share {
+			l.shared = true
+		}
 		r.mu.Unlock()
 		poke(r.wake)
 	case ctlTaken:
@@ -916,7 +919,11 @@ func (r *Relay) evaluate() {
 		case !r.local && p == nil:
 			// The system asks the member first, as Android does.
 		case p != nil:
-			if p.up && p.heard && !p.theirs.Share {
+			// The link's last state can be older than the den's list, which
+			// Listen checked, as just after the device began sharing: in a
+			// listening's first two seconds it ends only once the device
+			// shared and stopped.
+			if p.up && p.heard && !p.theirs.Share && (l.shared || now.Sub(l.at) >= grace) {
 				ends = append(ends, ending{l, WhyUnshared})
 			}
 		case unanswered:

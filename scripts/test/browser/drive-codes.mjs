@@ -7,8 +7,10 @@
 // green circled check. Bob's comparison reaches his laptop within the time
 // a development instance writes his record in, its hour shortened. Bob
 // starts over: alice's page shows his keys changed, his mark gone, and the
-// DM holds, Compare and Send anyway in its composer's place, until she
-// sends anyway; and comparing his new code marks him again.
+// DM holds, Compare and Send anyway in its composer's place. Her laptop,
+// signed in as it holds, holds too, and both still hold after each writes
+// her record, until she sends anyway on her page, which lifts it on both;
+// and comparing his new code marks him again.
 //
 //   run.sh codes chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -138,12 +140,24 @@ try {
         `alice's DM holds, Compare and Send anyway in its composer's place: ${q(hold.slice(0, 90))}`);
     await A.b.shot(`${HOME}/shot-codes-hold-alice.png`);
 
+    step('alice signs in on her laptop while the DM holds');
+    lib('laptop', 'alice');
+    const heldOn = (who) => JSON.parse(lib('api', who, 'GET', `/api/dens/${den}/state`)).identities?.[bobID]?.held === true;
+    report(await waitFor(() => heldOn('alicelaptop'), "the hold on alice's laptop", 90000).catch(() => false),
+        "alice's laptop, signed in as the DM holds, holds it too");
+    // Past two of each device's writes, every 20 seconds in a development
+    // instance.
+    await sleep(45000);
+    report(heldOn('alicelaptop') && heldOn('alice') && (await A.b.eval(`!!${HOLD}`)), "both of alice's devices still hold after each wrote her record");
+
     step('alice sends anyway, and bob reads it');
     await A.b.eval(`${button(HOLD, 'Send anyway')}.click(), true`);
     report(await waitFor(() => A.b.eval(`!!${COMPOSER} && !${HOLD}`), 'the composer back').catch(() => false), 'Send anyway gives the DM its composer back');
     await sends(A, 'sent anyway');
     const got = await waitFor(async () => ((await text(B)).includes('sent anyway') ? true : null), "bob reading alice's message").catch(() => false);
     report(got, 'bob reads what alice sent under his new keys');
+    report(await waitFor(() => !heldOn('alicelaptop'), "the hold lifted on alice's laptop", 90000).catch(() => false),
+        "Send anyway on alice's page lifts the hold on her laptop too");
 
     step("alice compares bob's new code from the line");
     await B.b.go(`http://localhost:${B.port}/den/${den}/${dm}`);

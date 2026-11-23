@@ -540,7 +540,7 @@ func (c *conn) filesOf(m denproto.Message) ([]int64, bool) {
 			out = append(out, id)
 		}
 	}
-	if m.Sealed == nil {
+	if m.Sealed == nil && !c.private(m.ChannelID) {
 		for _, f := range m.Attachments {
 			add(f.ID)
 		}

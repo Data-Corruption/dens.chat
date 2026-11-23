@@ -860,7 +860,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if json.Unmarshal(out.D, &m) == nil {
 			kept = &m
 			opened := PageMessage{Message: m}
-			if m.Sealed != nil {
+			if m.Sealed != nil || c.privateLocked(m.ChannelID) {
 				opened = c.openLocked(m)
 				out, err = denproto.NewEvent(out.T, out.Seq, opened)
 			} else {

@@ -96,7 +96,8 @@
 #                               codes compared both ways, from the DM's lock and the profile beside it, own
 #                               digits and wrong ones refused; the mark on bob's laptop within its shortened
 #                               hour; and bob starting over: the line where his keys changed, his mark gone,
-#                               the hold, Send anyway, and his new code compared
+#                               the hold, on alice's laptop too, signed in as it holds, Send anyway lifting
+#                               it on both, and his new code compared
 #   groups BROWSER              a group made from the DM tab's + and named, each change a line
 #                               in it; written in, a photo sent, read through its members' Dens; dave added from
 #                               its members, reading from his joining on; renamed, the name only sealed in the
