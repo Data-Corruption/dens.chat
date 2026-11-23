@@ -52,14 +52,15 @@ var errWrongCode = inputError(errors.New("those digits don't match. Check you ty
 // keptIdentity is a member's identity as this member's Dens kept it.
 // KeptAt is when a device of theirs kept it, by its clock; Held means it
 // changed since they verified the member, until they compare again or
-// send anyway. Past are the identities kept before, oldest first, whose
-// keys still open what was sealed under them, and Changes when it
-// changed.
+// send anyway, and LetGo is the identity they sent anyway at. Past are
+// the identities kept before, oldest first, whose keys still open what
+// was sealed under them, and Changes when it changed.
 type keptIdentity struct {
 	Hash     denproto.Bytes   `json:"h"`
 	KeptAt   int64            `json:"t"`
 	Verified bool             `json:"v,omitempty"`
 	Held     bool             `json:"held,omitempty"`
+	LetGo    denproto.Bytes   `json:"go,omitempty"`
 	Past     []denproto.Bytes `json:"p,omitempty"`
 	Changes  []int64          `json:"c,omitempty"`
 }
@@ -86,9 +87,12 @@ func newKept() *keptIdentities {
 
 func (k *keptIdentity) clone() *keptIdentity {
 	c := *k
-	c.Past, c.Changes = slices.Clone(k.Past), slices.Clone(k.Changes)
+	c.LetGo, c.Past, c.Changes = slices.Clone(k.LetGo), slices.Clone(k.Past), slices.Clone(k.Changes)
 	return &c
 }
+
+// letGo reports whether the member sent anyway at the identity kept.
+func (k *keptIdentity) letGo() bool { return k.LetGo != nil && bytes.Equal(k.LetGo, k.Hash) }
 
 // withPast adds identities to those kept before, the current one aside,
 // each once, keeping the latest maxPast.
@@ -118,21 +122,32 @@ func withChanges(a, b []int64) []int64 {
 
 // mergeIdentity merges what another device kept for a member into what
 // this one kept, either nil. Two that kept the same identity agree on it:
-// verified where either compared, held only while both are. Two that kept
-// different ones show it as a change: the one kept later stands, the other
-// joins the past, and a member verified with the other is held; a change
-// neither recorded since the older was kept counts from the newer.
+// verified where either compared, held where either holds, unless either
+// compared or sent anyway at it, since a device that never held can't
+// tell the member chose. Two that kept different ones show it as a
+// change: the one kept later stands, the other joins the past, held where
+// either held or the older was verified, unless the member compared or
+// sent anyway at the later; a change neither recorded since the older was
+// kept counts from the newer.
 func mergeIdentity(ours, theirs *keptIdentity) *keptIdentity {
 	switch {
 	case theirs == nil:
 		return ours
 	case ours == nil:
-		return theirs.clone()
+		out := theirs.clone()
+		if !out.letGo() {
+			out.LetGo = nil
+		}
+		return out
 	case bytes.Equal(ours.Hash, theirs.Hash):
 		out := ours.clone()
 		out.KeptAt = min(ours.KeptAt, theirs.KeptAt)
 		out.Verified = ours.Verified || theirs.Verified
-		out.Held = ours.Held && theirs.Held && !out.Verified
+		out.LetGo = nil
+		if ours.letGo() || theirs.letGo() {
+			out.LetGo = slices.Clone(ours.Hash)
+		}
+		out.Held = (ours.Held || theirs.Held) && !out.Verified && out.LetGo == nil
 		out.Past = withPast(ours.Past, ours.Hash, theirs.Past...)
 		out.Changes = withChanges(ours.Changes, theirs.Changes)
 		return out
@@ -148,7 +163,11 @@ func mergeIdentity(ours, theirs *keptIdentity) *keptIdentity {
 		out.Changes = withChanges(out.Changes, []int64{newer.KeptAt})
 	}
 	out.Verified = newer.Verified
-	out.Held = (newer.Held || older.Verified) && !newer.Verified
+	out.LetGo = nil
+	if newer.letGo() {
+		out.LetGo = slices.Clone(newer.Hash)
+	}
+	out.Held = (newer.Held || older.Held || older.Verified) && !newer.Verified && out.LetGo == nil
 	return out
 }
 
@@ -201,7 +220,7 @@ func (r *identityRecord) meet(member string, hash []byte, now int64, keep bool) 
 	}
 	k.Past = withPast(k.Past, hash, k.Hash)
 	k.Hash, k.KeptAt = hash, now
-	k.Held, k.Verified = k.Held || k.Verified, false
+	k.Held, k.Verified, k.LetGo = k.Held || k.Verified, false, nil
 	k.Changes = withChanges(k.Changes, []int64{now})
 	return true
 }
@@ -209,8 +228,9 @@ func (r *identityRecord) meet(member string, hash []byte, now int64, keep bool) 
 // encode writes the record for the den, within the most a record holds:
 // past the most, each member keeps the latest identity of those kept
 // before and the last two changes, then the members kept longest ago go,
-// the unverified first. The member's own identities from before stay,
-// since their groups' older changes are signed by them.
+// those neither verified nor held first, since a device that never held
+// learns a hold only from the record. The member's own identities from
+// before stay, since their groups' older changes are signed by them.
 func (r *identityRecord) encode() ([]byte, error) {
 	out, err := json.Marshal(r)
 	if err != nil || len(out) <= denproto.MaxRecord {
@@ -227,12 +247,12 @@ func (r *identityRecord) encode() ([]byte, error) {
 		}
 		trimmed.Members[id] = t
 	}
-	// Those kept longest ago go first, the unverified before the verified,
-	// each taking what it encodes to, its ID and punctuation with it.
+	// Those kept longest ago go first, the rest before the verified and the
+	// held, each taking what it encodes to, its ID and punctuation with it.
 	ids := slices.SortedFunc(maps.Keys(trimmed.Members), func(a, b string) int {
 		x, y := trimmed.Members[a], trimmed.Members[b]
-		if x.Verified != y.Verified {
-			if x.Verified {
+		if kx, ky := x.Verified || x.Held, y.Verified || y.Held; kx != ky {
+			if kx {
 				return 1
 			}
 			return -1
@@ -714,7 +734,9 @@ func (m *Manager) Compare(ctx context.Context, denID, memberID, digits string) (
 }
 
 // SendAnyway lets the DMs with a member whose keys changed since this
-// member verified them take messages again, without comparing.
+// member verified them take messages again, without comparing. The record
+// keeps the identity it was chosen at, so the member's devices that held
+// let go too.
 func (m *Manager) SendAnyway(ctx context.Context, denID, memberID string) error {
 	c, err := m.find(denID)
 	if err != nil {
@@ -724,7 +746,7 @@ func (m *Manager) SendAnyway(ctx context.Context, denID, memberID string) error 
 	k := c.ids.Record.Members[memberID]
 	held := k != nil && k.Held
 	if held {
-		k.Held = false
+		k.Held, k.LetGo = false, slices.Clone(k.Hash)
 	}
 	c.mu.Unlock()
 	if held {
