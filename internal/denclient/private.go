@@ -185,6 +185,13 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	out := m
 	out.Reply = nil
 	if m.Sealed == nil {
+		// Every message of a DM, a group or notes is sealed by its author's
+		// Dens, so one there in the clear is the den's own, and keeps
+		// nothing the den wrote.
+		if c.privateLocked(m.ChannelID) {
+			return PageMessage{Message: denproto.Message{ID: m.ID, ChannelID: m.ChannelID, AuthorID: m.AuthorID, CreatedAt: m.CreatedAt,
+				Revision: m.Revision}, Locked: lockedBroken}
+		}
 		c.noteLocked(m)
 		return PageMessage{Message: out, Reply: reply}
 	}

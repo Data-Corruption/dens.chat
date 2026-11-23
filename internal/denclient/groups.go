@@ -117,6 +117,11 @@ func (c *conn) isGroup(channel string) bool {
 func (c *conn) private(channel string) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+	return c.privateLocked(channel)
+}
+
+// privateLocked is private, for a caller that holds c.mu.
+func (c *conn) privateLocked(channel string) bool {
 	return c.den != nil && (isSealed(c.den.channels[channel]) || isSealed(denproto.Channel{Kind: c.den.kinds[channel]}))
 }
 

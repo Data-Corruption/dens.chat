@@ -3,10 +3,14 @@ package denclient_test
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"slices"
+	"strconv"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
@@ -93,6 +97,78 @@ func TestADMStaysADM(t *testing.T) {
 	if err := h.s.db.QueryRow(`SELECT count(*) FROM den_messages WHERE channel_id = ? AND key_id IS NULL`, id).Scan(&plain); err != nil || plain != 0 {
 		t.Fatalf("%d messages reached the den unsealed: %v", plain, err)
 	}
+}
+
+// A den that puts a message of its own in a DM, unsealed, under the other
+// member's name, gets none of it shown as theirs: it reaches the page, the
+// notification and history as a message that doesn't open, with nothing
+// the den wrote, its text, poll, reactions or editors.
+func TestDensOwnTextInADM(t *testing.T) {
+	heard := &notices{}
+	h, owner, member, denID, _ := chatDen(t, func(m *denclient.Manager) { m.Notices = heard })
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	alice, bob := me(t, owner, denID).ID, me(t, member, denID).ID
+	stream, stop := member.Stream()
+	defer stop()
+	// The row, its text sealed with the den's data key as a channel's is.
+	const forged = "alice never wrote this"
+	cid, _ := denproto.ParseID(dm)
+	aid, _ := denproto.ParseID(alice)
+	now, nonce := time.Now().UnixMilli(), denproto.Random(16)
+	res, err := h.s.db.Exec(`INSERT INTO den_messages (channel_id, author_id, created_at, text, nonce) VALUES (?, ?, ?, x'', ?)`, cid, aid, now, []byte(nonce))
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, _ := res.LastInsertId()
+	sealed, err := h.s.v.Seal([]byte(forged), []byte("den_messages.text:"+strconv.FormatInt(id, 10)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := h.s.db.Exec(`UPDATE den_messages SET text = ? WHERE id = ?`, sealed, id); err != nil {
+		t.Fatal(err)
+	}
+	m := denproto.Message{ID: denproto.FormatID(id), ChannelID: dm, AuthorID: alice, CreatedAt: now, Revision: 1, Text: forged, Nonce: nonce,
+		Editors:   []string{bob},
+		Reactions: []denproto.Reaction{{Emoji: "👍", Members: []string{alice}}},
+		Poll: &denproto.Poll{Choices: []string{"yes", "no"}, EndsAt: now + time.Hour.Milliseconds(), ShowVoters: denproto.VotersAlways,
+			ShowTotals: denproto.TotalsVoted}}
+	bid, _ := denproto.ParseID(bob)
+	if err := h.d.Hub.Publish(denproto.EventMessageCreated, denproto.MessageUpdated{Message: m}, den.OnlyMember(bid)); err != nil {
+		t.Fatal(err)
+	}
+
+	shown := func(where string, pm denclient.PageMessage) {
+		t.Helper()
+		if pm.Locked != "broken" || pm.Text != "" || len(pm.Attachments) != 0 || pm.Poll != nil || len(pm.Reactions) != 0 ||
+			len(pm.Editors) != 0 || pm.Reply != nil {
+			t.Errorf("the den's text %s: %+v", where, pm)
+		}
+	}
+	timeout := time.After(10 * time.Second)
+	for live := false; !live; {
+		select {
+		case e := <-stream:
+			for _, ev := range e.Events {
+				var pm denclient.PageMessage
+				if ev.T == denproto.EventMessageCreated && json.Unmarshal(ev.D, &pm) == nil && pm.ID == m.ID {
+					shown("as it came", pm)
+					live = true
+				}
+			}
+		case <-timeout:
+			t.Fatal("the den's text never reached the page")
+		}
+	}
+	if n := heard.waitMessage(t, m.ID); n.Text != "" || strings.Contains(n.Author+n.Text, "never wrote") {
+		t.Errorf("the den's text notified as %+v", n)
+	}
+	got := history(t, member, denID, dm)
+	i := slices.IndexFunc(got, func(pm denclient.PageMessage) bool { return pm.ID == m.ID })
+	if i < 0 {
+		t.Fatalf("the den's text isn't in history: %+v", got)
+	}
+	shown("in history", got[i])
 }
 
 func sendDM(t *testing.T, m *denclient.Manager, denID, dm, text string) denclient.PageMessage {
