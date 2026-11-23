@@ -21,7 +21,8 @@
 # the den holding it while the member is away and the member taking it back
 # on the same connection. A staff mute must silence the member, and a staff
 # disconnect end their call, and the voice channel's longest call must hold
-# through a den restart. The member shares their screen, which the owner
+# through a den restart, after which the audit log holds each of the
+# owner's acts. The member shares their screen, which the owner
 # watches with its sound, and a voice channel's new bitrate reaches the call
 # in progress. The member sends a phone photo that must arrive stripped, a
 # phone video that must arrive stripped with its preview and play from any
@@ -439,6 +440,17 @@ run() {
   [[ "$(guest "$DEN" call-record "$den_id" "$lounge")" == "$record" ]] ||
     { echo "error: Lounge's longest call, $record ms, is $(guest "$DEN" call-record "$den_id" "$lounge") ms after the restart" >&2; return 1; }
   echo ">> Lounge's longest call, $record ms, held after the den restarted"
+
+  # Each of staff's acts so far wrote its line, which the restart keeps:
+  # the invite, the channels, the retention set and turned off, the staff
+  # mute and its lifting, the disconnect, and the bitrate.
+  local log want
+  log=$(guest "$DEN" audit "$den_id")
+  want=$(printf '%s\n' "channel.updated $alice_id" "call.disconnected $alice_id $bob_id" "call.unmuted $alice_id $bob_id" \
+    "call.muted $alice_id $bob_id" "channel.created $alice_id" "den.updated $alice_id" "den.updated $alice_id" "channel.created $alice_id" \
+    "invite.created $alice_id")
+  [[ "$log" == "$want" ]] || { printf 'error: the audit log after the restart reads:\n%s\n' "$log" >&2; return 1; }
+  echo ">> The audit log holds each of staff's acts after the restart"
 
 
   echo ">> A phone photo with GPS data, through Caddy"

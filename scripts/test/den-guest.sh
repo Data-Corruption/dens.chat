@@ -470,6 +470,14 @@ call-record)
     # in milliseconds, as staff read it.
     api GET "/api/dens/$1/channels/$2/record" | json 'd["record_ms"]'
     ;;
+audit)
+    # audit DEN_ID: print the den's audit log as staff read it, newest
+    # first, a line each: its kind, who acted and on whom, by member ID.
+    api GET "/api/dens/$1/audit" | python3 -c '
+import json, sys
+for l in json.load(sys.stdin)["lines"]:
+    print(" ".join(x for x in (l["kind"], l.get("by", ""), l.get("member_id", "")) if x))'
+    ;;
 voice-mute)
     # voice-mute DEN_ID MEMBER_ID true|false: mute a member in calls, as
     # staff, or lift it.

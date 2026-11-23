@@ -20,7 +20,8 @@
 // Each section held to the one frame the settings and Manage
 // share: its groups cards, one toggle size and regular labels, every
 // button one of the page's kinds by the layout audit; Manage holding what
-// staff manage, the owner's Events among it; and her own sections of the
+// staff manage, the owner's Events among it, bob found in its Members by
+// two letters and his row's menu opened; and her own sections of the
 // den, from the cog on its page, as its group above the app's. Then
 // the code a block in the generator's shape; a stranger's blocks read for
 // what the page reads alone; and a v1.13.0 code read as it was.
@@ -549,7 +550,7 @@ try {
         await openManage(b, 'General');
         await waitFor(() => b.eval(`!!${MANAGE}?.querySelector('input[type=url]')`), "Manage's General");
         const manage = await b.eval(`[...document.querySelectorAll('[role=dialog][aria-label^="Manage "] nav button')].map((x) => x.textContent.trim())`);
-        c.report(manage.join('|') === 'General|Invites|Bans|Soundboard|Emoji|Events|Limits',
+        c.report(manage.join('|') === 'General|Members|Invites|Bans|Audit log|Soundboard|Emoji|Events|Limits',
             `Manage lists what staff manage, the owner's Events and Limits last: ${manage.join(', ')}`);
         for (const name of manage) {
             await openManage(b, name);
@@ -559,6 +560,27 @@ try {
             c.report(wrapped.length === 0, `Manage's ${name}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
             frame(`Manage's ${name}`, await b.eval(FRAME));
         }
+        step("bob found in Manage's Members, and his row's menu");
+        await openManage(b, 'Members');
+        const row = (name) => `${MANAGE}?.querySelector('[data-members] [data-member=${JSON.stringify(name)}]')`;
+        await waitFor(() => b.eval(`!!${row('bob')} && !!${row('alice')}`), "Members' rows");
+        await b.eval(`(() => {
+            const box = ${MANAGE}.querySelector('input[data-members-find]');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, 'bo');
+            box.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        })()`);
+        const narrowed = await waitFor(async () => !(await b.eval(`!!${row('alice')}`)) && b.eval(`!!${row('bob')}`), 'Members narrowed to bob').catch(() => false);
+        c.report(narrowed, 'two letters narrow Members to bob');
+        await b.eval(`${row('bob')}.querySelector('[data-member-menu]').click(), true`);
+        const items = await waitFor(async () => {
+            const keys = await b.eval(`[...document.querySelectorAll('[data-menu-item]')].map((i) => i.dataset.menuItem)`);
+            return keys.length > 0 && keys;
+        }, "bob's row's menu").catch(() => []);
+        c.report(items.join() === 'promote,remove', `bob's row opens the menu his card has: ${items.join(', ')}`);
+        await h.snap('manage-members-menu');
+        await b.key('Escape');
+        await waitFor(async () => !(await b.eval(`!!document.querySelector('[data-menu-item]')`)), "the row's menu closing");
         await b.key('Escape');
         await waitFor(async () => !(await b.eval(`!!${MANAGE}`)), 'Manage closing');
 

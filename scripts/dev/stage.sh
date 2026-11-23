@@ -3,7 +3,8 @@
 # prerelease of the coming version, page and all, as a release directory
 # at DEST laid out as the release host's is, with its installers; and,
 # with android among the targets, the Android app's development APK
-# beside it, which phone.sh installs from out/. The binaries carry no signing
+# beside it, with phone.sh, which pairs with a phone over wireless
+# debugging and installs it from there. The binaries carry no signing
 # identity, as the harnesses' fixtures don't, so they install, and update,
 # with --skip-verify. A prerelease sorts before its release, so the
 # release updates over it once published. Staging again into DEST, at a
@@ -50,6 +51,7 @@ for target in "${wanted[@]}"; do
   if [[ $target == android ]]; then
     ./scripts/build.sh --android
     cp out/android-arm64.apk "$DEST/android-arm64.apk"
+    cp scripts/dev/phone.sh "$DEST/phone.sh"
   fi
 done
 
@@ -95,5 +97,6 @@ if command -v wslpath >/dev/null && [[ $DEST == /mnt/* ]]; then
   printf '  powershell -ExecutionPolicy Bypass -File %s/install.ps1 -ReleaseUrl file:///%s/ -SkipVerify\n' "$windows" "$windows"
 fi
 if [[ " ${wanted[*]} " == *" android "* ]]; then
-  printf 'and the app on a phone: scripts/test/android/phone.sh SERIAL install arm64\n'
+  printf 'and the app on a phone, paired first if it needs it:\n'
+  printf '  bash %s/phone.sh pair ADDRESS:PORT CODE\n  bash %s/phone.sh ADDRESS:PORT\n' "$DEST" "$DEST"
 fi
