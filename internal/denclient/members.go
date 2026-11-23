@@ -184,6 +184,64 @@ func (m *Manager) SetStaffMute(ctx context.Context, denID, memberID string, mute
 	return c.call(ctx, http.MethodPost, "/api/members/"+memberID+"/voice-mute", denproto.VoiceMuteRequest{Muted: muted}, nil)
 }
 
+// AuditLog reads a page of a den's audit log, as staff, from before the
+// line the page before ended at, or from the newest. Each line is checked
+// as the protocol shapes it; a kind this Dens doesn't know passes, for the
+// page to show in its own words.
+func (m *Manager) AuditLog(ctx context.Context, denID, before string) (denproto.AuditLog, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return denproto.AuditLog{}, err
+	}
+	path := "/api/audit"
+	if before != "" {
+		if err := checkID("line", before); err != nil {
+			return denproto.AuditLog{}, err
+		}
+		path += "?before=" + before
+	}
+	var log denproto.AuditLog
+	if err := c.call(ctx, http.MethodGet, path, nil, &log); err != nil {
+		return denproto.AuditLog{}, err
+	}
+	if len(log.Lines) > denproto.AuditPage || (log.Next != "" && !validID(log.Next)) {
+		return denproto.AuditLog{}, errors.New("the den's answer is malformed")
+	}
+	for _, l := range log.Lines {
+		if denproto.CheckAuditLine(l) != nil {
+			return denproto.AuditLog{}, errors.New("the den's answer is malformed")
+		}
+	}
+	if log.Lines == nil {
+		log.Lines = []denproto.AuditLine{}
+	}
+	return log, nil
+}
+
+// MembersSeen reads when each member of a den was last seen, by day, as
+// staff.
+func (m *Manager) MembersSeen(ctx context.Context, denID string) ([]denproto.Seen, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return nil, err
+	}
+	var list denproto.SeenList
+	if err := c.call(ctx, http.MethodGet, "/api/members/seen", nil, &list); err != nil {
+		return nil, err
+	}
+	seen := map[string]bool{}
+	for _, s := range list.Seen {
+		if !validID(s.MemberID) || seen[s.MemberID] || s.Day < 0 || s.Day%denproto.SeenDay.Milliseconds() != 0 {
+			return nil, errors.New("the den's answer is malformed")
+		}
+		seen[s.MemberID] = true
+	}
+	if list.Seen == nil {
+		list.Seen = []denproto.Seen{}
+	}
+	return list.Seen, nil
+}
+
 // Bans lists a den's banned members.
 func (m *Manager) Bans(ctx context.Context, denID string) ([]Ban, error) {
 	c, err := m.find(denID)
