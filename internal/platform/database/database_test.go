@@ -175,10 +175,10 @@ func TestClientSessionsSlideAndExpire(t *testing.T) {
 	}
 }
 
-// A den's export holds the den alone: every den table as it is, the
-// data key's check value and its password wrap, and none of the client,
-// whose rows leave no trace in the file. It's one file, which an older
-// release's restore opens as it does a backup's.
+// A den's export holds the den alone: every den table as it is, its
+// audit log among them, the data key's check value and its password wrap,
+// and none of the client, whose rows leave no trace in the file. It's one
+// file, which an older release's restore opens as it does a backup's.
 func TestSnapshotDenHoldsTheDenAlone(t *testing.T) {
 	db, err := openTestDB(t, filepath.Join(t.TempDir(), "db"), database.ApplyPendingMigrations)
 	if err != nil {
@@ -215,6 +215,7 @@ func TestSnapshotDenHoldsTheDenAlone(t *testing.T) {
 			VALUES ('alice', 'Alice Marker', 'owner', x'04', 1, x'05')`,
 		`INSERT INTO den_groups (name, position) VALUES ('Group Marker', 0)`,
 		`INSERT INTO den_channels (name, kind, position, created_at) VALUES ('general-marker', 'text', 0, 1)`,
+		`INSERT INTO den_audit (at, kind, done_by, details) VALUES (1, 'channel.created', 1, CAST('audit-marker' AS BLOB))`,
 	} {
 		if _, err := db.ExecContext(ctx, query); err != nil {
 			t.Fatalf("%s: %v", query, err)
@@ -237,7 +238,7 @@ func TestSnapshotDenHoldsTheDenAlone(t *testing.T) {
 			t.Errorf("the snapshot's file still holds %q", gone)
 		}
 	}
-	for _, kept := range []string{"Marker Den", "Alice Marker", "Group Marker", "general-marker"} {
+	for _, kept := range []string{"Marker Den", "Alice Marker", "Group Marker", "general-marker", "audit-marker"} {
 		if !bytes.Contains(file, []byte(kept)) {
 			t.Errorf("the snapshot's file lacks %q", kept)
 		}

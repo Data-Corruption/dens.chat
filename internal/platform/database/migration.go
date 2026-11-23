@@ -801,6 +801,30 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// The audit log: staff's acts, a line each, swept 90 days after it's
+	// written. A line keeps when, what, who did it and to whom; the rest,
+	// names as they were and values before and after, is JSON sealed with
+	// the data key, so a kind the den adds later takes no step. It names
+	// members alone, whose rows stay, so it outlives the channel, message
+	// or invite it's about; done_by is NULL where the den's own machine
+	// acted, as through its owner invite.
+	m.Add("Audit log", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_audit (
+				id        INTEGER PRIMARY KEY AUTOINCREMENT,
+				at        INTEGER NOT NULL, -- unix milliseconds
+				kind      TEXT NOT NULL,
+				done_by   INTEGER REFERENCES den_members (id),
+				member_id INTEGER REFERENCES den_members (id),
+				details   BLOB NOT NULL -- sealed with the data key
+			) STRICT;
+			CREATE INDEX den_audit_at ON den_audit (at);
+		`); err != nil {
+			return fmt.Errorf("add the audit log: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

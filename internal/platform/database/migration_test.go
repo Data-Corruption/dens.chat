@@ -23,19 +23,21 @@ var releasedSchema = []struct {
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
 	{"v1.6.0", 1, slices.Concat([]string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"},
-		m16Tables, m17Tables, m19Tables)},
+		m16Tables, m17Tables, m19Tables, m23Tables)},
 	// v1.7.0 added own sounds and the soundboard.
-	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables, m19Tables)},
+	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables, m19Tables, m23Tables)},
 	// v1.8.0 added emoji, reactions and polls.
-	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables, m19Tables)},
+	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables, m19Tables, m23Tables)},
 	// v1.9.0 added identities, group DMs and disappearing messages.
-	{"v1.9.0", 9, slices.Concat(m17Tables, m19Tables)},
+	{"v1.9.0", 9, slices.Concat(m17Tables, m19Tables, m23Tables)},
 	// v1.10.0 added spoilers, notes, events, badges and hidden ones, and
 	// v1.10.1 nothing more.
-	{"v1.10.1", 14, m19Tables},
+	{"v1.10.1", 14, slices.Concat(m19Tables, m23Tables)},
 	// v1.11.0 added the chat background and name styles, and v1.12.0
 	// nothing more.
-	{"v1.12.0", 16, nil},
+	{"v1.12.0", 16, m23Tables},
+	// v1.13.0 added call records, and v1.14.0 nothing more.
+	{"v1.14.0", 17, m23Tables},
 }
 
 // m16Tables are the tables v1.9.0's steps add: identities and records,
@@ -49,6 +51,9 @@ var m17Tables = []string{"den_events", "den_event_interest", "den_badges", "den_
 // m19Tables are the tables v1.11.0's steps add: the chat background.
 // Name styles are a column.
 var m19Tables = []string{"background"}
+
+// m23Tables are the tables v1.15.0's steps add: the audit log.
+var m23Tables = []string{"den_audit"}
 
 // retiredKeys are the tables of DM keys, which Identities changes for a
 // release before it: an exchange still running, or checked by one member
@@ -83,7 +88,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // all. Chat background adds the chat's background, which starts with none,
 // and Name styles each member's name style, which none has; a database
 // v1.12.0 left, with a background and a name style, keeps them. Call
-// records adds each voice channel's longest call, which none has.
+// records adds each voice channel's longest call, which none has; a
+// database v1.14.0 left, with a record, keeps it. Audit log adds staff's
+// lines, which start empty, each by and about members alone.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -291,7 +298,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				// No voice channel has a record until a call there ends,
 				// and only a voice channel takes one, longer than 0.
 				var records int
-				if err := db.QueryRow(`SELECT count(*) FROM den_channels WHERE call_record IS NOT NULL`).Scan(&records); err != nil || records != 0 {
+				if err := db.QueryRow(`SELECT count(*) FROM den_channels WHERE call_record IS NOT NULL`).Scan(&records); err != nil ||
+					(released.version < 17 && records != 0) {
 					t.Errorf("%s holds %d call records after the migration, %v", what, records, err)
 				}
 				if _, err := db.Exec(`UPDATE den_channels SET call_record = 5000 WHERE id = 2`); err != nil {
@@ -301,6 +309,30 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					`UPDATE den_channels SET call_record = 5000 WHERE id = 1`,
 					`UPDATE den_channels SET call_record = 0 WHERE id = 2`,
 					`UPDATE den_channels SET call_record = -1 WHERE id = 2`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
+				}
+				// A line is when, what, who did it and to whom, and the rest
+				// sealed; it names members alone, whose rows stay, so it
+				// outlives the channel, message or invite it was about.
+				if _, err := db.Exec(`INSERT INTO den_audit (at, kind, done_by, member_id, details) VALUES (12, 'member.removed', 1, 2, x'a1')`); err != nil {
+					t.Errorf("%s takes no audit line after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`INSERT INTO den_audit (at, kind, done_by, details) VALUES (13, 'channel.deleted', 1, x'a2')`); err != nil {
+					t.Errorf("%s takes no line about no member after the migration: %v", what, err)
+				}
+				// The den's machine acts through its owner invite.
+				if _, err := db.Exec(`INSERT INTO den_audit (at, kind, member_id, details) VALUES (14, 'role.changed', 1, x'a4')`); err != nil {
+					t.Errorf("%s takes no line by the den's machine after the migration: %v", what, err)
+				}
+				for _, q := range []string{
+					`INSERT INTO den_audit (at, kind, done_by, member_id, details) VALUES (12, 'member.removed', 99, 2, x'a3')`,
+					`INSERT INTO den_audit (at, kind, done_by, member_id, details) VALUES (12, 'member.removed', 1, 99, x'a3')`,
+					`INSERT INTO den_audit (at, kind, done_by, details) VALUES (12, 'channel.deleted', 1, NULL)`,
+					`INSERT INTO den_audit (at, kind, done_by, details) VALUES (NULL, 'channel.deleted', 1, x'a3')`,
+					`INSERT INTO den_audit (at, kind, done_by, details) VALUES (12, NULL, 1, x'a3')`,
 				} {
 					if _, err := db.Exec(q); err == nil {
 						t.Errorf("%s took %s", what, q)
@@ -385,7 +417,8 @@ func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
 // message sent under it; from version 14, v1.10.1's, a spoiler, a member's
 // notes, an event of staff's with a member interested, its badge and a
 // hidden award, and the den's limit for members' events; from version 16,
-// v1.12.0's, the chat's background and a member's name style.
+// v1.12.0's, the chat's background and a member's name style; and from
+// version 17, v1.14.0's, a voice channel's longest call.
 func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
 	rows := []string{
@@ -483,6 +516,9 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 			`INSERT INTO background (id, set_at, file) VALUES (1, 12, x'91')`,
 			`UPDATE den_members SET name_style = '{"font":"bangers","colors":["#ff8800"]}' WHERE id = 3`,
 		)
+	}
+	if version >= 17 {
+		rows = append(rows, `UPDATE den_channels SET call_record = 4000 WHERE id = 2`)
 	}
 	for _, q := range rows {
 		if _, err := db.Exec(q); err != nil {
