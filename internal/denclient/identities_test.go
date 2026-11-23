@@ -281,6 +281,43 @@ func TestHoldOnEveryDevice(t *testing.T) {
 	}
 }
 
+// The keys a den gives for a member as a Dens makes a DM's key must hash
+// to the identity kept for them: a den that swaps in others, naming the
+// same identity, gets no key made, and nothing sent.
+func TestDMKeysForTheIdentityKept(t *testing.T) {
+	h, owner, member, denID, _ := chatDen(t)
+	dm := openDM(t, owner, member, denID)
+	readyDM(t, owner, member, denID, dm)
+	swapKeys(t, h, me(t, member, denID).ID)
+	_, err := owner.Send(context.Background(), denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Text: "to the den's keys"})
+	if !isInput(err) || !strings.Contains(err.Error(), "keys just changed") {
+		t.Fatalf("sending with keys that aren't bob's identity: %v", err)
+	}
+	var keys int
+	if err := h.s.db.QueryRow(`SELECT count(*) FROM den_dm_keys WHERE channel_id = ?`, dm).Scan(&keys); err != nil || keys != 0 {
+		t.Fatalf("the DM has %d keys: %v", keys, err)
+	}
+}
+
+// swapKeys has the den give another identity's keys for a member, while
+// it names the identity they published.
+func swapKeys(t *testing.T, h *denHost, member string) {
+	t.Helper()
+	info, _ := h.d.Info()
+	other, err := denproto.DeriveIdentity(denproto.NewSeal(), info.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer other.Close()
+	pub := other.Public()
+	id, _ := denproto.ParseID(member)
+	if res, err := h.s.db.Exec(`UPDATE den_identities SET kem = ?, sig = ? WHERE member_id = ?`, []byte(pub.KEM), []byte(pub.Sig), id); err != nil {
+		t.Fatal(err)
+	} else if n, _ := res.RowsAffected(); n != 1 {
+		t.Fatalf("swapped %d members' keys", n)
+	}
+}
+
 // A DM whose key both members checked before v1.9.0 reads and sends as it
 // did: messages go out under that key, sealed with each member's copy
 // under their seal, and no new key is made for it.
