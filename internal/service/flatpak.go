@@ -31,10 +31,11 @@ import (
 // quit action GNOME's Background Apps sends; watches Flatpak's update
 // monitor for the page's notice, and installs an update where Flatpak lets
 // it; starts the newest build installed, as a sandbox of its own, to
-// restart into it; runs the shortcut helper inside the service, since it's
-// in the session already; says how many dens it's connected to under its
-// name among the desktop's background apps; and has the desktop start it at
-// sign-in once its key is remembered.
+// restart into it, and stops once that build says it's there; runs the
+// shortcut helper inside the service, since it's in the session already;
+// says how many dens it's connected to under its name among the desktop's
+// background apps; and has the desktop start it at sign-in once its key is
+// remembered.
 type flatpak struct {
 	a    *app.App
 	ctx  context.Context
@@ -44,11 +45,17 @@ type flatpak struct {
 	gnome bool
 	// openMonitor, spawn and output are Flatpak's portal's, or a test's.
 	openMonitor func() (updateMonitor, error)
-	spawn       func(argv []string, files ...*os.File) (started bool, err error)
-	// respawnAfter is the pause before starting again a sandbox Flatpak
-	// didn't start; tests shorten it.
+	spawn       func(ctx context.Context, argv []string, files ...*os.File) (ended <-chan struct{}, err error)
+	output      func(ctx context.Context, argv []string) ([]byte, error)
+	// takeOverWait is how long a restart waits for the build it started
+	// to say it's there, and respawnAfter the pause before it starts
+	// again one whose sandbox ended first; tests shorten them.
+	takeOverWait time.Duration
 	respawnAfter time.Duration
-	output       func(ctx context.Context, argv []string) ([]byte, error)
+	// restart is held by the one restart at a time that waits for that
+	// word, which comes on waiting.
+	restart sync.Mutex
+	waiting chan struct{}
 
 	// wg is what run waits for as it ends; once closed, nothing more
 	// starts.
@@ -83,8 +90,10 @@ func newFlatpak(ctx context.Context, a *app.App, quit func(why string)) *flatpak
 		gnome:        strings.Contains(strings.ToUpper(os.Getenv("XDG_CURRENT_DESKTOP")), "GNOME"),
 		openMonitor:  func() (updateMonitor, error) { return host.OpenUpdateMonitor() },
 		spawn:        host.SpawnLatest,
-		respawnAfter: 500 * time.Millisecond,
 		output:       host.SpawnLatestOutput,
+		takeOverWait: takeOverWait,
+		respawnAfter: 500 * time.Millisecond,
+		waiting:      make(chan struct{}, 1),
 	}
 }
 
@@ -334,30 +343,91 @@ func (f *flatpak) StartNewest() error {
 	if f.a.Layout.Instance != layout.DefaultInstance {
 		argv = append(argv, "--instance", f.a.Layout.Instance)
 	}
-	// This service stops for the one it starts, so it makes sure of it
-	// first: Flatpak can fail to set a sandbox up while another's mounts
-	// change, as this one's do when it stops, and a start that nothing
-	// came of would leave Dens not running.
+	argv = append(argv, "service", "run")
+	f.restart.Lock()
+	defer f.restart.Unlock()
+	// This service stops for the build it starts, so it hears from that
+	// build first. Until the new sandbox is set up, this one stopping can
+	// break it: Flatpak clears the app's shared /tmp once no sandbox of
+	// the app holds it, and can fail to resolve an extension while
+	// another sandbox's mounts change. Its portal calls a sandbox started
+	// before any of that, as bubblewrap forks, so a service that stopped
+	// on the portal's word could leave Dens not running.
 	for try := 1; ; try++ {
-		started, err := f.spawn(append(argv, "service", "run"))
-		if err != nil {
-			return fmt.Errorf("start the newest build of Dens: %w", err)
+		// A word from before this start isn't its build's.
+		select {
+		case <-f.waiting:
+		default:
 		}
-		if started {
+		there, err := f.startAndHear(argv)
+		switch {
+		case err != nil:
+			return fmt.Errorf("start the newest build of Dens: %w", err)
+		case there:
 			f.a.Log.Info("Started the newest build installed, which takes over once this one stops")
 			return nil
+		case try == spawnTries:
+			return fmt.Errorf("start the newest build of Dens: its sandbox ended before it ran, %d times over", spawnTries)
 		}
-		if try == spawnTries {
-			return fmt.Errorf("start the newest build of Dens: Flatpak didn't start it in %d tries", spawnTries)
+		f.a.Log.Warnf("The newest build's sandbox ended before it ran (try %d of %d); starting it again", try, spawnTries)
+		select {
+		case <-time.After(f.respawnAfter):
+		case <-f.ctx.Done():
+			return f.ctx.Err()
 		}
-		f.a.Log.Warnf("Flatpak didn't start the newest build (try %d of %d); starting it again", try, spawnTries)
-		time.Sleep(f.respawnAfter)
+	}
+}
+
+// startAndHear starts the newest build's service, and reports whether it
+// said it waits for this one, or its sandbox ended first. One that runs
+// on and says nothing in takeOverWait isn't stopped for, or started
+// again: a build from before v1.15.0 says nothing, and can't read the
+// data this one keeps, and another start of it would only wait as long.
+func (f *flatpak) startAndHear(argv []string) (there bool, err error) {
+	ctx, stop := context.WithCancel(f.ctx)
+	defer stop()
+	ended, err := f.spawn(ctx, argv)
+	if err != nil {
+		return false, err
+	}
+	wait := time.NewTimer(f.takeOverWait)
+	defer wait.Stop()
+	select {
+	case <-f.waiting:
+		// One that said so and ended at once takes nothing over.
+		select {
+		case <-ended:
+			return false, nil
+		default:
+			return true, nil
+		}
+	case <-ended:
+		return false, nil
+	case <-wait.C:
+		return false, fmt.Errorf("it didn't say it had started within %v, as a build from before v1.15.0 doesn't", f.takeOverWait)
+	case <-f.ctx.Done():
+		return false, f.ctx.Err()
+	}
+}
+
+// TakingOver is a service that has started saying it waits for this one's
+// lock, which a restart that started it is waiting to hear.
+func (f *flatpak) TakingOver() {
+	select {
+	case f.waiting <- struct{}{}:
+	default:
 	}
 }
 
 // spawnTries is how many times a restart starts the newest build before it
-// gives up and stays.
-const spawnTries = 5
+// gives up and stays. takeOverWait is how long it waits each time for
+// that build to say it's there: well over the second a sandbox takes to
+// start, and under the 30 seconds a start waits for this service's lock,
+// so a build that never says so is still running when the wait ends.
+const (
+	spawnTries   = 5
+	takeOverWait = 15 * time.Second
+)
 
 func (f *flatpak) Quit(why string) { f.quit(why) }
 

@@ -83,6 +83,13 @@ func controlHandlers(a *app.App, quit func(why string)) map[string]control.Handl
 			}
 			return control.Reply{Stream: shellStream(a)}, nil
 		},
+		control.OpTakeOver: func(context.Context, control.Request) (control.Reply, error) {
+			if a.Flatpak == nil {
+				return control.Reply{}, control.Errorf("only the Flatpak's service stops for another that starts")
+			}
+			a.Flatpak.TakingOver()
+			return control.Reply{}, nil
+		},
 		control.OpQuit: func(context.Context, control.Request) (control.Reply, error) {
 			if !a.Layout.Form.Session() {
 				return control.Reply{}, control.Errorf("the service manager runs this instance; stop it with: %s",

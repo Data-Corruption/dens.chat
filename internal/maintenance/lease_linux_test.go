@@ -31,7 +31,7 @@ func flatpakLayout(t *testing.T) layout.Layout {
 // The Flatpak's start keeps a snapshot before it publishes an update, so a
 // snapshot that fails leaves the data as the older version left them; a
 // newer version's data it refuses; and a start that finds the lock held
-// waits for it.
+// says so once, then waits for it.
 func TestFlatpakLeaseSnapshotsAndWaits(t *testing.T) {
 	l := flatpakLayout(t)
 	if err := WriteState(l.State, NewState(PhaseReady, "v1.0.0", ""), nil); err != nil {
@@ -53,9 +53,15 @@ func TestFlatpakLeaseSnapshotsAndWaits(t *testing.T) {
 		}
 		return nil
 	}}
+	// held counts the starts that found the lock held.
+	held := make(chan struct{}, 4)
+	snapshotted.Held = func() { held <- struct{}{} }
 	lease, err := AcquireSessionLease(l, "v1.1.0", snapshotted)
 	if err != nil {
 		t.Fatal(err)
+	}
+	if len(held) != 0 {
+		t.Fatal("a start that found the lock free said it was held")
 	}
 	if from.Version != "v1.0.0" || lease.Mode != StartMigrate || lease.State.Phase != PhaseUpdating {
 		t.Fatalf("the update's lease: snapshot of %q, %+v", from.Version, lease)
@@ -65,12 +71,19 @@ func TestFlatpakLeaseSnapshotsAndWaits(t *testing.T) {
 	// it lets go.
 	got := make(chan error, 1)
 	go func() {
-		next, err := AcquireSessionLease(l, "v1.1.0", SessionOptions{Wait: 5 * time.Second})
+		next, err := AcquireSessionLease(l, "v1.1.0", SessionOptions{Wait: 5 * time.Second, Held: func() { held <- struct{}{} }})
 		if err == nil {
 			next.Close()
 		}
 		got <- err
 	}()
+	select {
+	case <-held:
+	case err := <-got:
+		t.Fatalf("a held lock's second lease didn't wait: %v", err)
+	case <-time.After(5 * time.Second):
+		t.Fatal("a start that found the lock held never said so")
+	}
 	time.Sleep(300 * time.Millisecond)
 	select {
 	case err := <-got:
@@ -81,12 +94,19 @@ func TestFlatpakLeaseSnapshotsAndWaits(t *testing.T) {
 	if err := <-got; err != nil {
 		t.Fatalf("the waiting lease: %v", err)
 	}
+	if len(held) != 0 {
+		t.Fatalf("the waiting lease said the lock was held %d times over", 1+len(held))
+	}
 	lease, err = AcquireSessionLease(l, "v1.1.0", SessionOptions{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := AcquireSessionLease(l, "v1.1.0", SessionOptions{Wait: 200 * time.Millisecond}); !errors.Is(err, host.ErrRefused) || !strings.Contains(err.Error(), "didn't let go") {
 		t.Fatalf("a lease that waited out the lock = %v", err)
+	}
+	// One that doesn't wait has nobody to tell.
+	if _, err := AcquireSessionLease(l, "v1.1.0", SessionOptions{Held: func() { held <- struct{}{} }}); !errors.Is(err, host.ErrRefused) || len(held) != 0 {
+		t.Fatalf("a lease that doesn't wait = %v, having said the lock was held %d times", err, len(held))
 	}
 	if err := MarkSessionReady(l, "v1.1.0"); err != nil {
 		t.Fatal(err)

@@ -9,6 +9,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/layout"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/internal/platform/http/guard"
@@ -153,6 +154,11 @@ func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout,
 		DevClientPort: cmd.Int("port"),
 		DevDenPort:    cmd.Int("den-port"),
 		DevMediaPorts: [2]int{cmd.Int("media-udp-port"), cmd.Int("media-tcp-port")},
+		Waiting: func() {
+			if client, _, err := controlClient(bi, l.Instance); err == nil {
+				tellRunning(client)
+			}
+		},
 	}); err != nil {
 		return err
 	}
@@ -165,6 +171,18 @@ func serve(ctx context.Context, a *app.App, bi build.BuildInfo, l layout.Layout,
 		fmt.Printf("Development instance %s: %s (pair with: %s open)\n", l.Instance, guard.PageOrigin(a.Instance.ClientPort), bi.Name)
 	}
 	return service.Run(ctx, a, ready)
+}
+
+// tellRunning tells the service that holds this start's instance that the
+// start is there and waits for it: the Flatpak's service that started it,
+// to restart, stops on that word. Whatever the answer, the start goes on
+// to wait for the lock: a service that isn't restarting takes no notice,
+// one from before v1.15.0 knows no such word, and one that has stopped
+// answering is on its way out. The call gets two of the 30 seconds the
+// start waits.
+func tellRunning(client control.Client) {
+	client.Timeout = 2 * time.Second
+	_ = client.Call(control.Request{Op: control.OpTakeOver}, nil)
 }
 
 // readyPipe is what says on the pipe a launch gave as fd, once.

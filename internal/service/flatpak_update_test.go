@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Data-Corruption/dens.chat/internal/app"
 	"github.com/Data-Corruption/dens.chat/internal/build"
+	"github.com/Data-Corruption/dens.chat/internal/control"
 	"github.com/Data-Corruption/dens.chat/internal/platform/host"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
@@ -35,8 +37,10 @@ func (m *fakeMonitor) Update(context.Context) error {
 // offers Update where Dens may install the update, which GNOME never lets
 // an app with no window do, and the software center where Flatpak refused
 // it, until the remote has another; once one is installed, by anything,
-// it offers Restart, which starts the newest build; and an update that
-// had nothing to install, since something else had, restarts too.
+// it offers Restart, which starts the newest build, and counts it started
+// once it says, over the control endpoint, that it waits for this one;
+// and an update that had nothing to install, since something else had,
+// restarts too.
 func TestFlatpakUpdateNotice(t *testing.T) {
 	a := app.New(build.BuildInfo{Name: "dens", Version: "v1.1.0"})
 	var err error
@@ -51,21 +55,36 @@ func TestFlatpakUpdateNotice(t *testing.T) {
 	f := newFlatpak(ctx, a, func(string) {})
 	f.gnome = false
 	f.openMonitor = func() (updateMonitor, error) { return m, nil }
+	a.Flatpak = f
+	takeOver := controlHandlers(a, func(string) {})[control.OpTakeOver]
 	var spawned []string
-	// starts are whether each spawn's sandbox starts, in turn, and true
-	// once they run out.
-	var starts []bool
+	// does is what the build each spawn starts does, in turn: it says it
+	// waits for this one, as every one does once they run out; ends
+	// having said nothing, as one whose sandbox Flatpak failed to set up;
+	// says so and ends at once; or runs on saying nothing, as a build from
+	// before v1.15.0 does.
+	const says, ends, saysAndEnds, silent = "says", "ends", "says and ends", "silent"
+	var does []string
 	spawns := 0
-	f.spawn = func(argv []string, _ ...*os.File) (bool, error) {
+	f.spawn = func(_ context.Context, argv []string, _ ...*os.File) (<-chan struct{}, error) {
 		spawned = argv
 		spawns++
-		started := true
-		if len(starts) > 0 {
-			started, starts = starts[0], starts[1:]
+		what := says
+		if len(does) > 0 {
+			what, does = does[0], does[1:]
 		}
-		return started, nil
+		ended := make(chan struct{})
+		if what == says || what == saysAndEnds {
+			if _, err := takeOver(ctx, control.Request{Op: control.OpTakeOver}); err != nil {
+				t.Errorf("a build saying it waits: %v", err)
+			}
+		}
+		if what == ends || what == saysAndEnds {
+			close(ended)
+		}
+		return ended, nil
 	}
-	f.respawnAfter = time.Millisecond
+	f.respawnAfter, f.takeOverWait = time.Millisecond, 100*time.Millisecond
 	f.start(f.watchUpdates)
 	notice := func(u host.FlatpakUpdate) app.FlatpakUpdate {
 		t.Helper()
@@ -125,15 +144,32 @@ func TestFlatpakUpdateNotice(t *testing.T) {
 	if strings.Join(spawned, " ") != "dens --instance second service run" || spawns != 1 {
 		t.Fatalf("restarted with %v, in %d spawns", spawned, spawns)
 	}
-	// A sandbox Flatpak didn't start is started again, and one that never
-	// starts leaves this service running, with an error for the page.
-	spawns, starts = 0, []bool{false, false, true}
+	// A sandbox that ended before its build said anything is started
+	// again, as is one whose build said so and ended; where none stays,
+	// this service runs on, with an error for the page.
+	spawns, does = 0, []string{ends, saysAndEnds, says}
 	if err := f.StartNewest(); err != nil || spawns != 3 {
-		t.Fatalf("a restart whose sandbox starts at the third try: %v, after %d spawns", err, spawns)
+		t.Fatalf("a restart whose build stays at the third try: %v, after %d spawns", err, spawns)
 	}
-	spawns, starts = 0, make([]bool, spawnTries+1)
+	spawns, does = 0, slices.Repeat([]string{ends}, spawnTries+1)
 	if err := f.StartNewest(); err == nil || spawns != spawnTries {
 		t.Fatalf("a restart whose sandbox never starts: %v, after %d spawns", err, spawns)
+	}
+	// A build that runs on and never says it waits, as one older than this
+	// one, isn't stopped for, or started again: its wait for this one's
+	// lock would end as one more sandbox that didn't start. Nor does a word
+	// from before the restart count for it.
+	if _, err := takeOver(ctx, control.Request{Op: control.OpTakeOver}); err != nil {
+		t.Fatal(err)
+	}
+	spawns, does = 0, []string{silent, silent}
+	if err := f.StartNewest(); err == nil || !strings.Contains(err.Error(), "didn't say") || spawns != 1 {
+		t.Fatalf("a restart whose build never says it waits: %v, after %d spawns", err, spawns)
+	}
+	// Only the Flatpak's service stops for another.
+	other := app.New(build.BuildInfo{Name: "dens", Version: "v1.1.0"})
+	if _, err := controlHandlers(other, func(string) {})[control.OpTakeOver](ctx, control.Request{}); err == nil {
+		t.Fatal("a service that isn't the Flatpak's took a build's word that it waits")
 	}
 }
 

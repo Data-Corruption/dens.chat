@@ -39,12 +39,10 @@ type fakeFlatpakPortals struct {
 
 	spawned [][]string
 	flags   uint32
-	// spawnWords are what the portal says of each spawn in turn,
-	// SpawnStarted once they run out, and "" nothing; oldPortal is one from
-	// before it said anything, which refuses the flag that asks.
-	spawnWords []string
-	oldPortal  bool
-	monitor    dbus.ObjectPath
+	// ends are whether each spawn's sandbox ends, in turn; none does once
+	// they run out.
+	ends    []bool
+	monitor dbus.ObjectPath
 	// updateAnswer is the monitor's Update: a D-Bus error's name, or the
 	// Progress statuses it sends.
 	updateError  string
@@ -176,24 +174,21 @@ func (f *fakeFlatpak) Spawn(sender dbus.Sender, cwd []byte, argv [][]byte, fds m
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.oldPortal && flags&spawnNotifyStart != 0 {
-		return 0, dbus.NewError("org.freedesktop.DBus.Error.InvalidArgs", []any{"Unsupported flags enabled: 0x40"})
-	}
 	p.spawned = append(p.spawned, args)
 	p.flags = flags
-	word := "SpawnStarted"
-	if len(p.spawnWords) > 0 {
-		word, p.spawnWords = p.spawnWords[0], p.spawnWords[1:]
+	ends := false
+	if len(p.ends) > 0 {
+		ends, p.ends = p.ends[0], p.ends[1:]
 	}
-	if flags&spawnNotifyStart != 0 && word != "" {
-		// To the caller alone, as the portal sends them, after another
-		// spawn's, which isn't this one's to heed.
-		go func() {
-			time.Sleep(20 * time.Millisecond)
-			p.tell(sender, "SpawnExited", uint32(41), uint32(256))
-			p.tell(sender, word, uint32(42), uint32(0))
-		}()
-	}
+	// To the caller alone, as the portal sends them: another spawn's end,
+	// which isn't this one's to heed, then this one's.
+	go func() {
+		time.Sleep(20 * time.Millisecond)
+		p.tell(sender, "SpawnExited", uint32(41), uint32(256))
+		if ends {
+			p.tell(sender, "SpawnExited", uint32(42), uint32(256))
+		}
+	}()
 	return 42, nil
 }
 
@@ -328,48 +323,47 @@ func TestBackgroundSpawnAndNotify(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if started, err := SpawnLatest([]string{"dens", "service", "run"}); err != nil || !started {
-		t.Fatalf("SpawnLatest: started %v, %v", started, err)
+	if _, err := SpawnLatest(t.Context(), []string{"dens", "service", "run"}); err != nil {
+		t.Fatal(err)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.status != "Connected to 2 dens" || len(f.notified) != 1 || !strings.Contains(f.notified[0], "Dens didn't start") {
 		t.Fatalf("status %q, notified %v", f.status, f.notified)
 	}
-	if len(f.spawned) != 1 || strings.Join(f.spawned[0], " ") != "dens service run" || f.flags != spawnLatestVersion|spawnNotifyStart {
+	if len(f.spawned) != 1 || strings.Join(f.spawned[0], " ") != "dens service run" || f.flags != spawnLatestVersion {
 		t.Fatalf("spawned %v, flags %d", f.spawned, f.flags)
 	}
 }
 
-// A spawn hears from the portal whether its sandbox started, or ended
-// before it ran anything, as Debian 13's Flatpak ends one set up while
-// another's mounts go; a portal that says nothing, or is too old to be
-// asked, is taken as having started it.
-func TestSpawnHearsWhetherItsSandboxStarted(t *testing.T) {
+// A spawn hears from the portal once its sandbox ends, as one Flatpak
+// failed to set up does before it runs anything, and nothing of one that
+// runs on, or of another spawn's.
+func TestSpawnHearsItsSandboxEnd(t *testing.T) {
 	conn := sessionBus(t)
 	f := startFlatpakPortals(t, conn)
-	saved := spawnStartWait
-	spawnStartWait = 300 * time.Millisecond
-	defer func() { spawnStartWait = saved }()
 	argv := []string{"dens", "service", "run"}
 	f.mu.Lock()
-	f.spawnWords = []string{"SpawnExited", "SpawnStarted", ""}
+	f.ends = []bool{true, false}
 	f.mu.Unlock()
-	for i, want := range []bool{false, true, true} {
-		if started, err := SpawnLatest(argv); err != nil || started != want {
-			t.Fatalf("spawn %d: started %v, %v; want %v", i+1, started, err, want)
-		}
+	ended, err := SpawnLatest(t.Context(), argv)
+	if err != nil {
+		t.Fatal(err)
 	}
-	f.mu.Lock()
-	f.oldPortal = true
-	f.mu.Unlock()
-	if started, err := SpawnLatest(argv); err != nil || !started {
-		t.Fatalf("through an older portal: started %v, %v", started, err)
+	select {
+	case <-ended:
+	case <-time.After(5 * time.Second):
+		t.Fatal("a sandbox that ended was never said to have")
 	}
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if len(f.spawned) != 4 || f.flags != spawnLatestVersion {
-		t.Fatalf("spawned %d times, the last with flags %d", len(f.spawned), f.flags)
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	if ended, err = SpawnLatest(ctx, argv); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-ended:
+		t.Fatal("a sandbox that runs on was said to have ended")
+	case <-time.After(300 * time.Millisecond):
 	}
 }
 

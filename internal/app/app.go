@@ -232,6 +232,10 @@ type OpenOptions struct {
 	// Form, where set, is the form to open as in place of the one FormOf
 	// finds: tests run the Flatpak's service outside its sandbox.
 	Form *layout.Form
+	// Waiting runs once where the Flatpak's start finds another service
+	// holding its instance, before it waits for that one to stop: it
+	// tells that service it's there.
+	Waiting func()
 }
 
 // Open prepares the service. Every failure wraps host.ErrRefused: a service
@@ -265,7 +269,7 @@ func (a *App) open(opts OpenOptions) error {
 		if err := a.prepareSession(opts); err != nil {
 			return fmt.Errorf("prepare the %s instance: %w", l.Form, err)
 		}
-		lease, err = maintenance.AcquireSessionLease(l, bi.Version, a.sessionOptions())
+		lease, err = maintenance.AcquireSessionLease(l, bi.Version, a.sessionOptions(opts))
 		err = a.explainRollback(err)
 	} else {
 		lease, err = maintenance.AcquireServiceLease(l, bi.Version)

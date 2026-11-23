@@ -96,26 +96,26 @@ func olderThan(service, launch string) bool {
 	return semver.IsValid(service) && semver.IsValid(launch) && semver.Compare(service, launch) < 0
 }
 
-// spawnTries is how many times a launch starts the service where Flatpak
-// doesn't start its sandbox.
+// spawnTries is how many times a launch starts the service where it ends
+// having said nothing.
 const spawnTries = 5
 
 // spawnService starts the Flatpak's service from the newest build
 // installed, and waits for it to say it's ready, or why it stopped, on a
 // pipe it hands it. Another service of this build or newer may answer
 // first, as one starting at sign-in: then the one this starts waits for its
-// lock, and the launch takes whichever answers. A sandbox Flatpak didn't
-// start, which says nothing, is started again: Flatpak can fail to set one
-// up while another's mounts change, as an older service's do as it quits
-// for this one.
+// lock, and the launch takes whichever answers. One that ends having said
+// nothing is started again: Flatpak can fail to set a sandbox up while
+// another's mounts change, as an older service's do as it quits for this
+// one, and then the service never ran in it.
 func spawnService(ctx context.Context, bi build.BuildInfo, client control.Client, l layout.Layout) error {
 	for try := 1; ; try++ {
-		unstarted, err := spawnServiceOnce(ctx, bi, client, l)
-		if !unstarted {
+		silent, err := spawnServiceOnce(ctx, bi, client, l)
+		if !silent {
 			return err
 		}
 		if try == spawnTries {
-			return fmt.Errorf("Flatpak didn't start Dens in %d tries; its journal says why", spawnTries)
+			return fmt.Errorf("Dens didn't start in %d tries, and said nothing of why; the journal may, or its log in %s", spawnTries, l.Logs)
 		}
 		select {
 		case <-time.After(500 * time.Millisecond):
@@ -125,9 +125,9 @@ func spawnService(ctx context.Context, bi build.BuildInfo, client control.Client
 	}
 }
 
-// spawnServiceOnce is one start of the service, and unstarted says that
-// its sandbox never started and it said nothing.
-func spawnServiceOnce(ctx context.Context, bi build.BuildInfo, client control.Client, l layout.Layout) (unstarted bool, err error) {
+// spawnServiceOnce is one start of the service, and silent says that it
+// ended having said nothing.
+func spawnServiceOnce(ctx context.Context, bi build.BuildInfo, client control.Client, l layout.Layout) (silent bool, err error) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		return false, err
@@ -138,7 +138,11 @@ func spawnServiceOnce(ctx context.Context, bi build.BuildInfo, client control.Cl
 		argv = append(argv, "--instance", l.Instance)
 	}
 	argv = append(argv, "service", "run", "--ready-fd", "3")
-	started, err := spawnLatest(argv, w)
+	// The pipe says when the service ends, so nothing watches the portal
+	// for it past the spawn.
+	spawning, stop := context.WithCancel(ctx)
+	_, err = spawnLatest(spawning, argv, w)
+	stop()
 	// The new process has its own copy now, so the read ends when it
 	// closes that.
 	w.Close()
@@ -160,7 +164,7 @@ func spawnServiceOnce(ctx context.Context, bi build.BuildInfo, client control.Cl
 			case readyWord:
 				return false, nil
 			case "":
-				return !started, fmt.Errorf("Dens stopped as it started; its log in %s says why", l.Logs)
+				return true, nil
 			}
 			return false, errors.New(answer)
 		case <-poll.C:

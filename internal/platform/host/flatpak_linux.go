@@ -30,15 +30,7 @@ const (
 	// spawnLatestVersion is FLATPAK_SPAWN_FLAGS_LATEST_VERSION: Spawn runs
 	// the newest build of the app the system has, not the running one.
 	spawnLatestVersion = 1 << 1
-	// spawnNotifyStart is FLATPAK_SPAWN_FLAGS_NOTIFY_START: the portal
-	// says, with SpawnStarted, once the sandbox runs its process, from
-	// its version 4 on.
-	spawnNotifyStart = 1 << 6
 )
-
-// spawnStartWait bounds the wait for the portal's word on a sandbox it
-// spawned; tests shorten it.
-var spawnStartWait = 30 * time.Second
 
 // maxSecret bounds what the Secret portal's pipe may carry; a keyring's
 // secret for an app is 64 bytes.
@@ -300,17 +292,53 @@ func Notify(id, title, body string) error {
 // SpawnLatest starts argv as a sandbox of its own, from the newest build of
 // this Flatpak the system has, through Flatpak's portal: nothing
 // that ran this process holds it, as a terminal would. files become the new
-// process's descriptors from 3 on. It waits for the portal's word on the
-// sandbox, and started is false where it ended before it ran anything:
-// Flatpak failed to set it up, which a sandbox ending at that moment can
-// cause, or its process ended at once. A caller that stops for the new
-// process, or waits on it, starts it again then.
-func SpawnLatest(argv []string, files ...*os.File) (started bool, err error) {
+// process's descriptors from 3 on. The channel it returns closes once the
+// portal says the sandbox ended, which it watches for until ctx is done:
+// Flatpak can fail to set a sandbox up, as while another's mounts change,
+// and then nothing ran in it. The portal can also say when a sandbox
+// starts, but says so as bubblewrap forks, before it has mounted
+// anything, so a caller that must know the process runs hears it from the
+// process.
+func SpawnLatest(ctx context.Context, argv []string, files ...*os.File) (ended <-chan struct{}, err error) {
+	// The portal sends a spawn's signals to its caller alone, so they need
+	// this connection, and may come before the call's own answer.
+	words := make(chan *dbus.Signal, 16)
+	p, err := dialPortal(func(s *dbus.Signal) {
+		select {
+		case words <- s:
+		default:
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
 	fds := map[uint32]*os.File{}
 	for i, f := range files {
 		fds[uint32(3+i)] = f
 	}
-	return spawnLatest(argv, fds, true)
+	pid, err := p.spawnLatest(argv, fds)
+	if err != nil {
+		p.Close()
+		return nil, err
+	}
+	gone := make(chan struct{})
+	go func() {
+		defer p.Close()
+		for {
+			select {
+			case s := <-words:
+				if of, ok := firstUint32(s.Body); ok && of == pid && s.Name == flatpakPortal+".SpawnExited" {
+					close(gone)
+					return
+				}
+			case <-p.done:
+				return
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return gone, nil
 }
 
 // SpawnLatestOutput runs argv as SpawnLatest does, and returns what it
@@ -321,7 +349,13 @@ func SpawnLatestOutput(ctx context.Context, argv []string) ([]byte, error) {
 		return nil, err
 	}
 	defer r.Close()
-	_, err = spawnLatest(argv, map[uint32]*os.File{1: w}, false)
+	p, err := dialPortal(nil)
+	if err != nil {
+		w.Close()
+		return nil, err
+	}
+	_, err = p.spawnLatest(argv, map[uint32]*os.File{1: w})
+	p.Close()
 	// The new process holds the pipe's end now, and closes it as it ends.
 	w.Close()
 	if err != nil {
@@ -336,24 +370,9 @@ func SpawnLatestOutput(ctx context.Context, argv []string) ([]byte, error) {
 }
 
 // spawnLatest has Flatpak's portal start argv from the newest build, with
-// files as the new process's descriptors. With notify it asks the portal
-// to say once the sandbox runs its process, and waits for that, or for
-// word that it ended first; a portal that says neither in spawnStartWait,
-// or is too old to be asked, is taken as having started it.
-func spawnLatest(argv []string, files map[uint32]*os.File, notify bool) (started bool, err error) {
-	// The portal sends a spawn's signals to its caller alone, so they need
-	// this connection, and may come before the call's own answer.
-	words := make(chan *dbus.Signal, 16)
-	p, err := dialPortal(func(s *dbus.Signal) {
-		select {
-		case words <- s:
-		default:
-		}
-	})
-	if err != nil {
-		return false, err
-	}
-	defer p.Close()
+// files as the new process's descriptors, and returns the portal's
+// number for it, which its signals carry.
+func (p *portalConn) spawnLatest(argv []string, files map[uint32]*os.File) (pid uint32, err error) {
 	cstring := func(s string) []byte { return append([]byte(s), 0) }
 	args := make([][]byte, 0, len(argv))
 	for _, a := range argv {
@@ -363,43 +382,9 @@ func spawnLatest(argv []string, files map[uint32]*os.File, notify bool) (started
 	for n, f := range files {
 		fds[n] = dbus.UnixFD(f.Fd())
 	}
-	spawn := func(flags uint32) (pid uint32, err error) {
-		err = p.conn.Object(flatpakPortalName, flatpakPortalPath).Call(flatpakPortal+".Spawn", 0,
-			cstring("/"), args, fds, map[string]string{}, flags, map[string]dbus.Variant{}).Store(&pid)
-		return pid, err
-	}
-	if !notify {
-		_, err := spawn(spawnLatestVersion)
-		return err == nil, err
-	}
-	pid, err := spawn(spawnLatestVersion | spawnNotifyStart)
-	var refused dbus.Error
-	if errors.As(err, &refused) && refused.Name == "org.freedesktop.DBus.Error.InvalidArgs" {
-		// A portal from before version 4 knows no such flag.
-		_, err := spawn(spawnLatestVersion)
-		return err == nil, err
-	}
-	if err != nil {
-		return false, err
-	}
-	timeout := time.NewTimer(spawnStartWait)
-	defer timeout.Stop()
-	for {
-		select {
-		case s := <-words:
-			if of, ok := firstUint32(s.Body); !ok || of != pid {
-				continue
-			}
-			switch s.Name {
-			case flatpakPortal + ".SpawnStarted":
-				return true, nil
-			case flatpakPortal + ".SpawnExited":
-				return false, nil
-			}
-		case <-timeout.C:
-			return true, nil
-		}
-	}
+	err = p.conn.Object(flatpakPortalName, flatpakPortalPath).Call(flatpakPortal+".Spawn", 0,
+		cstring("/"), args, fds, map[string]string{}, uint32(spawnLatestVersion), map[string]dbus.Variant{}).Store(&pid)
+	return pid, err
 }
 
 // firstUint32 is a signal's first argument, where it's a uint32, as the

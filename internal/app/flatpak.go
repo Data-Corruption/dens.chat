@@ -30,8 +30,10 @@ type Flatpak interface {
 	// is installed, for StartNewest.
 	InstallUpdate(ctx context.Context) error
 	// StartNewest starts the newest build installed as a sandbox of its
-	// own, which waits for this one to stop; Quit stops this one.
+	// own, and returns once that build says it waits for this one to
+	// stop, which TakingOver is; Quit stops this one.
 	StartNewest() error
+	TakingOver()
 	Quit(why string)
 	// StartAtSignIn is whether Dens starts at the member's sign-in, which
 	// SetStartAtSignIn turns on or off.
@@ -90,15 +92,15 @@ func inFlatpak() bool {
 }
 
 // sessionOptions say how a session form's start takes its lease. The
-// Flatpak waits for an older build that's handing over to it, and keeps a
-// snapshot of the data an older version left before it migrates them. The
-// Android app waits for a Dens its shell started before, still stopping;
-// Android installs no older version over a newer one, so it keeps no
-// snapshot.
-func (a *App) sessionOptions() maintenance.SessionOptions {
+// Flatpak waits for a service that's handing over to it, having told it
+// that it's there, and keeps a snapshot of the data an older version left
+// before it migrates them. The Android app waits for a Dens its shell
+// started before, still stopping; Android installs no older version over
+// a newer one, so it keeps no snapshot.
+func (a *App) sessionOptions(opts OpenOptions) maintenance.SessionOptions {
 	switch a.Layout.Form {
 	case layout.Flatpak:
-		return maintenance.SessionOptions{Wait: maintenance.LifecycleLockTimeout, Snapshot: a.snapshot}
+		return maintenance.SessionOptions{Wait: maintenance.LifecycleLockTimeout, Held: opts.Waiting, Snapshot: a.snapshot}
 	case layout.Android:
 		return maintenance.SessionOptions{Wait: maintenance.LifecycleLockTimeout}
 	}

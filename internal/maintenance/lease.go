@@ -140,6 +140,10 @@ type SessionOptions struct {
 	// wants to know at once, and LifecycleLockTimeout for the Flatpak, whose
 	// restart hands the lock from an older build to the newest.
 	Wait time.Duration
+	// Held runs once where a start that waits finds the lock held, before
+	// it waits: the Flatpak's start tells the service that holds it that
+	// it's there, which a restart stops for.
+	Held func()
 	// Snapshot keeps a copy of the data an older version left, before this
 	// version migrates it. It runs under the lock and before the transition
 	// is published, so a snapshot that fails leaves the state as it was,
@@ -240,10 +244,14 @@ func AcquireSessionLease(l layout.Layout, version string, opts SessionOptions) (
 		return refuse(fmt.Errorf("AcquireSessionLease called on the %s layout", l.Form))
 	}
 	lockOpts := xsyscall.LockOptions{Mode: xsyscall.ModeExclusive}
-	if opts.Wait > 0 {
-		lockOpts.Timeout, lockOpts.Poll = opts.Wait, 100*time.Millisecond
-	}
 	lock, err := xsyscall.AcquireLock(context.Background(), l.LifecycleLock, lockOpts)
+	if errors.Is(err, xsyscall.ErrLocked) && opts.Wait > 0 {
+		if opts.Held != nil {
+			opts.Held()
+		}
+		lockOpts.Timeout, lockOpts.Poll = opts.Wait, 100*time.Millisecond
+		lock, err = xsyscall.AcquireLock(context.Background(), l.LifecycleLock, lockOpts)
+	}
 	switch {
 	case errors.Is(err, xsyscall.ErrLocked) && opts.Wait > 0:
 		return refuse(fmt.Errorf("another Dens is running for this instance, and didn't let go of it within %v", opts.Wait))
