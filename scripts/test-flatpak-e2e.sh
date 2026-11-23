@@ -19,7 +19,8 @@
 # once it's published, which the page installs, restarting into it, which
 # migrates after a snapshot of the data; the den reconnects. Restarted
 # forty times over while other sandboxes of the app start and end beside
-# it, each restart takes over. Rolled back to
+# it, each restart takes over; restarted while the newest build can't
+# run, Dens stays as it was. Rolled back to
 # the build before, Dens refuses the newer data and names the snapshot,
 # whose restore the rolled-back build takes, starting locked. Updated
 # again outside Dens, as the software center does, the page's next look
@@ -265,6 +266,10 @@ run() {
   # start in ten here, so forty restarts meet it.
   echo ">> Restarted forty times over while other sandboxes come and go, each restart takes over"
   flatpak restarts 40
+  # Flatpak's portal calls a sandbox started before it has anything
+  # mounted, so one that then fails mustn't be stopped for.
+  echo ">> Restarted while the newest build can't run, each restart fails and Dens stays"
+  flatpak unstartable 4
   flatpak wait-connected
 
   echo ">> Rolled back to $first, Dens refuses the newer data and names the snapshot"

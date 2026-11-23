@@ -79,6 +79,22 @@ service_pids() {
     done
 }
 
+# churn starts and ends other sandboxes of the app, two at a time, until
+# churn_stop, as other apps' do beside Dens on a member's desktop.
+churn() {
+    rm -f /tmp/churn-done
+    for _ in 1 2; do
+        while [ ! -e /tmp/churn-done ]; do
+            as_alice flatpak run --command=true "$APP" >/dev/null 2>&1 || :
+        done &
+    done
+}
+
+churn_stop() {
+    touch /tmp/churn-done
+    wait
+}
+
 wait_stopped() {
     for _ in $(seq 1 120); do
         [ "$(services)" = 0 ] && return 0
@@ -321,17 +337,9 @@ restarts)
     # would bury it.
     dens logs --level info >/dev/null
     began=$(date '+%Y-%m-%d %H:%M:%S')
-    rm -f /tmp/restarts-done
-    churn() {
-        while [ ! -e /tmp/restarts-done ]; do
-            as_alice flatpak run --command=true "$APP" >/dev/null 2>&1 || :
-        done
-    }
-    churn &
-    churn &
+    churn
     lost() {
-        touch /tmp/restarts-done
-        wait
+        churn_stop
         journalctl --no-pager -o short-precise --since "$began" "_UID=$(uid)" |
             grep -v 'Started app-flatpak-' | tail -n 60 >&2
         fail "$*"
@@ -351,8 +359,33 @@ restarts)
         done
         $took || lost "restart $i of $1 never took over: services $(service_pids)"
     done
-    touch /tmp/restarts-done
-    wait
+    churn_stop
+    ;;
+unstartable)
+    # unstartable N: restart from the page N times over while the newest
+    # build can't run, its binary moved aside, beside other sandboxes as
+    # the restarts are. Flatpak starts each sandbox, and its portal says
+    # so, before the sandbox finds it has nothing to run, so a service that
+    # stopped on the portal's word would leave Dens not running: each
+    # restart fails, and the service stays.
+    bin=/home/alice/.local/share/flatpak/app/$APP/current/active/files/bin/dens
+    [ -x "$bin" ] || fail "the Flatpak's binary isn't at $bin"
+    before=$(service_pids)
+    [ -n "$before" ] || fail "no service of Dens runs to restart"
+    mv "$bin" "$bin.aside"
+    churn
+    for i in $(seq 1 "$1"); do
+        status=$(code POST /api/restart)
+        now=$(service_pids)
+        if [ "$status" != 500 ] || [ "$now" != "$before" ]; then
+            churn_stop
+            mv "$bin.aside" "$bin"
+            fail "restart $i of $1 into a build that can't run answered $status, and left services $now of $before"
+        fi
+    done
+    churn_stop
+    mv "$bin.aside" "$bin"
+    api GET /api/status >/dev/null || fail "Dens stopped answering after restarts that failed"
     ;;
 restart)
     # restart VERSION: restart from the page into VERSION, which starts
