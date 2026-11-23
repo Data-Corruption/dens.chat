@@ -66,7 +66,7 @@ The client sends the same array shape: `auth.renew`, `focus` and `typing` (see [
 [{"t": "auth.renew", "d": {"nonce": "…", "proof": "…"}}]
 ```
 
-To renew, the client gets a nonce from `/api/auth/challenge` and sends `auth.renew` within the token's last 10 minutes. The den extends the same token by one hour and answers with an ephemeral `auth.renewed {expires_at}`. If a token expires anyway, the den closes the socket with 4001.
+To renew, the client gets a nonce from `/api/auth/challenge` and sends `auth.renew` within the token's last 10 minutes. The den extends the same token by one hour, marks the device seen then, and answers with an ephemeral `auth.renewed {expires_at}`. If a token expires anyway, the den closes the socket with 4001.
 
 ### Liveness
 

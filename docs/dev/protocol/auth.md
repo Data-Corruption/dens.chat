@@ -129,7 +129,7 @@ DELETE /api/me/devices/{key_id}   204
 device = {"key_id", "label", "created_at", "last_seen_at", "current"?}
 ```
 
-- `label` is the `device_label` the device signed in with, cleaned as a display name is, up to 64 characters. `last_seen_at` is the key's last sign-in. `current` marks the device making the request.
+- `label` is the `device_label` the device signed in with, cleaned as a display name is, up to 64 characters. `last_seen_at` is the key's last sign-in or renewal of its session. `current` marks the device making the request.
 - Revoking a key ends its sessions and closes its sockets at once, with 4003 `key revoked`. Revoking the current device signs it out. A key that isn't the member's gets `404 not_found`.
 - The member's own sessions get `device.removed {"key_id"}`, for a revoked key and for each one a new password, or starting over, signs out. `device.added` and `device.removed` are durable, `device.connected` isn't (see [Approving new devices](#approving-new-devices)), and none goes to anybody else.
 

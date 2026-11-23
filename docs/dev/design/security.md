@@ -124,6 +124,14 @@ Before the first release an audit checked every item here against the code (2026
 - [x] Earning a badge writes the award alone, who earned which badge and when, which says they were in its call; the stretches are timed in memory. A member's badges travel with their profile card alone, only those whose events the viewer sees, and one they hid in nobody's copy but their own, which a client checks again.
 - [x] Nothing about an event or a badge is logged but IDs and counts.
 
+### Staff's tools
+
+- [x] The audit log and when members were last seen answer staff alone, from the den's routes, and nothing of either goes over the socket; a member gets `403`.
+- [x] A line holds no message's text and nothing of a DM, where staff can't act, nor what a member does to their own; whose message staff deleted is the one thing a line keeps that a delete otherwise drops.
+- [x] What a line says beyond who and when, names as they were among it, is sealed with the data key, bound to the line, and the line goes 90 days after it's written, by the den's timer.
+- [x] A client checks each line's IDs, kind, names, changes and emoji as a den's answer, and the page shows them as text, a kind it doesn't know by its name.
+- [x] Last seen is told by its day in UTC, less than presence says, and only of members still in the den.
+
 ## Messages
 
 ### Emoji

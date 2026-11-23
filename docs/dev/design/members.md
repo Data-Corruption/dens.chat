@@ -1,6 +1,6 @@
 # Members
 
-Part of [Dens's design](../design.md): roles, handing the den on, leaving and bans, the den's structure, profiles, names and their styles, and events with their badges.
+Part of [Dens's design](../design.md): roles, handing the den on, leaving and bans, staff's tools, the den's structure, profiles, names and their styles, and events with their badges.
 
 Three fixed roles, one level of channel groups, text and voice channels, and DMs. Anything finer-grained is a second den.
 
@@ -9,7 +9,7 @@ Three fixed roles, one level of channel groups, text and voice channels, and DMs
 | Role | Can |
 | --- | --- |
 | Member | Read and post in visible channels, DM other members, join voice, upload within limits |
-| Moderator | Everything a member can, plus delete members' messages, remove and ban members, create invites, manage channels and groups, see staff-only channels |
+| Moderator | Everything a member can, plus delete members' messages, remove and ban members, create invites, manage channels and groups, see staff-only channels, read the audit log |
 | Owner | Everything a moderator can, plus manage moderators, den settings and limits |
 
 Channels can be marked staff-only (moderators and owner). There is no other visibility control. Staff act only on those of a lower rank, so moderators can't remove, ban or delete the messages of other moderators or the owner. Moving a member from one call to another is the exception: staff move anyone but the owner and themselves (see [Staff in calls](calls.md#staff-in-calls)). Their powers stop at DMs, whose text they can't see: in a DM, only a message's author deletes it.
@@ -29,6 +29,15 @@ A den can also start on a server, from the command line. `dens den create NAME A
 - A ban can't stop someone from joining under a new name with a new invite: the den keeps no IP addresses, and each join uses a fresh key. Invites are the real door, which is why the removal dialog offers to revoke the one they used.
 - Leaving on your own works like a removal, without the kick.
 - Leaving needs the den to answer. A den this computer can't reach, as one whose server is gone for good, comes off it from its Leave den, in the settings on its page, without the den hearing of it, as one that signed this device out or let its member go does, whoever the member is there: this computer forgets its keys there and what it cached, and the account stays in the den, so if the den comes back, the member signs in again as from a new device. A den that answers is left with Leave, and the den this computer hosts goes only by moving it. Home's row doesn't offer it, since a den on a desktop that sleeps is offline as a matter of course, and nothing drops a den by itself after a while, which would need a record of when it last answered.
+
+## Staff's tools
+
+- *Members,* in Manage for staff, above Invites: everyone in the den in a table, their names, role, joined and last seen, sorted by a click on a column's head, and narrowed by a box that matches the start of a username or a display name, or of a word in it, as completion matches a member. A row's ⋯ holds what the card's ⋯ offers staff, Compare codes staying on the card; its Remove opens over Manage, and Escape there closes the removal alone. It reads the view's members. On the phone layout a row is the names over the rest, and a list picks the order.
+- *Last seen* is when any of a member's devices last signed in or renewed its session, which its socket does each hour it stays up (`den_devices.last_seen_at`). Staff read each member's latest, as its day in UTC, at `GET /api/members/seen`, where the den's info says `members_seen`: enough to find who hasn't been on in a year, and less than presence says. A member who's online reads Online. It stays out of `ready`.
+- *The audit log* holds staff's acts in the den, a line each: who, what, on whom or where, and when. A member removed or banned, with how much of their messages went and whether their invite did; a ban lifted; a role changed, the owner's by an owner invite among them, whose line names the den's machine as acting and who took over; an invite made or revoked; a channel or a group made, changed or deleted, a move within its list aside; another member's message deleted, or its reactions taken off, each naming the message's author; a member disconnected, muted, unmuted or moved in a call; a call's record reset; an emoji or a sound added, renamed or deleted; another member's event changed, canceled or ended; and the den's name, address, a limit or retention changed, with the values before and after. An act that changes nothing writes none. Never a message's text, nothing of a DM, where staff have no powers, and nothing a member does to their own.
+- *Its table* is the eighteenth migration (see [Data across versions](../design.md#data-across-versions)): a line's time, kind, and who acted and on whom, by member ID, since members' rows stay, so it outlives what it was about; the rest is JSON sealed with the data key, bound to the line, so a kind added later takes no step. A line commits with its act. The den's export and backups carry the table.
+- *How long.* 90 days: the den's timer, set for the oldest line, sweeps each as its time passes, and catches up as hosting starts. A line past its time stays out of what staff read though the timer is late, as a host that slept makes it.
+- *Reading it.* Manage's Audit log, for moderators and the owner, newest first, 50 lines a page (`GET /api/audit`), where the den's info says `audit_log`. Each kind reads in its words, the settings it changed under it, and a kind the page doesn't know by its name. Nothing of it goes over the socket.
 
 ## Structure
 
