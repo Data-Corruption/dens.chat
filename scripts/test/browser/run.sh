@@ -54,7 +54,9 @@
 #                               pane, from a channel, which Back returns to, and from Home
 #   messages BROWSER            each message's ⋯ menu by keyboard, and by touch through a long
 #                               press, its delete dialog, and links to messages, in a den and
-#                               from another; a link underlined only on hover and focus
+#                               from another; a link underlined only on hover and focus; a covered
+#                               spoiler hiding its links; and a photo forwarded to a DM and to
+#                               another den, where alice and carol open it
 #   talk BROWSER                push to talk ringing in silence for the call, a watched share
 #                               in a window of its own and back, and the logs downloaded; and a
 #                               release delay holding the gate and the rings open after the key's
@@ -117,7 +119,8 @@
 #                               pixels, and with a finger a list's row under 44 or a control only a hover
 #                               shows; getting around the panes by swipes, taps and Back, the switcher
 #                               from its button, and a member's channel menu by a long press; touch, a
-#                               long press, a sheet's swipe down, three lines sent and a tip's tap;
+#                               long press, a sheet's swipe down, Forward as a sheet, three lines sent
+#                               and a tip's tap;
 #                               and pages, the settings and Manage as lists of pages Back walks
 #                               out of, the viewer swiped and zoomed, and a dialog's sheet swiped down;
 #                               and the call, its pane from the bar's tap, its bar, the call's button held and tapped by its

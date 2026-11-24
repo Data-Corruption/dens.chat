@@ -1,23 +1,25 @@
 // The messages check, of each message's ⋯ menu and links to messages, as bob
 // in the browser named: the ⋯ showing on hover and focus, and its menu by
 // keyboard, Reply, Copy text and Copy message link, Edit, and Delete through its
-// dialog; the hover bar's Reply and Edit, an edit's one row,
+// dialog; Forward, a photo to a DM and to another den, where alice and
+// carol open it; the hover bar's Reply and Edit, an edit's one row,
 // and who else edits from the ⋯; the menu by touch, through a long press, a touch screen having
 // no ⋯; a message's link in its color, underlined only on hover
 // and keyboard focus; the chips of links to messages, opening one
 // in its channel, in another channel, from another den and at an address
 // its den left, and saying why one can't open: out of sight, gone, or in
-// a den bob hasn't joined, even at his den's address; the
+// a den bob hasn't joined, even at his den's address; a covered spoiler
+// hiding its links and chips, which ask for nothing until it's shown; the
 // den's address as a browser sees it; alice, the owner, seeing whose
 // message she's deleting; and a link into a den gone offline opening from
 // the cache.
 //
 //   run.sh messages chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
-import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
+import { ALICE, BOB, CAROL, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
-const { DEN: den, SECOND_DEN: den2, GENERAL: general, RANDOM_CHANNEL: random, LOBBY: lobby, BOB_FIRST: bob1, BOB_SECOND: bob2, RND: rnd } = process.env;
+const { DEN: den, SECOND_DEN: den2, GENERAL: general, RANDOM_CHANNEL: random, LOBBY: lobby, BOB_FIRST: bob1, BOB_SECOND: bob2, DM: dm } = process.env;
 const DEN_URL = 'http://127.0.0.1:18485';
 const c = checks();
 const step = (what) => console.error(`.. ${what}`);
@@ -89,8 +91,8 @@ try {
     const end = await focused();
     await press('Escape');
     const closed = !(await b.eval(`!!${MENU}`)) && (await focused()) === 'Message actions';
-    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Add reaction', 'Edit', 'Let others edit', 'Copy text', 'Copy message link', 'Delete']) &&
-        down === 'Add reaction' && wrapped === 'Delete' && home === 'Reply' && end === 'Delete' && closed,
+    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Forward', 'Add reaction', 'Edit', 'Let others edit', 'Copy text', 'Copy message link', 'Delete']) &&
+        down === 'Forward' && wrapped === 'Delete' && home === 'Reply' && end === 'Delete' && closed,
         `Enter opened ${JSON.stringify(all)} at Reply (${opened}); the arrows moved to ${down} and round to ${wrapped}, Home to ${home}, End to ${end}, and Escape closed it back to the ⋯ (${closed})`);
 
     step('Reply, Copy text and Copy message link');
@@ -102,7 +104,7 @@ try {
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
     await press('Enter');
     await menuWith('Reply');
-    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
+    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
     const text = await may(waitFor(async () => (await copied())?.includes("Bob's first") && (await has('Text copied')), 'the text copied', 5000));
     await press('Enter');
     await menuWith('Reply');
@@ -114,7 +116,7 @@ try {
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
     await press('Enter');
     await menuWith('Reply');
-    await press('ArrowDown', 'ArrowDown', 'Enter');
+    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
     const editing = await may(waitFor(() => b.eval(`(() => { const el = document.activeElement; return el?.tagName === 'TEXTAREA' && el.value === "Bob's first" && el.selectionStart === el.value.length; })()`), 'the edit box, caret at its end', 5000));
     await b.type(' (fixed)');
     await press('Enter');
@@ -211,7 +213,7 @@ try {
     await menuWith('Reply');
     const inside = await b.eval(`${MENU}.getBoundingClientRect().bottom <= document.querySelector('[data-scroller]').getBoundingClientRect().bottom + 1`);
     await press('Escape');
-    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy message link']) && inside,
+    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Forward', 'Add reaction', 'Copy text', 'Copy message link']) && inside,
         `alice's message offers bob ${JSON.stringify(theirs)}, and the last message's menu stays inside the list (${inside})`);
 
     step("a message's link, underlined only on hover and keyboard focus");
@@ -269,6 +271,26 @@ try {
     const there = inRandom && (await may(waitFor(() => lit(b, 'In random'), 'the message lit in random', 3000)));
     c.report(here && moved && there, `a link opened its message in the same channel (${here}), from an address the den left (${moved}), and in another channel (${there})`);
 
+    step('a covered spoiler covers its links and chips, which ask for nothing until shown');
+    const SPOILER = `${ROW('Covered')}?.querySelector('[role=button]')`;
+    await waitFor(() => b.eval(`!!${SPOILER}?.querySelector('[data-event-link], a')`), 'the covered spoiler', 5000);
+    const fetched = () => b.eval(`performance.getEntriesByType('resource').some((e) => e.name.includes('/events/999'))`);
+    // Whatever in it shows: a color or a background that isn't
+    // transparent, on anything not hidden.
+    const showing = () => b.eval(`JSON.stringify([...${SPOILER}.querySelectorAll('*')].filter((el) => {
+        const s = getComputedStyle(el), clear = (v) => v === 'rgba(0, 0, 0, 0)' || v === 'transparent';
+        return s.visibility !== 'hidden' && (!clear(s.color) || !clear(s.backgroundColor));
+    }).map((el) => el.tagName.toLowerCase()))`).then(JSON.parse);
+    const focusable = () => b.eval(`(() => { const a = ${SPOILER}.querySelector('a'); a.focus(); const got = document.activeElement === a; a.blur(); return got; })()`);
+    await sleep(1000);
+    const covered = { showing: await showing(), asked: await fetched(), focus: await focusable() };
+    await shot('spoiler');
+    await b.eval(`${SPOILER}.click(), true`);
+    const askedOnce = await may(waitFor(fetched, 'the event asked for once shown', 5000));
+    const uncovered = await showing();
+    c.report(covered.showing.length === 0 && !covered.asked && !covered.focus && askedOnce && uncovered.length > 0,
+        `a covered spoiler shows nothing of its link, mention and chips (${JSON.stringify(covered.showing)}), asks nothing of its event (asked: ${covered.asked}) and lets nothing in it take the focus (${covered.focus}); shown, it asks (${askedOnce}) and they show (${JSON.stringify(uncovered)})`);
+
     step('a link from another den');
     await open(b, BOB, den2, lobby);
     const label = await waitFor(() => b.eval(`(${CHIP(link(general, bob2))})?.textContent.trim()`), 'the chip into Voice Den', 5000).catch(() => '');
@@ -281,6 +303,39 @@ try {
     const line = await b.eval(`document.body.innerText.trim()`);
     c.report(line.startsWith('This is a den: a community on Dens'), `the den's address answers ${JSON.stringify(line)}`);
 
+    step('Forward, a photo to a DM and to another den, where alice and carol open it');
+    await open(b, BOB, den, general);
+    const FORWARD = `document.querySelector('[role=dialog][data-forward]')`;
+    const forwardTo = async (query, said) => {
+        await b.eval(`${DOTS("Alice's photo")}.focus(), true`);
+        await press('Enter');
+        await menuWith('Reply');
+        await press('ArrowDown', 'Enter');
+        await waitFor(() => b.eval(`!!${FORWARD} && document.activeElement === ${FORWARD}.querySelector('input')`), 'Forward, typing', 5000);
+        await b.type(query);
+        await sleep(300);
+        const marked = await b.eval(`${FORWARD}.querySelector('[aria-selected="true"]')?.textContent.trim() || ''`);
+        await shot(`forward-${query}`);
+        await press('Enter');
+        const went = await may(waitFor(async () => !(await b.eval(`!!${FORWARD}`)) && (await has(said)), said, 30000));
+        return { marked, went };
+    };
+    const toDM = await forwardTo('alice', 'Forwarded to Alice');
+    const toLobby = await forwardTo('lobby', 'Forwarded to #lobby');
+    // The newest row is the forward, marked, its photo loaded.
+    const arrived = (on) => on.eval(`(() => { const r = [...document.querySelectorAll('[data-id]')].at(-1), img = r?.querySelector('img');
+        return !!r?.querySelector('[data-forwarded]') && !!img && img.complete && img.naturalWidth > 0; })()`);
+    await pair(b, ALICE);
+    await open(b, ALICE, den, dm);
+    const inDM = await may(waitFor(() => arrived(b), 'the forward in the DM', 10000));
+    await shot('forwarded-dm');
+    await pair(b, CAROL);
+    await open(b, CAROL, den2, lobby);
+    const inLobby = await may(waitFor(() => arrived(b), 'the forward in lobby', 10000));
+    await shot('forwarded-lobby');
+    c.report(toDM.marked.startsWith('Alice') && toDM.went && toLobby.marked.startsWith('lobby') && toLobby.went && inDM && inLobby,
+        `Forward found ${JSON.stringify(toDM.marked)} and sent it (${toDM.went}), and ${JSON.stringify(toLobby.marked)} (${toLobby.went}); alice opens it in the DM (${inDM}), and carol in Second Den (${inLobby}), each marked with its photo`);
+
     step("the owner sees whose message she's deleting");
     await pair(b, ALICE);
     await open(b, ALICE, den, general);
@@ -292,7 +347,7 @@ try {
     await waitFor(() => b.eval(`!!${DIALOG}`), 'the dialog', 5000);
     const whose = await b.eval(`${DIALOG}.innerText`);
     await press('Escape');
-    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Add reaction', 'Copy text', 'Copy message link', 'Delete']) && whose.includes("This is @bob's message. It goes for everyone"),
+    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Forward', 'Add reaction', 'Copy text', 'Copy message link', 'Delete']) && whose.includes("This is @bob's message. It goes for everyone"),
         `bob's message offers alice ${JSON.stringify(hers)}, and its dialog says ${JSON.stringify(whose)}`);
 
     step('the menu by a long press');

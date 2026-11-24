@@ -14,7 +14,8 @@
 // its menu, its levels set from it, and Do not disturb from the moon in
 // the member's panel, and off from Home's; and touch: a message's
 // actions by a long press, or the ⋯ with a mouse, in a sheet closed by a
-// swipe down and by Back, three lines written and sent, by the send button
+// swipe down and by Back, its Forward a sheet of its own that sends to a
+// tap, three lines written and sent, by the send button
 // with a finger, and a tip opened and closed by taps; and pages:
 // the settings and Manage as lists of sections, each a page Back leaves,
 // the viewer swiped to a message's second photo, zoomed by a double tap,

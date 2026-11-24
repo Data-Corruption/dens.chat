@@ -1422,21 +1422,22 @@ const SEND = `document.querySelector('button[aria-label="Send"]')`;
 // and says whether the composer and the newest message, holding text if
 // given, show above it. It opens a message's actions by a long press, or
 // the ⋯ with a mouse, and closes their sheet by a swipe down, and by Back;
-// writes three lines and sends them; and opens a tip with a tap, which the
-// next closes.
+// opens Forward from it, as a sheet of its own, and forwards to random by
+// a tap; writes three lines and sends them; and opens a tip with a tap,
+// which the next closes.
 export async function touching(h, ctx, d, report) {
-    const { den, general } = ctx;
+    const { den, general, random } = ctx;
     const did = (good, what) => report(good, `${d.name}: ${what}`);
     const sheet = () => h.ev(`(() => { const s = ${SHEET}; if (!s) return null;
         return { label: s.getAttribute('aria-label'), rows: [...s.querySelectorAll('[role=menuitem]')].map((r) => r.textContent.trim()),
             title: s.querySelector('[data-sheet-top]')?.innerText.trim() || '', layers: document.querySelectorAll('[role=dialog]').length }; })()`);
     // A mouse finds the ⋯ by hovering its message first.
-    const open = async () => {
+    const open = async (row = NEWEST) => {
         if (d.touch) {
-            await d.press(NEWEST);
+            await d.press(row);
         } else {
-            await d.hover(NEWEST);
-            await d.tap(`${NEWEST}.querySelector('button[aria-label="Message actions"]')`);
+            await d.hover(row);
+            await d.tap(`${row}.querySelector('button[aria-label="Message actions"]')`);
         }
         return waitFor(sheet, 'the sheet', 5000).catch(() => null);
     };
@@ -1465,6 +1466,31 @@ export async function touching(h, ctx, d, report) {
         did(gone && path === `/den/${den}/${general}`, `Back closes it, and the channel stays (${path})`);
     } else {
         did(false, "the sheet didn't open again");
+    }
+    // The newest may be a poll, which doesn't forward, as an earlier
+    // mode's polls leave one.
+    s = await open(`[...document.querySelectorAll('[data-scroller] [data-id]')].find((r) => r.textContent.includes("Bob's last word"))`);
+    if (s?.rows.includes('Forward')) {
+        const FORWARD = `document.querySelector('[role=dialog][data-forward]')`;
+        await d.tap(`[...${SHEET}.querySelectorAll('[role=menuitem]')].find((r) => r.textContent.trim() === 'Forward')`);
+        const box = await waitFor(() => h.ev(`(() => { const f = ${FORWARD}; if (!f) return null; const r = f.getBoundingClientRect();
+            return { foot: Math.abs(r.bottom - innerHeight) <= 2, handle: !!f.querySelector('[data-sheet-top]'), layers: document.querySelectorAll('[role=dialog]').length }; })()`),
+        'Forward', 5000).catch(() => null);
+        await h.snap('touch-forward');
+        const forwarded = () => h.ev(`fetch('/api/dens/${den}/channels/${random}/messages?limit=1').then((r) => r.json()).then((p) => !!p.messages.at(-1)?.forwarded)`);
+        let sent = false;
+        if (box) {
+            await h.ev(typeIn(`${FORWARD}.querySelector('input')`, 'rand'));
+            const entry = `${FORWARD}.querySelector('[data-switch$=":text:${random}"]')`;
+            await h.wait(entry, 'random in Forward', 5000);
+            await d.tap(entry);
+            sent = await waitFor(async () => !(await h.has(FORWARD)) && (await forwarded()), 'the forward in random', 15000).then(() => true, () => false);
+        }
+        did(box?.foot && box.handle && box.layers === 1 && sent,
+            `the sheet's Forward opens as a sheet of its own, at the foot, alone: ${JSON.stringify(box)}; a tap on random sends it there (${sent})`);
+    } else {
+        did(false, `the sheet holds no Forward: ${JSON.stringify(s)}`);
+        if (s) await h.escape();
     }
 
     // Each line starts with a digit, which a phone's keyboard doesn't
