@@ -84,7 +84,7 @@ PATCH /api/messages/{id}           {"revision", "sealed", "key_id", "editors"?, 
 - `key_id` must name the DM's live key, and one its sender holds a copy of: a signed key's members do, and a legacy key's once they checked it; otherwise `400 invalid_field`.
 - A DM's reactions are each member's set, which their client seals as it seals a message (see [Reactions](messages.md#reactions)).
 - An edit seals the message again at the next revision, under the DM's live key, which may be newer than the one it was sent with. The den can't compare texts, so `"unedited": true` marks an edit that only ticks a task or changes the editors, and doesn't mark the message edited. A DM's tasks tick this way: `POST /api/messages/{id}/tasks/{n}` refuses a DM's message.
-- `forwarded: true` marks a forward, which no client edits or ticks, and a client takes the mark from the sealed text alone; an older client reads past it, and its edit drops it.
+- `forwarded: true` marks a forward, which no client edits or ticks, though its author's takes a file off it, and a client takes the mark from the sealed text alone; an older client reads past it, and its edit drops it.
 - The rest works as in channels: ordering, history, revisions and edit conflicts, deletes, read state, and unread counts, where every message counts for the other member.
 - Binding the author, nonce, key and revision keeps the den from moving a sealed text to another message, or passing an old revision off as a new one. It can still hold a message back, or show one twice.
 
