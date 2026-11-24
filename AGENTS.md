@@ -339,10 +339,12 @@ browser check; leave `-android-e2e` for changes to `android/`, Android host
 seams, WebView/shell behavior, or a milestone's end. Commit by layer, Go, the
 page, the shell, the checks and the docs, each commit that changes Go passing
 alone; push, and open the pull request with `gh`, its text written for the
-reviewer. It merges with a merge commit. Read CI with `gh`: a failure from its
-job's log (`gh run view RUN --log-failed`), an e2e's logs from the run's
-artifacts (`gh run download RUN -n NAME`). After the merge, sync main and
-delete the branch, here and on GitHub.
+reviewer. Read CI with `gh`: a failure from its job's log (`gh run view RUN
+--log-failed`), an e2e's logs from the run's artifacts (`gh run download RUN
+-n NAME`). Then leave the step's handover under `docs/local/`, its notes for a
+review and the next step's kickoff, and end the session by saying what's
+done, whether it needs a review, and what's open. It merges with a merge
+commit; after the merge, sync main and delete the branch, here and on GitHub.
 
 ## Where to add things
 

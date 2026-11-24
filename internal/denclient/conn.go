@@ -115,6 +115,10 @@ type conn struct {
 	owners    map[string]fileOwner
 	readySync *pendingSync
 	syncDue   chan struct{}
+	// saving orders the saves of the den's state, which the worker makes
+	// and a snapshot that drops the cache does, so an earlier one can't
+	// land over a later.
+	saving sync.Mutex
 	// The den's emoji: one fill of the cache with their files at a
 	// time, and the worker's wake for one.
 	fillMu  sync.Mutex
@@ -152,6 +156,9 @@ type conn struct {
 	marks    map[string]groupMark
 	groupDue chan struct{}
 	speaking int
+	// keptKinds are the kinds of channels a kept state that didn't read
+	// held, for the first snapshot, where no state stands to carry them.
+	keptKinds map[string]string
 	// pulled says the member's record was read since the latest snapshot,
 	// which a group's changes are checked against: it holds the member's
 	// own identities before they started over.
@@ -676,6 +683,8 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		if c.den != nil {
 			kinds, starts = maps.Clone(c.den.kinds), c.den.starts
+		} else {
+			kinds = c.keptKinds
 		}
 		c.mu.Unlock()
 		state := newState()

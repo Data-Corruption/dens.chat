@@ -218,22 +218,27 @@ func (c *conn) signerLocked(channel int64, ch denproto.GroupChange) (ok, kept bo
 // member in, where this Dens knows nothing of the group yet, or the one
 // after the latest it checked. One already taken is passed over, and one
 // further on waits for those between, which syncing fetches. A change that
-// doesn't check marks the group broken, as does a group shown from before
-// the latest change this Dens checked. It reports whether the group
-// changed, and whether the identities kept did. The caller holds c.mu.
+// doesn't check marks the group broken. A group that starts from before
+// the latest change this Dens checked of it waits to be checked from its
+// start. It reports whether the group changed, and whether the identities
+// kept did. The caller holds c.mu.
 func (c *conn) applyChangeLocked(channel string, ch denproto.GroupChange) (changed, kept bool) {
 	cid, err := denproto.ParseID(channel)
 	if err != nil {
 		return false, false
 	}
 	g := c.groups[channel]
-	if g != nil && (g.Broken != "" || ch.N <= g.N || ch.N > g.N+1) {
+	if g != nil && (g.Broken != "" || g.N == 0 || ch.N <= g.N || ch.N > g.N+1) {
 		return false, false
 	}
+	// A group this Dens holds a mark for and no state, as one listed again,
+	// or one whose kept state didn't read, starts from before the mark: its
+	// changes are checked from the start on the side, and stand only once
+	// they reach the mark, the same.
 	if mark, ok := c.marks[channel]; g == nil && ok && ch.N <= mark.N {
-		c.groups[channel] = &groupState{Broken: whyRolledBack, Names: true}
-		c.m.log.Warnf("A group DM's change %d comes before the latest this Dens checked, %d", ch.N, mark.N)
+		c.groups[channel] = &groupState{Recheck: true, Names: true}
 		c.stateDirty = true
+		c.wakeGroups()
 		return true, false
 	}
 	g, kept = c.takeLocked(cid, g, ch)

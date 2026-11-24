@@ -5,8 +5,8 @@
 #
 #   m2a  alice, who hosts the den: page 18484, den 18485, media 17881/17882
 #   m2b  bob, a member: page 18486
-#   m2c  carol, a member when a check needs one: page 18487, on the last
-#        release's build in the groups check
+#   m2c  carol, a member when a check needs one: page 18487, on v1.15.0's
+#        build in the groups check
 #   m2d  dave, a member when a check needs one: page 18489
 #   m2e  bob's laptop, his second device when a check needs one: page 18490
 #   m2f  alice's laptop, her second device when a check needs one: page 18491

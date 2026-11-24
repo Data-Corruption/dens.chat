@@ -1,7 +1,9 @@
 package denclient
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -278,15 +280,16 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 			changed := p.Text != req.Text
 			p.Text = req.Text
 			return changed, nil
-		}, false, false)
+		}, false, nil)
 	}
 	return change(ctx, c, http.MethodPatch, "/api/messages/"+messageID, req)
 }
 
 // Keep signs a group's message that waits for its author, changed by
-// someone they didn't sign for, as their own, at the revision their page
-// showed: its text and files as they are, and no others to edit it.
-func (m *Manager) Keep(ctx context.Context, denID, channelID, messageID string, revision int) (PageMessage, error) {
+// someone they didn't sign for, as their own: the revision their page
+// showed, by its digest, its text and files as they are, and no others to
+// edit it.
+func (m *Manager) Keep(ctx context.Context, denID, channelID, messageID string, shown denproto.Bytes) (PageMessage, error) {
 	c, err := m.find(denID)
 	if err != nil {
 		return PageMessage{}, err
@@ -294,10 +297,10 @@ func (m *Manager) Keep(ctx context.Context, denID, channelID, messageID string, 
 	if err := checkID("message", messageID); err != nil {
 		return PageMessage{}, err
 	}
-	if revision < 1 || !c.isGroup(channelID) {
+	if len(shown) != sha256.Size || !c.isGroup(channelID) {
 		return PageMessage{}, inputError(errors.New("there's nothing to keep"))
 	}
-	return c.editDM(ctx, channelID, messageID, revision, &[]string{}, func(*denproto.DMPayload) (bool, error) { return false, nil }, false, true)
+	return c.editDM(ctx, channelID, messageID, 0, &[]string{}, func(*denproto.DMPayload) (bool, error) { return false, nil }, false, shown)
 }
 
 // grant signs the editors of a group's message as its author's, at the
@@ -330,10 +333,11 @@ func (c *conn) grant(channel string, nonce []byte, revision int, editors []strin
 // edit; revision 0 takes the current one. With files set, the edit changes
 // the message's files, so it names every blob they take. In a group, an
 // editor's revision carries the grant that names them, and only the
-// author's names others; keep signs one that waits for its author as
-// theirs, which nothing else changes.
+// author's names others; keep, the digest of the revision their page
+// showed, signs one that waits for its author as theirs, which nothing
+// else changes.
 func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision int, editors *[]string,
-	edit func(*denproto.DMPayload) (bool, error), files, keep bool) (PageMessage, error) {
+	edit func(*denproto.DMPayload) (bool, error), files bool, keep denproto.Bytes) (PageMessage, error) {
 	current, err := c.message(ctx, channelID, messageID)
 	if err != nil {
 		return PageMessage{}, err
@@ -356,16 +360,18 @@ func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision
 	}
 	waiting := locked == lockedAuthor && current.AuthorID == me
 	switch {
-	case keep && !waiting:
+	case keep != nil && !bytes.Equal(keep, shownSum(current)):
+		return PageMessage{}, &ErrEditConflict{Current: opened}
+	case keep != nil && !waiting:
 		return PageMessage{}, inputError(errors.New("there's nothing to keep"))
-	case waiting && !keep:
-		return PageMessage{}, inputError(errors.New("someone changed this message without your say: keep it, or delete it"))
+	case waiting && keep == nil:
+		return PageMessage{}, inputError(errors.New("this message waits for you: keep it, or delete it"))
 	case locked != "" && !waiting:
 		return PageMessage{}, inputError(errors.New("this device can't open that message, so it can't change it"))
 	case !group:
 	case current.AuthorID != me && (editors != nil || p.Grant == nil || !slices.Contains(p.Grant.Editors, me)):
 		return PageMessage{}, inputError(errors.New("its author didn't let you edit this message"))
-	case keep:
+	case keep != nil:
 		p.Grant = nil
 	case editors != nil:
 		if p.Grant, err = c.grant(channelID, current.Nonce, revision+1, *editors); err != nil {
@@ -425,7 +431,7 @@ func (m *Manager) SetTask(ctx context.Context, denID, channelID, messageID strin
 			}
 			p.Text, _ = denproto.SetTask(p.Text, n, req.Checked)
 			return false, nil
-		}, false, false)
+		}, false, nil)
 		var conflict *ErrEditConflict
 		if moved || !errors.As(err, &conflict) || attempt == 2 {
 			return msg, err

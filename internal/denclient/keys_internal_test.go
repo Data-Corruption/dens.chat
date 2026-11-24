@@ -87,6 +87,18 @@ func EditAs(m *Manager, denID, channel, messageID, text string, carry bool) erro
 	return err
 }
 
+// SealRevisionAs seals text as a revision of a message, signed by this
+// member with no grant, as a member working with the den could put other
+// words in a revision's place, for the tests of package denclient_test.
+func SealRevisionAs(m *Manager, denID, channel, author string, nonce denproto.Bytes, revision int, text string) (denproto.Bytes, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return nil, err
+	}
+	_, sealed, err := c.sealMessage(context.Background(), channel, author, nonce, revision, denproto.DMPayload{Text: text})
+	return sealed, err
+}
+
 // SignNameAs signs a sealed name by this member's identity, as the maker
 // of a key that carries it does, for the tests of package denclient_test.
 func SignNameAs(m *Manager, denID, channel string, n denproto.SealedName) (denproto.Bytes, error) {

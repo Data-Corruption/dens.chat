@@ -13,7 +13,7 @@ export const LOCKED = {
     lost: "This was sealed before you started over, so it can't be opened any more.",
     broken: "This message doesn't open: it was changed after it was sent.",
     keys: "This was sealed with keys your Dens doesn't keep for this DM's members, so it isn't shown. Someone may be in the middle.",
-    author: "Someone its author didn't let edit this changed it, so it waits for them.",
+    author: "Its author hasn't confirmed a change to this, so it waits for them.",
 };
 
 // keyChanges finds where a DM's messages move from one key to the next,

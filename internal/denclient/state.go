@@ -615,6 +615,9 @@ type keptState struct {
 	GroupStates map[string]*groupState `json:"group_states,omitempty"`
 	GroupMarks  map[string]groupMark   `json:"group_marks,omitempty"`
 	GroupDMs    bool                   `json:"group_dms,omitempty"`
+	// Bare says this holds only what the Dens keeps for good, Kinds and
+	// GroupMarks, kept alone where the rest of a state didn't read.
+	Bare bool `json:"bare,omitempty"`
 	// Whether the den has notes to self for this Dens.
 	Notes bool `json:"notes,omitempty"`
 	// The kind of every channel this Dens ever held, by ID, which a cache
@@ -638,16 +641,49 @@ func (s *denState) kept() (keptState, []denproto.Member) {
 	return k, slices.Collect(maps.Values(s.members))
 }
 
+// cleanMark checks a mark the cache kept: a group's ID, and a change's
+// number and hash.
+func cleanMark(id string, m groupMark) bool {
+	return validID(id) && m.N >= 1 && m.N <= denproto.MaxGroupChanges && len(m.Hash) == 32
+}
+
+// cleanMarks checks the marks the cache kept.
+func cleanMarks(marks map[string]groupMark) bool {
+	for id, m := range marks {
+		if !cleanMark(id, m) {
+			return false
+		}
+	}
+	return true
+}
+
+// forGood picks out of a kept state what this Dens keeps for good, the
+// kinds of its channels and its groups' marks, entry by entry: one that
+// doesn't check, which a member with the den can have kept, takes none of
+// the others with it, whatever the rest of the state does.
+func (k keptState) forGood() (map[string]string, map[string]groupMark) {
+	kinds, marks := map[string]string{}, map[string]groupMark{}
+	for id, kind := range k.Kinds {
+		if validID(id) {
+			kinds[id] = kind
+		}
+	}
+	for id, m := range k.GroupMarks {
+		if cleanMark(id, m) {
+			marks[id] = m
+		}
+	}
+	return kinds, marks
+}
+
 // cleanGroups checks the groups the cache kept, as checked here: each one
 // of the den's group channels, its members IDs, at most a group's, its
 // changes no more than the page gets, and its name sealed as a change
 // carries one; and the marks, of groups gone too, each a change's number
 // and hash.
 func cleanGroups(channels map[string]denproto.Channel, groups map[string]*groupState, marks map[string]groupMark) bool {
-	for id, m := range marks {
-		if !validID(id) || m.N < 1 || m.N > denproto.MaxGroupChanges || len(m.Hash) != 32 {
-			return false
-		}
+	if !cleanMarks(marks) {
+		return false
 	}
 	for id, g := range groups {
 		if g == nil || channels[id].Kind != denproto.KindGroupDM || g.N < 0 || len(g.Members) > denproto.MaxGroupMembers ||
