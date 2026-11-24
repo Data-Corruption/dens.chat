@@ -166,6 +166,7 @@ test("a group's message changed with no say of its author's waits: on its author
     assert.doesNotMatch(root.textContent, /changed while you were looking/);
     mount(h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text: 'alice never wrote this', attachments: [], shown: 'b3RoZXI' } },
         waitingBy: members.get('3') }), root);
+    assert.equal(attr(keepNow(), 'disabled'), 'true', 'Keep, held from the render that shows the change');
     for (let i = 0; i < 100 && !/changed while you were looking/.test(root.textContent); i++) await new Promise((r) => setTimeout(r, 5));
     assert.match(root.textContent, /changed while you were looking/);
     assert.match(root.textContent, /alice never wrote this/);

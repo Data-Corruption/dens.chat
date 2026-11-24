@@ -1017,6 +1017,9 @@ function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
     const seen = useRef(m.waiting.shown);
     const [changed, setChanged] = useState(false);
     const [held, setHeld] = useState(false);
+    // Read as it renders, so Keep is never live over a change before the
+    // effect below has run.
+    const fresh = m.waiting.shown !== seen.current;
     useEffect(() => {
         if (m.waiting.shown === seen.current) return undefined;
         seen.current = m.waiting.shown;
@@ -1041,10 +1044,10 @@ function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
             </p>
             {m.waiting.text.trim() && <div class="wrap-break-word"><Markdown text={m.waiting.text} me={me} /></div>}
             {m.waiting.attachments?.length > 0 && <Attachments denID={denID} files={m.waiting.attachments} onOpen={onView} />}
-            {changed && <p class="cursor-default select-none text-sm text-warning" data-waiting-changed>This changed while you were looking. Read it again before you keep it.</p>}
+            {(changed || fresh) && <p class="cursor-default select-none text-sm text-warning" data-waiting-changed>This changed while you were looking. Read it again before you keep it.</p>}
             <ErrorText message={act.error} />
             <Actions>
-                <Button kind="primary" disabled={act.busy || held} onClick={keep}>Keep</Button>
+                <Button kind="primary" disabled={act.busy || held || fresh} onClick={keep}>Keep</Button>
                 <Button kind="danger" disabled={act.busy} onClick={onDelete}>Delete</Button>
             </Actions>
         </div>
