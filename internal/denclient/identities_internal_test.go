@@ -565,6 +565,25 @@ func TestAnAnswersKindHolds(t *testing.T) {
 	}
 }
 
+// What a kept state holds for good is picked out entry by entry: a mark
+// or a kind that doesn't check, as a mark past a group's most changes,
+// which a member with the den can have a Dens keep, takes none of the
+// others with it.
+func TestKeptForGoodByEntry(t *testing.T) {
+	hash := denproto.Bytes(make([]byte, 32))
+	k := keptState{
+		Kinds:      map[string]string{"7": denproto.KindDM, "x": denproto.KindText},
+		GroupMarks: map[string]groupMark{"8": {N: 3, Hash: hash}, "9": {N: denproto.MaxGroupChanges + 1, Hash: hash}, "10": {N: 2}},
+	}
+	kinds, marks := k.forGood()
+	if len(kinds) != 1 || kinds["7"] != denproto.KindDM {
+		t.Errorf("kinds kept: %v", kinds)
+	}
+	if len(marks) != 1 || marks["8"].N != 3 {
+		t.Errorf("marks kept: %v", marks)
+	}
+}
+
 // WriteRecord has a member's Dens write their record to a den at once, as
 // its hourly write does, merging what their other devices wrote first, for
 // the tests of package denclient_test that order two devices' writes.

@@ -595,6 +595,17 @@ func (c *conn) saveKept() {
 	c.cacheErr(err)
 }
 
+// keepForGood gives the connection what a kept state holds for good, the
+// kinds of the den's channels, which its first snapshot loads over, and
+// its groups' marks, and returns them.
+func (c *conn) keepForGood(k keptState) (map[string]string, map[string]groupMark) {
+	kinds, marks := k.forGood()
+	c.mu.Lock()
+	c.keptKinds, c.marks = kinds, marks
+	c.mu.Unlock()
+	return kinds, marks
+}
+
 // keepAgain keeps the den's state in a cache that just dropped it, at
 // once. The state holds what this Dens keeps for good, the kinds of its
 // channels and the latest change it checked of each group, and the den can
@@ -625,9 +636,16 @@ func (c *conn) restoreKept() {
 	}
 	var k keptState
 	var members []denproto.Member
+	if json.Unmarshal(state, &k) == nil && k.Bare {
+		c.keepForGood(k)
+		return
+	}
 	kept, withMembers, err := cs.Members(den)
 	if err == nil {
-		err = json.Unmarshal(state, &k)
+		// One that doesn't parse gives nothing to keep.
+		if err = json.Unmarshal(state, &k); err != nil {
+			k = keptState{}
+		}
 	}
 	if err == nil && withMembers {
 		err = json.Unmarshal(kept.List, &members)
@@ -642,6 +660,16 @@ func (c *conn) restoreKept() {
 	if err != nil {
 		c.m.log.Warnf("A den's state in the cache doesn't read, so its cache starts again: %v", err)
 		c.cacheErr(cs.DropDen(den))
+		// What this Dens keeps for good outlasts the rest, which the den may
+		// have had a hand in, and goes back in alone at once, since the den
+		// also chooses when it next answers.
+		if kinds, marks := c.keepForGood(k); len(kinds)+len(marks) > 0 {
+			bare, err := json.Marshal(keptState{Kinds: kinds, GroupMarks: marks, Bare: true})
+			if err == nil {
+				err = cs.SaveState(den, bare)
+			}
+			c.cacheErr(err)
+		}
 		return
 	}
 	// A connection restores this as it's made, before the dens list holds

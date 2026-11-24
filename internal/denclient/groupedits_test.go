@@ -533,6 +533,130 @@ func TestGroupMarkOutlastsItsCache(t *testing.T) {
 	}
 }
 
+// What a Dens keeps for good outlasts a kept state that doesn't read. A
+// den can have one kept, as by dropping a group while its changes are
+// fetched, which leaves a group with no channel, and at the next start the
+// state goes, but for the kinds of channels and the groups' latest
+// changes, kept alone at once: a Dens that stops again before the den
+// answers still holds a group listed again from before a removal to its
+// mark, and a channel gone to its kind.
+func TestWhatsKeptOutlastsItsState(t *testing.T) {
+	h, ms, ids, denID := groupDen(t)
+	alice := ms[0]
+	ctx := context.Background()
+	s := newCachedStore(t)
+	erin, stop := cachedGroupMember(t, h, alice, denID, s, "erin", ids)
+	eid := me(t, erin, denID).ID
+	members := []string{ids[0], eid, ids[2], ids[3]}
+	g, err := alice.MakeGroup(ctx, denID, members[1:], "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupOf(t, erin, denID, g, members)
+	if err := alice.RemoveFromGroup(ctx, denID, g, ids[3]); err != nil {
+		t.Fatal(err)
+	}
+	groupOf(t, erin, denID, g, members[:3])
+	// A group erin was in and left for good, whose kind her Dens keeps.
+	gone, err := alice.MakeGroup(ctx, denID, members[1:], "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupOf(t, erin, denID, gone, members)
+	if err := alice.RemoveFromGroup(ctx, denID, gone, eid); err != nil {
+		t.Fatal(err)
+	}
+	viewOf(t, erin, denID, "the group she left gone", func(v denclient.View) bool { _, ok := v.GroupDMs[gone]; return !ok })
+	// And one she's in all along, which the den shows as it is.
+	held, err := alice.MakeGroup(ctx, denID, members[1:3], "Held")
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupOf(t, erin, denID, held, members[:3])
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := h.s.db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	cid, _ := denproto.ParseID(g)
+	raw, _ := base64.RawURLEncoding.DecodeString(denID)
+	kept := func() map[string]json.RawMessage {
+		t.Helper()
+		state, err := s.cache.State(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]json.RawMessage
+		if state != nil {
+			if err := json.Unmarshal(state, &out); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return out
+	}
+	// The den drops the group from erin's list, and her Dens stops holding
+	// a state for it, as one fetched while the den dropped it.
+	exec(`DELETE FROM den_group_members WHERE channel_id = ? AND member_id = ?`, cid, eid)
+	h.restart()
+	viewOf(t, erin, denID, "the group dropped", func(v denclient.View) bool { _, ok := v.GroupDMs[g]; return !ok })
+	stop()
+	state := kept()
+	var marks map[string]json.RawMessage
+	if err := json.Unmarshal(state["group_marks"], &marks); err != nil || marks[g] == nil {
+		t.Fatalf("erin's kept marks: %s, %v", state["group_marks"], err)
+	}
+	state["group_states"], _ = json.Marshal(map[string]json.RawMessage{g: marks[g]})
+	out, _ := json.Marshal(state)
+	if err := s.cache.SaveState(raw, out); err != nil {
+		t.Fatal(err)
+	}
+	// While her Dens is away, the den lists the group again from her
+	// start, the removal hidden.
+	exec(`PRAGMA foreign_keys = OFF`)
+	exec(`DELETE FROM den_group_changes WHERE channel_id = ? AND n = 2`, cid)
+	exec(`INSERT INTO den_group_members (channel_id, member_id, position, joined, since) VALUES (?, ?, 1, 1, 0)`, cid, eid)
+	h.restart()
+
+	// Her Dens starts where the den doesn't answer, and stops again.
+	_, away := h.clientVia(t, s, noOwnDen, "127.0.0.1:1")
+	listed := func(state map[string]json.RawMessage) int {
+		var channels []json.RawMessage
+		_ = json.Unmarshal(state["channels"], &channels)
+		return len(channels)
+	}
+	eventually(t, "the state that doesn't read to go", func() bool { return listed(kept()) == 0 })
+	away()
+	state = kept()
+	var kinds map[string]string
+	marks = nil
+	_ = json.Unmarshal(state["kinds"], &kinds)
+	_ = json.Unmarshal(state["group_marks"], &marks)
+	if kinds[gone] != denproto.KindGroupDM || marks[g] == nil || marks[held] == nil || listed(state) != 0 {
+		t.Fatalf("after a state that didn't read, the cache keeps kinds %s and marks %s, with channels %s", state["kinds"], state["group_marks"], state["channels"])
+	}
+
+	erin, stop = h.clientFrom(t, s, noOwnDen)
+	waitFor(t, erin, "erin connected again", connected)
+	got := viewOf(t, erin, denID, "the group listed again", func(v denclient.View) bool {
+		gr, ok := v.GroupDMs[g]
+		return ok && !gr.Syncing && (gr.Broken != "" || len(gr.Members) > 0)
+	}).GroupDMs[g]
+	if got.Broken == "" || slices.Contains(got.Members, ids[3]) {
+		t.Errorf("listed again after a state that didn't read, the group isn't broken, or dave, removed, is in it: %+v", got)
+	}
+	// A group the den shows as it was checked stands again, by its mark.
+	if got := groupOf(t, erin, denID, held, members[:3]); got.Broken != "" || got.Name != "Held" {
+		t.Errorf("a group the den shows as it is, after a state that didn't read: %+v", got)
+	}
+	stop()
+	kinds = nil
+	_ = json.Unmarshal(kept()["kinds"], &kinds)
+	if kinds[gone] != denproto.KindGroupDM {
+		t.Errorf("the kind of a group erin left didn't outlast the state: %v", kinds)
+	}
+}
+
 // cachedGroupMember joins a member whose install keeps a cache, and waits
 // until their Dens and the others' hold each other's identities.
 func cachedGroupMember(t *testing.T, h *denHost, owner *denclient.Manager, denID string, s store, name string, others []string) (*denclient.Manager, func()) {
