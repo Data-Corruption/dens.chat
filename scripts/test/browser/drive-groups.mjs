@@ -1,5 +1,5 @@
 // The groups check, of group DMs: alice, who owns the den, in Chromium, and
-// bob in the browser named; carol, on the last release's Dens, and dave
+// bob in the browser named; carol, on v1.15.0's Dens, and dave
 // through their pages' API. Alice makes a group of bob, carol and herself
 // from the DM tab's +, naming it, and each change shows in it as a line:
 // bob writes and sends a photo, which alice reads, and carol, through her
@@ -175,7 +175,7 @@ try {
     report(await waitFor(() => A.b.eval(`!!document.querySelector('[data-id=${q(list.id)}] input[type=checkbox][aria-label="ice"]')`), "bob's edit on alice's page")
         .then(() => true, () => false), "alice's page shows bob's edit");
 
-    step("carol, on the last release, ticks a list alice let her edit, which waits for alice's Keep");
+    step("carol, on v1.15.0, ticks a list alice let her edit, which waits for alice's Keep");
     const shared = JSON.parse(api('alice', 'POST', `/api/dens/${den}/channels/${g}/messages`, { nonce: nonce(), text: '[ ] cake\n[ ] candles', editors: [carolID] }));
     const sharedRow = `document.querySelector('[data-id=${q(shared.id)}]')`;
     await waitFor(() => history('carol', g).some((m) => m.id === shared.id && !m.locked), "alice's list in carol's Dens");
@@ -185,7 +185,7 @@ try {
     report(history('dave', g).some((m) => m.id === shared.id && m.locked === 'author' && m.text === ''), "dave's Dens holds carol's tick as waiting, unopened");
     const waiting = `${sharedRow}?.querySelector('[data-waiting]')`;
     const said = await waitFor(() => A.b.eval(`${waiting}?.textContent || ''`), "carol's tick on alice's page").catch(() => '');
-    report(said.includes('@carol changed this') && said.includes('candles'), `alice's page shows who changed her list, and how it reads: ${q(said)}`);
+    report(said.includes('let @carol change this') && said.includes('candles'), `alice's page shows who changed her list, and how it reads: ${q(said)}`);
     await A.b.shot(`${HOME}/shot-groups-waiting-alice-${which}.png`);
     await A.b.eval(`${button(sharedRow + ".querySelector('[data-waiting]')", 'Keep')}.click(), true`);
     report(await waitFor(() => B.b.eval(`!!${sharedRow}?.querySelector('input[type=checkbox][aria-label="candles"]')?.checked`), "the kept list on bob's page")
