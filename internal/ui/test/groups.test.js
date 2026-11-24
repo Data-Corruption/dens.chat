@@ -122,7 +122,7 @@ test('a group takes messages unless something stands in its composer', () => {
     mount(null, root);
 });
 
-test("a group's message someone its author didn't let edit changed waits: on its author's page to keep or delete, and on another's unread", async () => {
+test("a group's message changed with no say of its author's waits: on its author's page to keep or delete, by what the page showed, and on another's unread", async () => {
     const root = document.createElement('div');
     const none = () => {};
     const asked = [];
@@ -145,18 +145,30 @@ test("a group's message someone its author didn't let edit changed waits: on its
     assert.equal(findAll(root, (n) => attr(n, 'data-waiting') !== undefined).length, 0);
 
     // Alice's: who changed it, what it says, Keep and Delete.
-    mount(h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text: '[x] drinks', attachments: [] } },
+    mount(h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text: '[x] drinks', attachments: [], shown: 'c2hvd24' } },
         waitingBy: members.get('3') }), root);
     const waiting = findAll(root, (n) => attr(n, 'data-waiting') !== undefined)[0];
     assert.ok(waiting, 'the waiting message on its author\'s page');
-    assert.match(waiting.textContent, /@carol changed this/);
+    assert.match(waiting.textContent, /can't confirm you let @carol change this/);
     assert.match(waiting.textContent, /drinks/);
     const buttons = findAll(waiting, (n) => n.localName === 'button').map((b) => b.textContent.trim());
     assert.deepEqual(buttons, ['Keep', 'Delete']);
     const keep = findAll(waiting, (n) => n.localName === 'button' && n.textContent.trim() === 'Keep')[0];
     keep.dispatch('click', { target: keep });
     for (let i = 0; i < 100 && !updated; i++) await new Promise((r) => setTimeout(r, 5));
-    assert.deepEqual(asked, [{ method: 'POST', path: '/api/dens/d/messages/10/keep?channel=2', body: { revision: 2 } }]);
+    assert.deepEqual(asked, [{ method: 'POST', path: '/api/dens/d/messages/10/keep?channel=2', body: { shown: 'c2hvd24' } }]);
     assert.equal(updated?.revision, 3, 'the message as Keep left it');
+
+    // What it shows changes under her: it says so, and holds Keep a moment.
+    const keepNow = () => findAll(root, (n) => n.localName === 'button' && n.textContent.trim() === 'Keep')[0];
+    for (let i = 0; i < 100 && attr(keepNow(), 'disabled'); i++) await new Promise((r) => setTimeout(r, 5));
+    assert.equal(attr(keepNow(), 'disabled'), undefined, 'Keep, before anything changed');
+    assert.doesNotMatch(root.textContent, /changed while you were looking/);
+    mount(h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text: 'alice never wrote this', attachments: [], shown: 'b3RoZXI' } },
+        waitingBy: members.get('3') }), root);
+    for (let i = 0; i < 100 && !/changed while you were looking/.test(root.textContent); i++) await new Promise((r) => setTimeout(r, 5));
+    assert.match(root.textContent, /changed while you were looking/);
+    assert.match(root.textContent, /alice never wrote this/);
+    assert.equal(attr(keepNow(), 'disabled'), 'true', 'Keep, held once what it shows changed');
     mount(null, root);
 });

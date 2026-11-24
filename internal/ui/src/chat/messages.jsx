@@ -1006,13 +1006,28 @@ function clock(ms) {
 
 // Quoted shows the first line of a message a reply quotes, that it has
 // only files, or that it can't be opened.
-// Waiting shows its author a group's message that someone they didn't
-// let edit it changed, as it reads now, to keep as theirs or delete.
+// Waiting shows its author a group's message changed by someone their
+// Dens can't confirm they let edit it, as it reads now, to keep as theirs
+// or delete. Keep gives back the digest of what this showed, so a
+// revision put in its place meanwhile isn't kept unseen; and where what
+// this shows changes under the member, it says so and holds Keep a moment,
+// so a second click doesn't keep what they haven't read.
 function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
     const act = useAction();
+    const seen = useRef(m.waiting.shown);
+    const [changed, setChanged] = useState(false);
+    const [held, setHeld] = useState(false);
+    useEffect(() => {
+        if (m.waiting.shown === seen.current) return undefined;
+        seen.current = m.waiting.shown;
+        setChanged(true);
+        setHeld(true);
+        const timer = setTimeout(() => setHeld(false), KEEP_HOLD_MS);
+        return () => clearTimeout(timer);
+    }, [m.waiting.shown]);
     const keep = () => act.run(async () => {
         try {
-            onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/keep?channel=${channelID}`, { revision: m.revision }));
+            onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/keep?channel=${channelID}`, { shown: m.waiting.shown }));
         } catch (e) {
             // Changed again meanwhile: it shows as it is now.
             if (e.status === 409 && e.data?.message) onUpdated(e.data.message);
@@ -1022,18 +1037,23 @@ function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
     return (
         <div class="mt-1 flex flex-col gap-2 border-l-2 border-warning pl-3" data-waiting>
             <p class="cursor-default select-none text-sm text-base-content/70">
-                @{by?.username || 'someone'} changed this without your say. <DocsLink page="usage/#group-dms" label="Why it waits" />
+                Your Dens can't confirm you let @{by?.username || 'someone'} change this. <DocsLink page="usage/#group-dms" label="Why it waits" />
             </p>
             {m.waiting.text.trim() && <div class="wrap-break-word"><Markdown text={m.waiting.text} me={me} /></div>}
             {m.waiting.attachments?.length > 0 && <Attachments denID={denID} files={m.waiting.attachments} onOpen={onView} />}
+            {changed && <p class="cursor-default select-none text-sm text-warning" data-waiting-changed>This changed while you were looking. Read it again before you keep it.</p>}
             <ErrorText message={act.error} />
             <Actions>
-                <Button kind="primary" disabled={act.busy} onClick={keep}>Keep</Button>
+                <Button kind="primary" disabled={act.busy || held} onClick={keep}>Keep</Button>
                 <Button kind="danger" disabled={act.busy} onClick={onDelete}>Delete</Button>
             </Actions>
         </div>
     );
 }
+
+// KEEP_HOLD_MS is how long Keep waits once a waiting message changed
+// under the member: longer than a double click.
+const KEEP_HOLD_MS = 1500;
 
 function Quoted({ text, locked, me }) {
     if (locked) return <span class="italic">A message this device can't open</span>;
