@@ -201,6 +201,11 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 		for i := range p.Files {
 			p.Files[i].Spoiler = slices.Contains(req.Spoilers, p.Files[i].ID)
 		}
+		if c.isGroup(channelID) {
+			if p.Grant, err = c.grant(channelID, req.Nonce, 1, req.Editors); err != nil {
+				return PageMessage{}, err
+			}
+		}
 		if req.KeyID, req.Sealed, err = c.sealMessage(ctx, channelID, c.memberID(), req.Nonce, 1, p); err != nil {
 			return PageMessage{}, err
 		}
@@ -273,9 +278,49 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 			changed := p.Text != req.Text
 			p.Text = req.Text
 			return changed, nil
-		}, false)
+		}, false, false)
 	}
 	return change(ctx, c, http.MethodPatch, "/api/messages/"+messageID, req)
+}
+
+// Keep signs a group's message that waits for its author, changed by
+// someone they didn't sign for, as their own, at the revision their page
+// showed: its text and files as they are, and no others to edit it.
+func (m *Manager) Keep(ctx context.Context, denID, channelID, messageID string, revision int) (PageMessage, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return PageMessage{}, err
+	}
+	if err := checkID("message", messageID); err != nil {
+		return PageMessage{}, err
+	}
+	if revision < 1 || !c.isGroup(channelID) {
+		return PageMessage{}, inputError(errors.New("there's nothing to keep"))
+	}
+	return c.editDM(ctx, channelID, messageID, revision, &[]string{}, func(*denproto.DMPayload) (bool, error) { return false, nil }, false, true)
+}
+
+// grant signs the editors of a group's message as its author's, at the
+// revision they're named at; nil for none. A grant naming its author
+// checks for nobody, so the author goes from the list.
+func (c *conn) grant(channel string, nonce []byte, revision int, editors []string) (*denproto.EditGrant, error) {
+	author := c.memberID()
+	editors = slices.DeleteFunc(slices.Clone(editors), func(e string) bool { return e == author })
+	if len(editors) == 0 {
+		return nil, nil
+	}
+	ch, _ := denproto.ParseID(channel)
+	me, _ := denproto.ParseID(author)
+	var g denproto.EditGrant
+	err := c.ownIdentity(func(ik *denproto.IdentityKeys) error {
+		var err error
+		g, err = ik.SignGrant(c.j.denID, ch, me, nonce, revision, editors)
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &g, nil
 }
 
 // editDM changes a DM message: it opens the message as it is now, lets
@@ -283,9 +328,12 @@ func (m *Manager) Edit(ctx context.Context, denID, channelID, messageID string, 
 // and seals it again at the next revision. A revision other than the
 // current one is a conflict, as on the den, and so is errConflict from
 // edit; revision 0 takes the current one. With files set, the edit changes
-// the message's files, so it names every blob they take.
+// the message's files, so it names every blob they take. In a group, an
+// editor's revision carries the grant that names them, and only the
+// author's names others; keep signs one that waits for its author as
+// theirs, which nothing else changes.
 func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision int, editors *[]string,
-	edit func(*denproto.DMPayload) (bool, error), files bool) (PageMessage, error) {
+	edit func(*denproto.DMPayload) (bool, error), files, keep bool) (PageMessage, error) {
 	current, err := c.message(ctx, channelID, messageID)
 	if err != nil {
 		return PageMessage{}, err
@@ -297,15 +345,32 @@ func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision
 	}
 	p, _, locked := c.openPayloadLocked(current.ChannelID, current.AuthorID, current.KeyID, current.Nonce, current.Revision, current.Sealed)
 	opened := c.openLocked(current)
+	me := c.meLocked()
+	group := c.den.channels[channelID].Kind == denproto.KindGroupDM
 	c.mu.Unlock()
-	if locked != "" {
-		return PageMessage{}, inputError(errors.New("this device can't open that message, so it can't change it"))
-	}
 	if revision == 0 {
 		revision = current.Revision
 	}
 	if current.Revision != revision {
 		return PageMessage{}, &ErrEditConflict{Current: opened}
+	}
+	waiting := locked == lockedAuthor && current.AuthorID == me
+	switch {
+	case keep && !waiting:
+		return PageMessage{}, inputError(errors.New("there's nothing to keep"))
+	case waiting && !keep:
+		return PageMessage{}, inputError(errors.New("someone changed this message without your say: keep it, or delete it"))
+	case locked != "" && !waiting:
+		return PageMessage{}, inputError(errors.New("this device can't open that message, so it can't change it"))
+	case !group:
+	case current.AuthorID != me && (editors != nil || p.Grant == nil || !slices.Contains(p.Grant.Editors, me)):
+		return PageMessage{}, inputError(errors.New("its author didn't let you edit this message"))
+	case keep:
+		p.Grant = nil
+	case editors != nil:
+		if p.Grant, err = c.grant(channelID, current.Nonce, revision+1, *editors); err != nil {
+			return PageMessage{}, err
+		}
 	}
 	changed, err := edit(&p)
 	if errors.Is(err, errConflict) {
@@ -360,7 +425,7 @@ func (m *Manager) SetTask(ctx context.Context, denID, channelID, messageID strin
 			}
 			p.Text, _ = denproto.SetTask(p.Text, n, req.Checked)
 			return false, nil
-		}, false)
+		}, false, false)
 		var conflict *ErrEditConflict
 		if moved || !errors.As(err, &conflict) || attempt == 2 {
 			return msg, err

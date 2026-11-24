@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"maps"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -572,6 +573,7 @@ func (c *conn) saveKept() {
 	for id, g := range c.groups {
 		k.GroupStates[id] = g.clone()
 	}
+	k.GroupMarks = maps.Clone(c.marks)
 	cursor, withMembers := c.members, c.membersDirty
 	c.stateDirty, c.membersDirty = false, false
 	c.mu.Unlock()
@@ -617,7 +619,7 @@ func (c *conn) restoreKept() {
 	if err == nil {
 		s, err = restore(c.j.denID, k, members)
 	}
-	if err == nil && !cleanGroups(s.channels, k.GroupStates) {
+	if err == nil && !cleanGroups(s.channels, k.GroupStates, k.GroupMarks) {
 		err = errMalformed
 	}
 	if err != nil {
@@ -632,6 +634,10 @@ func (c *conn) restoreKept() {
 	if k.GroupStates != nil {
 		c.groups = k.GroupStates
 	}
+	if k.GroupMarks != nil {
+		c.marks = k.GroupMarks
+	}
+	c.markKeptLocked()
 	c.remarkLocked()
 	if withMembers {
 		c.members = &membersCursor{epoch: kept.Epoch, version: kept.Version}
