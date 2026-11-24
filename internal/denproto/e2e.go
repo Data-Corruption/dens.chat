@@ -463,10 +463,12 @@ func OpenExchangeState(seal, denID []byte, channel, member int64, commit []byte,
 }
 
 // DMPayload is what a DM message seals: its text, and each file's key and
-// details, which the den never sees.
+// details, which the den never sees; and in a group, the editors its
+// author signed for, which an older Dens leaves out.
 type DMPayload struct {
-	Text  string   `json:"text"`
-	Files []DMFile `json:"files,omitempty"`
+	Text  string     `json:"text"`
+	Files []DMFile   `json:"files,omitempty"`
+	Grant *EditGrant `json:"grant,omitempty"`
 }
 
 // DMFile is an attachment in a DM: the den's sealed blob of the file and
@@ -559,6 +561,11 @@ func CheckDMPayload(p DMPayload) error {
 	}
 	if err := CheckMessageText(p.Text, len(p.Files) > 0); err != nil {
 		return err
+	}
+	if p.Grant != nil {
+		if err := p.Grant.Check(); err != nil {
+			return err
+		}
 	}
 	for _, f := range p.Files {
 		if len(f.Key) != chacha20poly1305.KeySize {

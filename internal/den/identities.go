@@ -252,8 +252,8 @@ func (d *Den) MakeSignedKey(ctx context.Context, s *Session, channelID string, r
 // as does a live signed key naming these members with the identities they
 // publish now, unless replace says a change to a group made its
 // membership new; any other retires as replaced. A group's key may carry
-// the group's name sealed under it. It returns the key's ID and those it
-// retired.
+// the group's name sealed under it, signed by its maker. It returns the
+// key's ID and those it retired.
 func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, members []int64, req denproto.SignedKeyRequest,
 	now int64, replace, group bool) (int64, []int64, error) {
 	stmt, err := req.Statement(denID, denproto.FormatID(cid), denproto.FormatID(maker))
@@ -294,6 +294,10 @@ func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, mem
 	made := ids[maker]
 	if !denproto.VerifyStatement(made.sig, stmt, req.Signature) {
 		return 0, nil, invalid("signature: it doesn't check against your identity")
+	}
+	// An older Dens signs no name; one that does signs it as the key's maker.
+	if req.Name != nil && req.Name.Sig != nil && !denproto.VerifyGroupName(denID, cid, *req.Name, made.sig) {
+		return 0, nil, invalid("name: its signature doesn't check against your identity")
 	}
 	live, err := dmLiveKey(ctx, tx, cid)
 	if err != nil {
@@ -347,8 +351,13 @@ func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, mem
 		}
 	}
 	if req.Name != nil {
-		if _, err := tx.ExecContext(ctx, `UPDATE den_group_dms SET name = ?, name_kid = ? WHERE channel_id = ?`,
-			[]byte(req.Name.Sealed), []byte(req.Name.KID), cid); err != nil {
+		// NULL, not an empty blob, for an older Dens's unsigned name.
+		var sig any
+		if req.Name.Sig != nil {
+			sig = []byte(req.Name.Sig)
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE den_group_dms SET name = ?, name_kid = ?, name_sig = ? WHERE channel_id = ?`,
+			[]byte(req.Name.Sealed), []byte(req.Name.KID), sig, cid); err != nil {
 			return 0, nil, err
 		}
 	}

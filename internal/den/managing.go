@@ -38,15 +38,20 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 			return page, invalid("after: not a cursor this den gave")
 		}
 	}
+	// A session gets nothing of a channel of a kind its version lacks, nor
+	// an event it doesn't see, whose naming would tell hidden from gone.
 	rows, err := d.db.QueryContext(ctx, `SELECT f.id, f.message_id, f.name, f.type, f.size, f.width, f.height, f.animated,
 		f.thumb_width, f.thumb_height, f.duration_ms, f.sealed, f.created_at, f.size + coalesce(f.thumb_size, 0) AS space,
 		m.channel_id, CASE WHEN EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id) THEN 'avatar'
 			WHEN EXISTS (SELECT 1 FROM den_members WHERE banner_id = f.id) THEN 'banner' ELSE '' END,
-		(SELECT id FROM den_events WHERE banner_id = f.id)
-		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id
-		WHERE f.uploader_id = ? AND NOT EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
-			AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?, ?)
-		ORDER BY space DESC, f.id DESC LIMIT ?`, s.MemberID, space, last, denproto.OwnFilesPage+1)
+		(SELECT e.id FROM den_events e LEFT JOIN den_channels c ON c.id = e.channel_id
+			WHERE e.banner_id = f.id AND (`+eventStaffOnly+` = 0 OR ?5))
+		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id LEFT JOIN den_channels mc ON mc.id = m.channel_id
+		WHERE f.uploader_id = ?1 AND NOT EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
+			AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?2, ?3)
+			AND (mc.kind IS NULL OR (mc.kind != 'group_dm' OR ?6) AND (mc.kind != 'notes' OR ?7))
+		ORDER BY space DESC, f.id DESC LIMIT ?4`, s.MemberID, space, last, denproto.OwnFilesPage+1, IsStaff(s.Role),
+		s.Version >= kindVersion(denproto.KindGroupDM), s.Version >= kindVersion(denproto.KindNotes))
 	if err != nil {
 		return page, err
 	}

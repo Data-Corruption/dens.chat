@@ -453,3 +453,70 @@ func TestGroupReservations(t *testing.T) {
 		t.Error("a group nobody made yet is seen")
 	}
 }
+
+// A key's name signed by its maker is kept with its signature, which the
+// group's channel carries; one signed by another is refused; one an older
+// Dens sends unsigned is kept unsigned; and a naming, which its change's
+// signature covers, keeps none.
+func TestGroupKeyNameSignature(t *testing.T) {
+	f, owner, others := groupFixture(t, "carol", "dave", "erin")
+	bob, carol, dave, erin := others[0], others[1], others[2], others[3]
+	ctx := context.Background()
+	g, err := f.makeGroup(bob, owner, carol, dave, erin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, _ := f.d.Info()
+	keyWith := func(maker *Session, sign func(*denproto.SealedName)) (denproto.SignedKeyRequest, error) {
+		key := denproto.Random(denproto.DMKeySize)
+		members := []int64{}
+		for _, m := range g.state.Members {
+			id, _ := denproto.ParseID(m)
+			members = append(members, id)
+		}
+		req := f.groupKeyRequest(maker.MemberID, g.cid, members, key)
+		name, err := denproto.SealGroupName(key, info.ID, g.cid, req.KID, "Weekend")
+		if err != nil {
+			t.Fatal(err)
+		}
+		sign(&name)
+		req.Name = &name
+		_, err = f.d.MakeSignedKey(ctx, maker, g.id, req)
+		return req, err
+	}
+	kept := func() *denproto.SealedName {
+		t.Helper()
+		c, err := f.d.channel(ctx, f.d.db, g.cid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return c.SealedName
+	}
+
+	if _, err := g.change(erin, denproto.ChangeLeft, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	_, err = keyWith(bob, func(n *denproto.SealedName) { n.Sig = f.identityOf(carol.MemberID).SignGroupName(info.ID, g.cid, *n) })
+	wantCode(t, err, denproto.CodeInvalidField)
+	signed, err := keyWith(bob, func(n *denproto.SealedName) { n.Sig = f.identityOf(bob.MemberID).SignGroupName(info.ID, g.cid, *n) })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := kept(); n == nil || !denproto.Equal(n.Sig, signed.Name.Sig) || !denproto.VerifyGroupName(info.ID, g.cid, *n, f.identityOf(bob.MemberID).Public().Sig) {
+		t.Fatalf("the key's signed name is kept as %+v", n)
+	}
+	g.key = testKey{id: g.liveKey(bob), key: nil}
+	if _, err := g.change(dave, denproto.ChangeLeft, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := keyWith(carol, func(*denproto.SealedName) {}); err != nil {
+		t.Fatalf("an older Dens's unsigned name: %v", err)
+	}
+	if n := kept(); n == nil || n.Sig != nil {
+		t.Fatalf("the unsigned name is kept as %+v", n)
+	}
+	var sig []byte
+	if err := f.d.db.QueryRow(`SELECT name_sig FROM den_group_dms WHERE channel_id = ?`, g.cid).Scan(&sig); err != nil || sig != nil {
+		t.Fatalf("the den keeps the name's signature %x, %v", sig, err)
+	}
+}

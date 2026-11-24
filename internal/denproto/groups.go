@@ -88,21 +88,46 @@ const (
 	groupReactionsContext  = "dens-group-reactions-v1"
 	groupReactedContext    = "dens-group-reacted-v1"
 	groupChangeHashContext = "dens-group-change-hash-v1"
+	groupKeyNameContext    = "dens-group-key-name-v1"
+	groupEditorsContext    = "dens-group-editors-v1"
 )
 
 // SealedName is a group's name, sealed under the key whose maker's ID is
-// KID.
+// KID. Sig is that key's maker's signature of it, where a key carries it;
+// a change's name has none, since the change's signature covers it.
 type SealedName struct {
 	KID    Bytes `json:"kid"`
 	Sealed Bytes `json:"sealed"`
+	Sig    Bytes `json:"sig,omitempty"`
 }
 
 // Check checks a sealed name's shape.
 func (n SealedName) Check() error {
-	if len(n.KID) != KIDSize || len(n.Sealed) != SealedGroupNameSize {
+	if len(n.KID) != KIDSize || len(n.Sealed) != SealedGroupNameSize || n.Sig != nil && len(n.Sig) != SignatureSize {
 		return errors.New("a group's name is sealed oddly")
 	}
 	return nil
+}
+
+// nameBytes is a key's name as its maker signs it:
+// "dens-group-key-name-v1" ‖ den_id ‖ channel ‖ kid ‖ SHA-256(sealed).
+func (n SealedName) nameBytes(denID []byte, channel int64) []byte {
+	sum := sha256.Sum256(n.Sealed)
+	return join([]byte(groupKeyNameContext), denID, u64(channel), n.KID, sum[:])
+}
+
+// SignGroupName signs the name a key carries, by the identity of the
+// key's maker, so a member added since the group's last naming, who reads
+// the name a key carries, reads only one a member gave.
+func (k *IdentityKeys) SignGroupName(denID []byte, channel int64, n SealedName) Bytes {
+	return ed25519.Sign(k.sig, n.nameBytes(denID, channel))
+}
+
+// VerifyGroupName reports whether a key's name is signed by sigKey, the
+// signing key of the identity the key names for its maker.
+func VerifyGroupName(denID []byte, channel int64, n SealedName, sigKey []byte) bool {
+	return n.Check() == nil && len(n.Sig) == SignatureSize && len(sigKey) == ed25519.PublicKeySize &&
+		ed25519.Verify(ed25519.PublicKey(sigKey), n.nameBytes(denID, channel), n.Sig)
 }
 
 // GroupChange is a change to a group DM: its number in the group's
@@ -279,8 +304,8 @@ func CheckChange(denID []byte, channel int64, prev *GroupState, c GroupChange) (
 	if (c.Kind == ChangeDeparted) != (c.By == "") || (c.Kind == ChangeDeparted) != (c.Signer == nil && c.Signature == nil) {
 		return GroupState{}, errors.New("a group's change is signed by its maker, and the den's by nobody")
 	}
-	if (c.Kind == ChangeNamed) != (c.Name != nil) && c.Kind != ChangeMade {
-		return GroupState{}, errors.New("only a group's naming, and its making, carry a name")
+	if (c.Kind == ChangeNamed) != (c.Name != nil) && c.Kind != ChangeMade || c.Name != nil && c.Name.Sig != nil {
+		return GroupState{}, errors.New("only a group's naming, and its making, carry a name, which its signature covers")
 	}
 	next := GroupState{N: c.N, Members: c.After}
 	var err error
@@ -429,6 +454,70 @@ func checkHeader(header []byte, context string, ad []byte, body []byte, identity
 	}
 	sum := sha256.Sum256(body)
 	return signer, ed25519.Verify(ed25519.PublicKey(sigKey), join([]byte(context), ad, u64(signer), sum[:]), sig)
+}
+
+// EditGrant names the members a group message's author lets edit it,
+// signed by the author's identity at the revision they named them, and
+// bound to the den, the group, the author and the message's nonce, so the
+// den can't name an editor the author didn't. It travels inside what's
+// sealed, each revision carrying the latest: an editor's Dens copies it,
+// and only the author's writes another.
+type EditGrant struct {
+	Editors   []string `json:"editors"`
+	Revision  int      `json:"revision"`
+	Signer    KeyMaker `json:"signer"`
+	Signature Bytes    `json:"signature"`
+}
+
+// grantBytes is a grant as signed: "dens-group-editors-v1" ‖ den_id ‖
+// channel ‖ author ‖ len(nonce) ‖ nonce ‖ revision ‖ len(editors) ‖
+// editor….
+func grantBytes(denID []byte, channel, author int64, nonce []byte, revision int, editors []string) ([]byte, error) {
+	b := join([]byte(groupEditorsContext), denID, u64(channel), u64(author), u64(int64(len(nonce))), nonce, u64(int64(revision)),
+		u64(int64(len(editors))))
+	for _, e := range editors {
+		id, err := ParseID(e)
+		if err != nil {
+			return nil, errors.New("a grant names an editor oddly")
+		}
+		b = append(b, u64(id)...)
+	}
+	return b, nil
+}
+
+// Check checks a grant's shape: at most a group's other members, each
+// once, a revision, and its signer's keys and signature by their sizes.
+func (g EditGrant) Check() error {
+	if len(g.Editors) > MaxGroupMembers-1 || checkMembers(g.Editors) != nil || g.Revision < 1 ||
+		len(g.Signer.KEMHash) != IdentityHashSize || len(g.Signer.Sig) != ed25519.PublicKeySize || len(g.Signature) != SignatureSize {
+		return errors.New("a message's editors are signed oddly")
+	}
+	return nil
+}
+
+// SignGrant signs the editors of a group's message by its author's
+// identity, at the revision the author names them.
+func (k *IdentityKeys) SignGrant(denID []byte, channel, author int64, nonce []byte, revision int, editors []string) (EditGrant, error) {
+	b, err := grantBytes(denID, channel, author, nonce, revision, editors)
+	if err != nil {
+		return EditGrant{}, err
+	}
+	return EditGrant{Editors: slices.Clone(editors), Revision: revision, Signer: k.Maker(), Signature: ed25519.Sign(k.sig, b)}, nil
+}
+
+// VerifyGrant reports whether a grant on a message by author, at revision
+// at, is signed by one of identities, by their hashes, those kept for the
+// author, at a revision no later than at.
+func VerifyGrant(denID []byte, channel, author int64, nonce []byte, at int, g EditGrant, identities []Bytes) bool {
+	if g.Check() != nil || g.Revision > at || slices.Contains(g.Editors, FormatID(author)) {
+		return false
+	}
+	hash := IdentityHash(g.Signer.KEMHash, g.Signer.Sig)
+	if !slices.ContainsFunc(identities, func(h Bytes) bool { return Equal(h, hash) }) {
+		return false
+	}
+	b, err := grantBytes(denID, channel, author, nonce, g.Revision, g.Editors)
+	return err == nil && ed25519.Verify(ed25519.PublicKey(g.Signer.Sig), b, g.Signature)
 }
 
 // ErrSignature is a group's message or set whose signature doesn't check

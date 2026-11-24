@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -310,5 +311,106 @@ func TestDMEditChangesFiles(t *testing.T) {
 	}
 	if b, err := f.read(carol, next.ID, false); err != nil || string(b) != "the next file" {
 		t.Fatalf("the blob the swap put in: %q %v", b, err)
+	}
+}
+
+// A member's own files, as each version lists them: a session that gets
+// nothing of groups or notes lists none of their files, nor their
+// messages; and a banner names its event only while its uploader sees it.
+func TestOwnFilesAcrossVersions(t *testing.T) {
+	f, owner, others := groupFixture(t, "carol")
+	bob, carol := others[0], others[1]
+	ctx := context.Background()
+	g, err := f.makeGroup(bob, owner, carol)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealedBlob := func(data string) denproto.File {
+		u, err := f.d.Upload(ctx, bob, "", int64(len(data)), bytes.NewReader([]byte(data)), true, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return u
+	}
+	inGroup := sealedBlob("in the group")
+	info, _ := f.d.Info()
+	nonce := denproto.Random(denproto.NonceBytes)
+	kid, _ := denproto.ParseID(g.key.id)
+	sealed, err := denproto.SealGroupMessage(g.key.key, denproto.MessageAD{DenID: info.ID, Channel: g.cid, Author: bob.MemberID,
+		Nonce: nonce, KeyID: kid, Revision: 1}, f.identityOf(bob.MemberID), bob.MemberID, denproto.DMPayload{Text: "a file"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupMsg, err := f.d.Send(ctx, bob, g.id, denproto.SendRequest{Nonce: nonce, Sealed: sealed, KeyID: g.key.id, Attachments: []string{inGroup.ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	bob.Version = denproto.NotesVersion
+	notes, err := f.d.OpenNotes(ctx, bob)
+	if err != nil {
+		t.Fatal(err)
+	}
+	inNotes := sealedBlob("in the notes")
+	noteMsg, err := f.note(bob, notes, "a note", "", inNotes.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, v := range []int{1, denproto.GroupsVersion, denproto.NotesVersion} {
+		s := *bob
+		s.Version = v
+		page, err := f.d.OwnFiles(ctx, &s, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		files, messages := map[string]bool{}, map[string]bool{}
+		for _, file := range page.Files {
+			files[file.ID] = true
+		}
+		for _, m := range page.Messages {
+			messages[m.ID] = true
+		}
+		if files[inGroup.ID] != (v >= denproto.GroupsVersion) || messages[groupMsg.ID] != (v >= denproto.GroupsVersion) {
+			t.Errorf("at version %d the group's file listed %v, its message %v", v, files[inGroup.ID], messages[groupMsg.ID])
+		}
+		if files[inNotes.ID] != (v >= denproto.NotesVersion) || messages[noteMsg.ID] != (v >= denproto.NotesVersion) {
+			t.Errorf("at version %d the note's file listed %v, its message %v", v, files[inNotes.ID], messages[noteMsg.ID])
+		}
+	}
+
+	// A moderator's event, in a channel staff alone see by the time they're
+	// a member again.
+	mo := f.moderator(owner, "mo")
+	lounge := f.newChannel(owner, "lounge", denproto.ChannelRequest{Kind: denproto.KindVoice})
+	banner := f.mustUpload(mo, "banner.png", testPNG(t, 900, 300))
+	req := f.eventAt("Staff night", lounge.ID, 2*time.Hour, time.Hour)
+	req.Banner = &banner.ID
+	e := f.makeEvent(mo, req)
+	named := func(s *Session) string {
+		t.Helper()
+		page, err := f.d.OwnFiles(ctx, s, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range page.Files {
+			if file.ID == banner.ID {
+				return file.Event
+			}
+		}
+		t.Fatal("the banner isn't listed")
+		return ""
+	}
+	if got := named(mo); got != e.ID {
+		t.Fatalf("the banner names %q, not its event", got)
+	}
+	staffOnly := true
+	if _, err := f.d.UpdateChannel(ctx, owner, lounge.ID, denproto.ChannelRequest{StaffOnly: &staffOnly}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.SetRole(ctx, owner, denproto.FormatID(mo.MemberID), denproto.RoleRequest{Role: denproto.RoleMember}); err != nil {
+		t.Fatal(err)
+	}
+	mo.Role = denproto.RoleMember
+	if got := named(mo); got != "" {
+		t.Errorf("the banner names event %s, which its uploader no longer sees", got)
 	}
 }

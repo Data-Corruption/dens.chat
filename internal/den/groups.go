@@ -64,8 +64,8 @@ type group struct {
 // loadGroup reads a group DM. One reserved for its maker has no change yet.
 func loadGroup(ctx context.Context, q querier, denID []byte, id int64) (group, error) {
 	g := group{id: id, joined: map[int64]int{}, since: map[int64]int64{}}
-	var name, kid []byte
-	err := q.QueryRowContext(ctx, `SELECT made_by, name, name_kid FROM den_group_dms WHERE channel_id = ?`, id).Scan(&g.madeBy, &name, &kid)
+	var name, kid, sig []byte
+	err := q.QueryRowContext(ctx, `SELECT made_by, name, name_kid, name_sig FROM den_group_dms WHERE channel_id = ?`, id).Scan(&g.madeBy, &name, &kid, &sig)
 	if errors.Is(err, sql.ErrNoRows) {
 		return g, errChannelNotFound
 	}
@@ -73,7 +73,7 @@ func loadGroup(ctx context.Context, q querier, denID []byte, id int64) (group, e
 		return g, err
 	}
 	if name != nil {
-		g.name = &denproto.SealedName{KID: kid, Sealed: name}
+		g.name = &denproto.SealedName{KID: kid, Sealed: name, Sig: sig}
 	}
 	rows, err := q.QueryContext(ctx, `SELECT member_id, joined, since FROM den_group_members WHERE channel_id = ? ORDER BY position`, id)
 	if err != nil {
@@ -135,14 +135,14 @@ func fillGroup(ctx context.Context, q querier, c *denproto.Channel) error {
 	if err := rows.Err(); err != nil {
 		return err
 	}
-	var name, kid []byte
-	if err := q.QueryRowContext(ctx, `SELECT coalesce((SELECT max(n) FROM den_group_changes WHERE channel_id = ?1), 0), g.name, g.name_kid
-		FROM den_group_dms g WHERE g.channel_id = ?1`, id).Scan(&c.Changes, &name, &kid); err != nil {
+	var name, kid, sig []byte
+	if err := q.QueryRowContext(ctx, `SELECT coalesce((SELECT max(n) FROM den_group_changes WHERE channel_id = ?1), 0), g.name, g.name_kid,
+		g.name_sig FROM den_group_dms g WHERE g.channel_id = ?1`, id).Scan(&c.Changes, &name, &kid, &sig); err != nil {
 		return err
 	}
 	c.SealedName = nil
 	if name != nil {
-		c.SealedName = &denproto.SealedName{KID: kid, Sealed: name}
+		c.SealedName = &denproto.SealedName{KID: kid, Sealed: name, Sig: sig}
 	}
 	return nil
 }
@@ -438,7 +438,7 @@ func (d *Den) ChangeGroup(ctx context.Context, s *Session, channelID string, req
 			if statement == nil || json.Unmarshal(statement, &live) != nil || !denproto.Equal(live.KID, ch.Name.KID) {
 				return invalid("name: a group's name is sealed under its live key")
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE den_group_dms SET name = ?, name_kid = ? WHERE channel_id = ?`,
+			if _, err := tx.ExecContext(ctx, `UPDATE den_group_dms SET name = ?, name_kid = ?, name_sig = NULL WHERE channel_id = ?`,
 				[]byte(ch.Name.Sealed), []byte(ch.Name.KID), cid); err != nil {
 				return err
 			}
@@ -447,7 +447,7 @@ func (d *Den) ChangeGroup(ctx context.Context, s *Session, channelID string, req
 			if !denproto.Equal(ch.Name.KID, req.Key.KID) {
 				return invalid("name: a group's name is sealed under its key")
 			}
-			if _, err := tx.ExecContext(ctx, `UPDATE den_group_dms SET name = ?, name_kid = ? WHERE channel_id = ?`,
+			if _, err := tx.ExecContext(ctx, `UPDATE den_group_dms SET name = ?, name_kid = ?, name_sig = NULL WHERE channel_id = ?`,
 				[]byte(ch.Name.Sealed), []byte(ch.Name.KID), cid); err != nil {
 				return err
 			}
