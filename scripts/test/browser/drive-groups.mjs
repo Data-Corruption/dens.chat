@@ -187,7 +187,10 @@ try {
     const said = await waitFor(() => A.b.eval(`${waiting}?.textContent || ''`), "carol's tick on alice's page").catch(() => '');
     report(said.includes('let @carol change this') && said.includes('candles'), `alice's page shows who changed her list, and how it reads: ${q(said)}`);
     await A.b.shot(`${HOME}/shot-groups-waiting-alice-${which}.png`);
-    await A.b.eval(`${button(sharedRow + ".querySelector('[data-waiting]')", 'Keep')}.click(), true`);
+    // Keep holds a moment from when the list shows.
+    const keep = button(sharedRow + ".querySelector('[data-waiting]')", 'Keep');
+    await waitFor(() => A.b.eval(`!${keep}.disabled`), "alice's Keep, live");
+    await A.b.eval(`${keep}.click(), true`);
     report(await waitFor(() => B.b.eval(`!!${sharedRow}?.querySelector('input[type=checkbox][aria-label="candles"]')?.checked`), "the kept list on bob's page")
         .then(() => true, () => false), "bob's page reads the list alice kept, candles ticked");
     report(await waitFor(() => history('dave', g).some((m) => m.id === shared.id && !m.locked && m.text === '[ ] cake\n[x] candles' && !(m.editors || []).length),
