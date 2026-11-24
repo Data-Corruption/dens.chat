@@ -128,6 +128,10 @@ add people, rename it or leave; whoever made it can remove people. Each change
 is signed by the member who made it, so the den can't add anyone on its own.
 Groups have no calls.
 
+A photo or file in a group opens only as its sender sent it: if the den and
+someone in the group swap other bytes in under it, it doesn't open. One sent
+from an older Dens, or whose message was edited on one, isn't checked.
+
 Only the people you let edit a message can change it. A change your Dens
 can't confirm you allowed shows only to you until you choose: **Keep** makes
 it yours as it reads now, or delete it. That includes every change from
