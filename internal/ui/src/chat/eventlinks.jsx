@@ -9,6 +9,7 @@
 // it's gone or out of their sight, which look alike, so a staff-only event
 // stays hidden.
 
+import { createContext } from 'preact';
 import { useContext, useEffect, useState } from 'preact/hooks';
 import { api } from '../core/api.js';
 import { StatusText } from '../ui/components.jsx';
@@ -154,11 +155,19 @@ function EventIcon() {
     );
 }
 
+// Covered says the link is under a spoiler still covered.
+export const Covered = createContext(false);
+
 // EventLink is a link to an event, as a chip naming it, with the address on
 // hover. Outside a den's page, as in the guide to writing, it's an ordinary
 // link; opening it in a new tab, as with Ctrl, opens the den's address in
-// the browser, which says what it is.
+// the browser, which says what it is. Under a covered spoiler it's its
+// address, read from nowhere.
 export function EventLink({ url, link }) {
+    return useContext(Covered) ? <span class="break-all">{url}</span> : <EventChip url={url} link={link} />;
+}
+
+function EventChip({ url, link }) {
     const at = useLinkedEvent(link);
     const { links } = at;
     const [refusal, setRefusal] = useState('');
