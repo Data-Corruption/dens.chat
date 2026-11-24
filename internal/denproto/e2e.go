@@ -14,6 +14,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Data-Corruption/dens.chat/internal/vault"
+
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
@@ -474,7 +476,10 @@ type DMPayload struct {
 }
 
 // DMFile is an attachment in a DM: the den's sealed blob of the file and
-// of its preview, and what the page needs to show them.
+// of its preview, and what the page needs to show them. Sums are the
+// digests of the blob's runs (vault.RunSums), which a reader checks each
+// run against before it opens any of it; a file an older Dens sent has
+// none, and opens unchecked.
 type DMFile struct {
 	ID       string   `json:"id"`
 	Key      Bytes    `json:"key"`
@@ -488,15 +493,18 @@ type DMFile struct {
 	Thumb    *DMThumb `json:"thumb,omitempty"`
 	// Spoiler marks a file its sender sent as a spoiler, which
 	// only the DM's members learn.
-	Spoiler bool `json:"spoiler,omitempty"`
+	Spoiler bool  `json:"spoiler,omitempty"`
+	Sums    Bytes `json:"sums,omitempty"`
 }
 
 // DMThumb is a DM file's preview: its own sealed blob, under the file's
-// key.
+// key, with its size and its digests where its file has them.
 type DMThumb struct {
 	ID     string `json:"id"`
 	Width  int    `json:"width"`
 	Height int    `json:"height"`
+	Size   int64  `json:"size,omitempty"`
+	Sums   Bytes  `json:"sums,omitempty"`
 }
 
 // MessageAD binds a sealed DM message to the den, the DM, its author, its
@@ -573,10 +581,16 @@ func CheckDMPayload(p DMPayload) error {
 		if len(f.Key) != chacha20poly1305.KeySize {
 			return errors.New("a DM file has an invalid key")
 		}
+		if f.Sums != nil && len(f.Sums) != vault.SumsSize(vault.SealedSize(max(f.Size, 0))) {
+			return errors.New("a DM file's digests don't fit its size")
+		}
 		var thumb *Thumb
 		if t := f.Thumb; t != nil {
 			if _, err := ParseID(t.ID); err != nil || t.ID == f.ID {
 				return errors.New("a DM file's preview has an invalid ID")
+			}
+			if t.Sums != nil && (t.Size < 1 || t.Size > MaxFileSize || len(t.Sums) != vault.SumsSize(vault.SealedSize(t.Size))) {
+				return errors.New("a DM file's preview's digests don't fit its size")
 			}
 			thumb = &Thumb{Width: t.Width, Height: t.Height}
 		}
