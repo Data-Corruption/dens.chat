@@ -2,10 +2,6 @@
 
 Ideas and fixes no milestone has taken up yet. A lot of these are still loose, and not all of them may turn out possible or practical. One leaves this list when a milestone's plan in [milestones.md](milestones.md) takes it up. Those weighed and set aside are under Probably not doing, with why.
 
-## Probably M24
-
-- A group file's bytes, which nothing binds to its message. A sealed message carries each file's ID, key and details, and the file's own seal binds the den, the channel and whether it's the preview, so the den with any member of the group, who holds the key, can put other bytes under a file another member sent, shown as theirs. A digest of each sealed blob, inside what's sealed, closes it, checked as the file opens. A step of M24's own, after forwarding, which seals files again, and before the last. To settle in its plan: a file from before, which carries none; an older Dens, which leaves it out and seals each edit again without it, as it does a grant; the preview and a video's smaller copy; a DM's and notes' files, whose members hold the one key; and what a file that doesn't match shows.
-
 ## Probably M25
 
 - Collections, in place of pinned messages and bookmarks: named lists of messages, each entry a pointer to its message, which goes with it at a delete or at retention. A den's are made by staff, each of one kind: everyone adds, staff add, or staff only, which only staff see. A member's own are theirs in that den, sealed as their notes are, so the den's disk and backups don't say what they save. A den's takes only a text channel's messages, never a DM's, and shows a message only while everyone who sees the collection sees its channel, so a staff-only channel's show in a staff-only collection alone and every reader has one list. A member's own takes any message they see, a DM's among them. A channel's description stands in for what a pin said of its channel.
