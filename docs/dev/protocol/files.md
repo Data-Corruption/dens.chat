@@ -9,7 +9,7 @@ file  = {"id", "name", "type", "size", "width"?, "height"?, "animated"?, "durati
 image = {"id", "width", "height", "animated"?}
 ```
 
-A file is an upload: an attachment on a message, or a picture on a profile. `type` is what the den found the file to be from its bytes, never what its name says. `width` and `height` are set for images and videos, as they display, so a client lays out the space one takes before it loads. `duration_ms` is a video's or audio's length when it's known, at most a week. `thumb` is there when the file has a preview.
+A file is an upload: an attachment on a message, or a picture on a profile. `type` is what the den found the file to be from its bytes, never what its name says. `width` and `height` are set for images and videos, as they display, so a client lays out the space one takes before it loads. `duration_ms` is a video's or audio's length when it's known, at most a week. `thumb` is there when the file has a preview. A den sends no `sealed_as`, which a client gives its own page with a DM's file ([Serving](../design/files.md#serving)), and a client refuses a file from a den that carries one.
 
 ### Uploading
 
