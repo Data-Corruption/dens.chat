@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # The groups check's den: alice's install hosts it, and bob, carol and dave
 # join, each Dens publishing its member's identity as it signs in, so any
-# of them can make a group with the others, or be added to one.
+# of them can make a group with the others, or be added to one. Carol's
+# Dens is the last release's.
 # shellcheck source=scripts/test/browser/lib.sh
 source "$(dirname "$0")/lib.sh"
 fresh
-join carol
+DENS=./dens-dev-older join carol
 join dave
 for who in alice bob carol dave; do
     for _ in $(seq 80); do

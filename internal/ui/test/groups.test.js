@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { changeText, groupGate, groupTitle, isPrivate, placeAt } from '../src/private/private.js';
 import { GroupGate, GroupLine, GroupPanel, memberItems, removerNote } from '../src/private/groups.jsx';
+import { MessageRow } from '../src/chat/messages.jsx';
 
 const members = new Map([
     ['1', { id: '1', display_name: 'Alice', username: 'alice', identity: 'a' }],
@@ -118,5 +119,44 @@ test('a group takes messages unless something stands in its composer', () => {
     assert.ok(findAll(root, (n) => n.localName === 'button').some((b) => b.textContent.trim() === 'Send anyway'));
     mount(h(GroupGate, { denID: 'd', gate: 'broken', onCompare() {} }), root);
     assert.match(root.textContent, /someone may be in the middle/);
+    mount(null, root);
+});
+
+test("a group's message someone its author didn't let edit changed waits: on its author's page to keep or delete, and on another's unread", async () => {
+    const root = document.createElement('div');
+    const none = () => {};
+    const asked = [];
+    let updated = null;
+    globalThis.fetch = async (path, opts = {}) => {
+        asked.push({ method: opts.method, path, body: JSON.parse(opts.body || 'null') });
+        const kept = { id: '10', channel_id: '2', author_id: '1', created_at: 1, revision: 3, text: '[x] drinks' };
+        return { ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify(kept) };
+    };
+    const m = { id: '10', channel_id: '2', author_id: '1', created_at: Date.UTC(2026, 10, 6, 12), revision: 2, text: '', locked: 'author' };
+    const props = {
+        m, author: members.get('1'), canReply: false, canEdit: false, canDelete: true, link: '', editorNames: [], candidates: [], canReact: false,
+        nameOf, onReact: none, onReactPick: none, onRemoveReactions: none, onUpdated: (u) => { updated = u; }, onPolled: none, onMenu: none,
+        onReply: none, onEdit: none, onEditDone: none, onDelete: none, onJump: none, onView: none, onProfile: none, onToggle: none,
+        denID: 'd', channelID: '2',
+    };
+    // Bob's page: it waits, saying nothing of what it says now.
+    mount(h(MessageRow, { ...props, me: members.get('2') }), root);
+    assert.match(root.textContent, /waits for them/);
+    assert.equal(findAll(root, (n) => attr(n, 'data-waiting') !== undefined).length, 0);
+
+    // Alice's: who changed it, what it says, Keep and Delete.
+    mount(h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text: '[x] drinks', attachments: [] } },
+        waitingBy: members.get('3') }), root);
+    const waiting = findAll(root, (n) => attr(n, 'data-waiting') !== undefined)[0];
+    assert.ok(waiting, 'the waiting message on its author\'s page');
+    assert.match(waiting.textContent, /@carol changed this/);
+    assert.match(waiting.textContent, /drinks/);
+    const buttons = findAll(waiting, (n) => n.localName === 'button').map((b) => b.textContent.trim());
+    assert.deepEqual(buttons, ['Keep', 'Delete']);
+    const keep = findAll(waiting, (n) => n.localName === 'button' && n.textContent.trim() === 'Keep')[0];
+    keep.dispatch('click', { target: keep });
+    for (let i = 0; i < 100 && !updated; i++) await new Promise((r) => setTimeout(r, 5));
+    assert.deepEqual(asked, [{ method: 'POST', path: '/api/dens/d/messages/10/keep?channel=2', body: { revision: 2 } }]);
+    assert.equal(updated?.revision, 3, 'the message as Keep left it');
     mount(null, root);
 });

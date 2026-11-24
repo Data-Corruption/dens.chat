@@ -608,9 +608,12 @@ type keptState struct {
 	// identities.
 	SignedKeys []denproto.SignedKey `json:"signed_keys,omitempty"`
 	Identities bool                 `json:"identities,omitempty"`
-	// The member's group DMs as their changes, checked, made them,
-	// and whether the den has them for this Dens.
+	// The member's group DMs as their changes, checked, made them, the
+	// latest change checked of each group this Dens ever held, which a
+	// cache from before v1.16.0 lacks, and whether the den has them for
+	// this Dens.
 	GroupStates map[string]*groupState `json:"group_states,omitempty"`
+	GroupMarks  map[string]groupMark   `json:"group_marks,omitempty"`
 	GroupDMs    bool                   `json:"group_dms,omitempty"`
 	// Whether the den has notes to self for this Dens.
 	Notes bool `json:"notes,omitempty"`
@@ -636,12 +639,19 @@ func (s *denState) kept() (keptState, []denproto.Member) {
 }
 
 // cleanGroups checks the groups the cache kept, as checked here: each one
-// of the den's group channels, its members IDs, at most a group's, and its
-// changes no more than the page gets.
-func cleanGroups(channels map[string]denproto.Channel, groups map[string]*groupState) bool {
+// of the den's group channels, its members IDs, at most a group's, its
+// changes no more than the page gets, and its name sealed as a change
+// carries one; and the marks, of groups gone too, each a change's number
+// and hash.
+func cleanGroups(channels map[string]denproto.Channel, groups map[string]*groupState, marks map[string]groupMark) bool {
+	for id, m := range marks {
+		if !validID(id) || m.N < 1 || m.N > denproto.MaxGroupChanges || len(m.Hash) != 32 {
+			return false
+		}
+	}
 	for id, g := range groups {
 		if g == nil || channels[id].Kind != denproto.KindGroupDM || g.N < 0 || len(g.Members) > denproto.MaxGroupMembers ||
-			len(g.Changes) > maxShownChanges || (g.N > 0 && len(g.Hash) != 32) {
+			len(g.Changes) > maxShownChanges || (g.N > 0 && len(g.Hash) != 32) || g.Name != nil && (g.Name.Check() != nil || g.Name.Sig != nil) {
 			return false
 		}
 		for _, c := range g.Changes {

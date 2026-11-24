@@ -825,6 +825,18 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// A group's name as a key carried it, signed by the key's maker; NULL
+	// for one a change carried, which the change's signature covers, and
+	// for one an older Dens sent unsigned.
+	m.Add("Group name signatures", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_group_dms ADD COLUMN name_sig BLOB CHECK (name_sig IS NULL OR name IS NOT NULL);
+		`); err != nil {
+			return fmt.Errorf("add group name signatures: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

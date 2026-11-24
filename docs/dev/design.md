@@ -231,8 +231,9 @@ Installed copies hold data that every later version reads, so formats move forwa
   | 16 | A member's name style, a column that starts empty | v1.11.0 |
   | 17 | A voice channel's longest call, a column of `den_channels` that starts empty and that only a voice channel takes | v1.13.0 |
   | 18 | The audit log, a table that starts empty, naming members alone | v1.15.0 |
+  | 19 | A group's name's signature, by the maker of the key that carried it, a column that starts empty and that only a name takes | v1.16.0 |
 
-  A test makes each released schema by running its steps alone, v1.6.0's, v1.7.0's, v1.8.0's, v1.9.0's, v1.10.1's, v1.12.0's and v1.14.0's, puts a row in every table, migrates it, and a backup made of it, and finds every row and table counter as it was, in every column the release had, the new columns at their defaults.
+  A test makes each released schema by running its steps alone, v1.6.0's, v1.7.0's, v1.8.0's, v1.9.0's, v1.10.1's, v1.12.0's, v1.14.0's and v1.15.0's, puts a row in every table, migrates it, and a backup made of it, and finds every row and table counter as it was, in every column the release had, the new columns at their defaults.
 - `instance.json` and `state.json` decode strictly, so every field a release wrote stays readable, and a change of meaning gets a new field rather than an old one's name. An older binary never meets a newer file, since downgrades are refused.
 - A backup from any release restores, and migrates as the service starts.
 - A change to one of these comes with a test that reads its released form.

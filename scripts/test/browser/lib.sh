@@ -5,7 +5,8 @@
 #
 #   m2a  alice, who hosts the den: page 18484, den 18485, media 17881/17882
 #   m2b  bob, a member: page 18486
-#   m2c  carol, a member when a check needs one: page 18487
+#   m2c  carol, a member when a check needs one: page 18487, on the last
+#        release's build in the groups check
 #   m2d  dave, a member when a check needs one: page 18489
 #   m2e  bob's laptop, his second device when a check needs one: page 18490
 #   m2f  alice's laptop, her second device when a check needs one: page 18491
@@ -45,12 +46,13 @@ stop() {
     rm -f "$1.pid"
 }
 
-# start INSTANCE [FLAGS...] starts an instance and waits for its page.
+# start INSTANCE [FLAGS...] starts an instance and waits for its page, on
+# the binary DENS names, this branch's unless set.
 start() {
     local name=$1 port
     shift
     port=$(sed -n 's/.*--port \([0-9]*\).*/\1/p' <<<"$*")
-    nohup ./dens-dev -i "$name" service run "$@" >"$name.log" 2>&1 &
+    nohup "${DENS:-./dens-dev}" -i "$name" service run "$@" >"$name.log" 2>&1 &
     echo $! >"$name.pid"
     for _ in $(seq 100); do
         curl -s -o /dev/null "http://127.0.0.1:$port/api/status" && return 0
@@ -66,7 +68,7 @@ start_den() { start m2a --port 18484 --den-port 18485 --media-udp-port 17881 --m
 # the local password.
 pair() {
     local url
-    url=$(./dens-dev -i "${INSTANCE[$1]}" open --print)
+    url=$("${DENS:-./dens-dev}" -i "${INSTANCE[$1]}" open --print)
     api "$1" POST /api/pair "{\"token\":\"${url#*#token=}\"}" >/dev/null
     api "$1" POST /api/password '{"password":"local password"}' >/dev/null
 }

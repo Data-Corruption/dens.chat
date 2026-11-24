@@ -38,6 +38,8 @@ var releasedSchema = []struct {
 	{"v1.12.0", 16, m23Tables},
 	// v1.13.0 added call records, and v1.14.0 nothing more.
 	{"v1.14.0", 17, m23Tables},
+	// v1.15.0 added the audit log.
+	{"v1.15.0", 18, nil},
 }
 
 // m16Tables are the tables v1.9.0's steps add: identities and records,
@@ -90,7 +92,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // v1.12.0 left, with a background and a name style, keeps them. Call
 // records adds each voice channel's longest call, which none has; a
 // database v1.14.0 left, with a record, keeps it. Audit log adds staff's
-// lines, which start empty, each by and about members alone.
+// lines, which start empty, each by and about members alone; a database
+// v1.15.0 left, with a line, keeps it. Group name signatures adds the
+// signature beside a group's name, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -338,6 +342,20 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 						t.Errorf("%s took %s", what, q)
 					}
 				}
+				// A group's name keeps no signature until a key carries one,
+				// and only a name takes one.
+				var signed int
+				if err := db.QueryRow(`SELECT count(*) FROM den_group_dms WHERE name_sig IS NOT NULL`).Scan(&signed); err != nil || signed != 0 {
+					t.Errorf("%s holds %d signed group names after the migration, %v", what, signed, err)
+				}
+				if released.version >= 9 {
+					if _, err := db.Exec(`UPDATE den_group_dms SET name_sig = x'7a' WHERE channel_id = 5`); err != nil {
+						t.Errorf("%s takes no name's signature after the migration: %v", what, err)
+					}
+					if _, err := db.Exec(`UPDATE den_group_dms SET name = NULL, name_kid = NULL WHERE channel_id = 5`); err == nil {
+						t.Errorf("%s keeps a signature with no name", what)
+					}
+				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
 					t.Errorf("%s has foreign keys %d after the migration, %v", what, on, err)
@@ -418,7 +436,8 @@ func dumpColumns(t *testing.T, db *sql.DB, table, columns string) string {
 // notes, an event of staff's with a member interested, its badge and a
 // hidden award, and the den's limit for members' events; from version 16,
 // v1.12.0's, the chat's background and a member's name style; and from
-// version 17, v1.14.0's, a voice channel's longest call.
+// version 17, v1.14.0's, a voice channel's longest call; and from version
+// 18, v1.15.0's, a line of the audit log.
 func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	t.Helper()
 	rows := []string{
@@ -519,6 +538,9 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	}
 	if version >= 17 {
 		rows = append(rows, `UPDATE den_channels SET call_record = 4000 WHERE id = 2`)
+	}
+	if version >= 18 {
+		rows = append(rows, `INSERT INTO den_audit (at, kind, done_by, member_id, details) VALUES (11, 'member.banned', 1, 2, x'a0')`)
 	}
 	for _, q := range rows {
 		if _, err := db.Exec(q); err != nil {

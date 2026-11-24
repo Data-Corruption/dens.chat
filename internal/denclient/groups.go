@@ -47,9 +47,31 @@ type groupState struct {
 	// Retry says the change that broke it was signed by an identity this
 	// Dens couldn't place: one a member had before they started over, which
 	// the record their other devices write may bring, and with it the
-	// group's changes are checked again from the start.
-	Retry bool `json:"retry,omitempty"`
+	// group's changes are checked again from the start, as Recheck says.
+	Retry   bool `json:"retry,omitempty"`
+	Recheck bool `json:"recheck,omitempty"`
+	// Name is the name the latest checked change that carries one gave, its
+	// making or a naming, nil for none; Named says one came since this
+	// member joined, which a member added since the last naming lacks, who
+	// reads the name a key carries. Names says the state keeps them, which
+	// one v1.15.0 kept doesn't, so its changes are checked again.
+	Name  *denproto.SealedName `json:"name,omitempty"`
+	Named bool                 `json:"named,omitempty"`
+	Names bool                 `json:"names,omitempty"`
 }
+
+// groupMark is the latest change of a group this Dens checked, which it
+// keeps for good, beside the kinds of channels, the group gone or not: a
+// den that shows the group from before it, as from before a removal, is
+// breaking the protocol.
+type groupMark struct {
+	N    int            `json:"n"`
+	Hash denproto.Bytes `json:"hash"`
+}
+
+// whyRolledBack is a group the den showed from before the latest change
+// this Dens checked.
+const whyRolledBack = "the den showed the group's changes from before those this Dens checked"
 
 // shownChange is a change the page shows, with its name as it came,
 // sealed, which opens once its key is here.
@@ -196,7 +218,8 @@ func (c *conn) signerLocked(channel int64, ch denproto.GroupChange) (ok, kept bo
 // member in, where this Dens knows nothing of the group yet, or the one
 // after the latest it checked. One already taken is passed over, and one
 // further on waits for those between, which syncing fetches. A change that
-// doesn't check marks the group broken. It reports whether the group
+// doesn't check marks the group broken, as does a group shown from before
+// the latest change this Dens checked. It reports whether the group
 // changed, and whether the identities kept did. The caller holds c.mu.
 func (c *conn) applyChangeLocked(channel string, ch denproto.GroupChange) (changed, kept bool) {
 	cid, err := denproto.ParseID(channel)
@@ -204,15 +227,39 @@ func (c *conn) applyChangeLocked(channel string, ch denproto.GroupChange) (chang
 		return false, false
 	}
 	g := c.groups[channel]
-	if g != nil && (g.Broken != "" || ch.N <= g.N) {
+	if g != nil && (g.Broken != "" || ch.N <= g.N || ch.N > g.N+1) {
 		return false, false
 	}
-	if g != nil && ch.N > g.N+1 {
-		return false, false
+	if mark, ok := c.marks[channel]; g == nil && ok && ch.N <= mark.N {
+		c.groups[channel] = &groupState{Broken: whyRolledBack, Names: true}
+		c.m.log.Warnf("A group DM's change %d comes before the latest this Dens checked, %d", ch.N, mark.N)
+		c.stateDirty = true
+		return true, false
 	}
+	g, kept = c.takeLocked(cid, g, ch)
+	c.groups[channel] = g
+	c.markLocked(channel, g)
+	// What a key may be used for depends on the members now, whose
+	// identities this Dens needs, since the group's keys are sealed to them.
+	clear(c.verdicts)
+	c.stateDirty = true
+	if g.Broken == "" && c.meetLocked(g.Members...) {
+		kept = true
+	}
+	return true, kept
+}
+
+// takeLocked checks a change against g, a group's state as this Dens
+// checked it, nil for the change that took this member in, and returns the
+// state after it, g itself where there is one: the change taken, or the
+// group marked broken where it doesn't check. It reports whether the
+// identities kept changed. The caller holds c.mu.
+func (c *conn) takeLocked(cid int64, g *groupState, ch denproto.GroupChange) (*groupState, bool) {
 	var next denproto.GroupState
+	var err error
 	if g == nil {
 		next, err = denproto.CheckStart(c.j.denID, cid, c.meLocked(), ch)
+		g = &groupState{Names: true}
 	} else {
 		prev := g.state()
 		next, err = denproto.CheckChange(c.j.denID, cid, &prev, ch)
@@ -222,10 +269,6 @@ func (c *conn) applyChangeLocked(channel string, ch denproto.GroupChange) (chang
 		signed, kept = c.signerLocked(cid, ch)
 	}
 	if err != nil || !signed {
-		if g == nil {
-			g = &groupState{}
-			c.groups[channel] = g
-		}
 		why := "a change to the group isn't one its members could make"
 		if err == nil {
 			why = "a change to the group isn't signed by the member it names"
@@ -233,29 +276,38 @@ func (c *conn) applyChangeLocked(channel string, ch denproto.GroupChange) (chang
 		}
 		g.Broken = why
 		c.m.log.Warnf("A group DM's change %d doesn't check: %s", ch.N, why)
-		c.stateDirty = true
-		return true, kept
-	}
-	if g == nil {
-		g = &groupState{}
-		c.groups[channel] = g
+		return g, kept
 	}
 	g.N, g.Hash, g.Members = next.N, next.Hash, slices.Clone(next.Members)
+	if ch.Kind == denproto.ChangeMade || ch.Kind == denproto.ChangeNamed {
+		g.Name, g.Named = ch.Name, true
+	}
 	shown := shownChange{PageChange: PageChange{N: ch.N, ID: ch.ID, At: ch.MadeAt, Kind: ch.Kind, By: ch.By, Subjects: slices.Clone(ch.Subjects)},
 		Sealed: ch.Name}
 	g.Changes = append(g.Changes, shown)
 	if len(g.Changes) > maxShownChanges {
 		g.Changes = slices.Clone(g.Changes[len(g.Changes)-maxShownChanges:])
 	}
-	// What a key may be used for depends on the members now.
-	clear(c.verdicts)
-	c.stateDirty = true
-	// The members the group's keys are sealed to are those this Dens needs
-	// the identities of.
-	if c.meetLocked(next.Members...) {
-		kept = true
+	return g, kept
+}
+
+// markLocked keeps a group's latest checked change where it's past the
+// mark. The caller holds c.mu.
+func (c *conn) markLocked(channel string, g *groupState) {
+	if mark := c.marks[channel]; g.N > mark.N {
+		c.marks[channel] = groupMark{N: g.N, Hash: slices.Clone(g.Hash)}
 	}
-	return true, kept
+}
+
+// markKeptLocked marks each group the cache kept at its latest checked
+// change, which a cache from before v1.16.0, keeping no marks, needs. The
+// caller holds c.mu.
+func (c *conn) markKeptLocked() {
+	for id, g := range c.groups {
+		if g.N > 0 {
+			c.markLocked(id, g)
+		}
+	}
 }
 
 // openNameLocked opens a group's name with the key it's sealed under, by
@@ -277,15 +329,42 @@ func (c *conn) openNameLocked(channel string, n denproto.SealedName) (string, bo
 	return "", false
 }
 
-// groupNameLocked is a group's name as the den holds it, opened, or ""
-// where it has none or this Dens can't open it. The caller holds c.mu.
+// groupNameLocked is a group's name, opened, as its latest checked naming
+// gave it, or for a member added since, as a key carries it, signed by the
+// identity the key names for its maker; "" where it has none, or this Dens
+// can't open it or hasn't checked it yet. The caller holds c.mu.
 func (c *conn) groupNameLocked(channel string) string {
-	ch := c.den.channels[channel]
-	if ch.SealedName == nil {
+	g := c.groups[channel]
+	if g == nil || !g.Names {
 		return ""
 	}
-	name, _ := c.openNameLocked(channel, *ch.SealedName)
+	n := g.Name
+	if !g.Named {
+		carried := c.den.channels[channel].SealedName
+		if carried == nil || !c.signedNameLocked(channel, *carried) {
+			return ""
+		}
+		n = carried
+	}
+	if n == nil {
+		return ""
+	}
+	name, _ := c.openNameLocked(channel, *n)
 	return name
+}
+
+// signedNameLocked reports whether a name a key carries is signed by the
+// identity that key, one this member holds, names for its maker. The
+// caller holds c.mu.
+func (c *conn) signedNameLocked(channel string, n denproto.SealedName) bool {
+	cid, _ := denproto.ParseID(channel)
+	for _, k := range c.den.signed {
+		if k.ChannelID == channel && bytes.Equal(k.KID, n.KID) {
+			// The key's own check holds its maker's keys to the identity kept.
+			return c.checkSignedLocked(k, false) == "" && denproto.VerifyGroupName(c.j.denID, cid, n, k.Maker.Sig)
+		}
+	}
+	return false
 }
 
 // groupTitleLocked is what a group is called where a line of text names
@@ -322,7 +401,7 @@ func (c *conn) pageGroupsLocked() map[string]PageGroup {
 		pg := PageGroup{Members: []string{}, Changes: []PageChange{}, Name: c.groupNameLocked(id)}
 		if g := c.groups[id]; g != nil {
 			pg.Members, pg.Broken = slices.Clone(g.Members), g.Broken
-			pg.Syncing = g.Broken == "" && g.N < ch.Changes
+			pg.Syncing = g.Broken == "" && (g.N < ch.Changes || g.Recheck || !g.Names)
 			for _, sc := range g.Changes {
 				pc := sc.PageChange
 				if sc.Sealed != nil {
@@ -354,19 +433,27 @@ func (c *conn) groupsChanged(ctx context.Context, kept bool) {
 	}
 }
 
-// retryGroupsLocked starts over the groups whose changes were signed by
-// identities this Dens couldn't place, as the record brings more of them,
-// and reports whether there were any. The caller holds c.mu.
+// retryGroupsLocked has the groups whose changes were signed by
+// identities this Dens couldn't place checked again from the start, as the
+// record brings more of them, and reports whether there were any. The
+// caller holds c.mu.
 func (c *conn) retryGroupsLocked() bool {
 	retried := false
-	for id, g := range c.groups {
-		if g.Retry {
-			delete(c.groups, id)
-			retried = true
+	for _, g := range c.groups {
+		if g.Retry && !g.Recheck {
+			g.Recheck, retried = true, true
 		}
+	}
+	if retried {
+		c.stateDirty = true
 	}
 	return retried
 }
+
+// recheck reports whether a group's changes are to be checked again from
+// the start: as the record may place a signer this Dens couldn't, or as its
+// state comes from before it kept names.
+func (g *groupState) recheck() bool { return g.Recheck || !g.Names && g.Broken == "" }
 
 // wakeGroups has idWork fetch the changes of groups this Dens hasn't
 // checked yet.
@@ -378,8 +465,8 @@ func (c *conn) wakeGroups() {
 }
 
 // staleGroupsLocked lists the groups whose changes the den holds more of
-// than this Dens checked, and forgets those this member isn't in any more.
-// The caller holds c.mu.
+// than this Dens checked, or that it checks again, and forgets those this
+// member isn't in any more, keeping their marks. The caller holds c.mu.
 func (c *conn) staleGroupsLocked() []string {
 	var out []string
 	if c.den == nil {
@@ -395,7 +482,7 @@ func (c *conn) staleGroupsLocked() []string {
 		if ch.Kind != denproto.KindGroupDM {
 			continue
 		}
-		if g := c.groups[id]; g == nil || g.Broken == "" && g.N < ch.Changes {
+		if g := c.groups[id]; g == nil || g.Broken == "" && g.N < ch.Changes || g.recheck() {
 			out = append(out, id)
 		}
 	}
@@ -411,7 +498,15 @@ func (c *conn) syncGroups(ctx context.Context) {
 	c.mu.Unlock()
 	changed, kept := false, false
 	for _, id := range stale {
-		ch, k, err := c.syncGroup(ctx, id)
+		c.mu.Lock()
+		g := c.groups[id]
+		recheck := g != nil && g.recheck()
+		c.mu.Unlock()
+		check := c.syncGroup
+		if recheck {
+			check = c.recheckGroup
+		}
+		ch, k, err := check(ctx, id)
 		changed, kept = changed || ch, kept || k
 		if err != nil && ctx.Err() == nil {
 			c.m.log.Warnf("fetch a group DM's changes: %v", logged(err))
@@ -447,10 +542,17 @@ func (c *conn) syncGroup(ctx context.Context, channel string) (changed, kept boo
 		// The den answers from the change that took this member in last: one
 		// past where this Dens stands means it holds an earlier membership,
 		// as one removed and added again while away would, which it starts
-		// over from.
+		// over from. One from before is the den showing the group as it was.
 		if g := c.groups[channel]; g != nil && after > 0 && len(page.Changes) > 0 && page.Changes[0].N != after+1 {
-			delete(c.groups, channel)
 			changed = true
+			if page.Changes[0].N <= after {
+				g.Broken = whyRolledBack
+				c.m.log.Warnf("A group DM's changes come from %d, before the latest this Dens checked, %d", page.Changes[0].N, after)
+				c.stateDirty = true
+				c.mu.Unlock()
+				return changed, kept, nil
+			}
+			delete(c.groups, channel)
 		}
 		for _, ch := range page.Changes {
 			if _, err := denproto.ParseID(ch.ID); err != nil {
@@ -466,6 +568,92 @@ func (c *conn) syncGroup(ctx context.Context, channel string) (changed, kept boo
 		}
 	}
 	return changed, kept, nil
+}
+
+// recheckGroup checks a group's changes again from the one that took this
+// member in, on the side, while the group stands as this Dens held it.
+// What they make takes its place only once they reach the latest change
+// this Dens checked, the same, or start past it; otherwise the den showed
+// the group from before it, and the group is broken.
+func (c *conn) recheckGroup(ctx context.Context, channel string) (changed, kept bool, err error) {
+	cid, err := denproto.ParseID(channel)
+	if err != nil {
+		return false, false, nil
+	}
+	var side *groupState
+	start, hashes := 0, map[int]denproto.Bytes{}
+	for range denproto.MaxGroupChanges/denproto.GroupChangesPage + 2 {
+		after := 0
+		if side != nil {
+			after = side.N
+		}
+		var page denproto.GroupChanges
+		if err := c.call(ctx, http.MethodGet, fmt.Sprintf("/api/group-dms/%s/changes?after=%d", channel, after), nil, &page); err != nil {
+			return changed, kept, err
+		}
+		if len(page.Changes) > denproto.GroupChangesPage {
+			return changed, kept, errMalformed
+		}
+		c.mu.Lock()
+		for _, ch := range page.Changes {
+			if _, err := denproto.ParseID(ch.ID); err != nil {
+				c.mu.Unlock()
+				return changed, kept, errMalformed
+			}
+			var k bool
+			side, k = c.takeLocked(cid, side, ch)
+			kept = kept || k
+			if side.Broken != "" {
+				break
+			}
+			hashes[side.N] = side.Hash
+			if start == 0 {
+				start = side.N
+			}
+		}
+		// A change made meanwhile moves the mark on, which its next page
+		// brings.
+		if side == nil || side.Broken != "" || len(page.Changes) == 0 || !page.More && side.N >= c.marks[channel].N {
+			changed = c.settleLocked(channel, side, start, hashes)
+			if g := c.groups[channel]; changed && g != nil && g.Broken == "" && c.meetLocked(g.Members...) {
+				kept = true
+			}
+			c.mu.Unlock()
+			return changed, kept, nil
+		}
+		c.mu.Unlock()
+	}
+	return changed, kept, errMalformed
+}
+
+// settleLocked puts what a group's changes made, checked again, in its
+// place where they reach the latest change this Dens checked, the same, or
+// start past it, and otherwise marks the group as it stood broken. It
+// reports whether the group changed. The caller holds c.mu.
+func (c *conn) settleLocked(channel string, side *groupState, start int, hashes map[int]denproto.Bytes) bool {
+	g := c.groups[channel]
+	if g == nil || c.den == nil || c.den.channels[channel].Kind != denproto.KindGroupDM {
+		return false
+	}
+	mark, marked := c.marks[channel]
+	reached := !marked || start > mark.N || side != nil && side.N >= mark.N && bytes.Equal(hashes[mark.N], mark.Hash)
+	switch {
+	case side == nil && !marked:
+		g.Recheck = false
+	case side != nil && reached:
+		side.Names, side.Recheck = true, false
+		c.groups[channel] = side
+		c.markLocked(channel, side)
+	default:
+		g.Recheck, g.Broken, g.Retry = false, whyRolledBack, false
+		if side != nil && side.Broken != "" && side.N < mark.N {
+			g.Broken, g.Retry = side.Broken, side.Retry
+		}
+		c.m.log.Warnf("A group DM's changes, checked again, don't reach the latest this Dens checked, %d", mark.N)
+	}
+	clear(c.verdicts)
+	c.stateDirty = true
+	return true
 }
 
 // groupLocked returns a group's state as this Dens checked it, for this
@@ -577,6 +765,7 @@ func (c *conn) groupKey(ctx context.Context, channel string, members []string) (
 	c.mu.Lock()
 	me := c.meLocked()
 	own := slices.Clone(c.ownHashLocked())
+	// Only the name this Dens checked goes on, never one it can't place.
 	name := c.groupNameLocked(channel)
 	c.mu.Unlock()
 	if own == nil {
@@ -614,10 +803,17 @@ func (c *conn) groupKey(ctx context.Context, channel string, members []string) (
 		return nil, err
 	}
 	// A name this Dens can't open stays as the den holds it, under the key
-	// it was sealed with.
+	// it was sealed with. One it carries, it signs, for a member added
+	// since its naming.
 	if name != "" {
 		sealed, err := denproto.SealGroupName(key, c.j.denID, cid, kid, name)
 		if err != nil {
+			return nil, err
+		}
+		if err := c.ownIdentity(func(ik *denproto.IdentityKeys) error {
+			sealed.Sig = ik.SignGroupName(c.j.denID, cid, sealed)
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 		req.Name = &sealed

@@ -144,10 +144,12 @@ type conn struct {
 	copies   map[string]denproto.Bytes
 	idDue    chan struct{}
 	// Group DMs, guarded by mu: each group as its changes, checked
-	// here, make it; groupDue wakes idWork to fetch those it's behind on.
+	// here, make it, and the latest change checked of every group it ever
+	// held; groupDue wakes idWork to fetch those it's behind on.
 	// speaking is the protocol's version the socket was opened at, which
 	// only the run goroutine touches.
 	groups   map[string]*groupState
+	marks    map[string]groupMark
 	groupDue chan struct{}
 	speaking int
 	// pulled says the member's record was read since the latest snapshot,
@@ -846,6 +848,16 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	var tallied string
 	// A group's key, with which its name may open.
 	groupKey := false
+	// Typing in a group from someone its checked changes don't hold shows
+	// nowhere, as they don't.
+	if err == nil && ok && e.T == denproto.EventTyping {
+		var t denproto.Typing
+		if json.Unmarshal(out.D, &t) == nil && c.den.channels[t.ChannelID].Kind == denproto.KindGroupDM {
+			if g := c.groups[t.ChannelID]; g == nil || g.Broken != "" || !slices.Contains(g.Members, t.MemberID) {
+				ok = false
+			}
+		}
+	}
 	if err == nil && ok && e.Seq != 0 {
 		c.stateDirty = true
 		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft {

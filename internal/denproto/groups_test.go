@@ -2,6 +2,7 @@ package denproto
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"slices"
 	"testing"
@@ -314,5 +315,141 @@ func TestGroupMessagesAndSets(t *testing.T) {
 	}
 	if _, err := OpenReactions(key, rad, set); err == nil {
 		t.Error("a group's set opened as a DM's")
+	}
+}
+
+// A group's message as v1.15.0 sealed it, at its first revision by its
+// author, alice, 1, and at its second by an editor, carol, 3, both with
+// no grant: each opens, signed by whom it names.
+const (
+	groupMessageV1150     = `KWebrGNF4pvuHhUuXSNByzIwVdAG9tQael1iTwyiWvmkTF2yAluDBNWPbWKQPtXcgoKVkr9cVK5NC3mfrkYp4fjhv-Y8MFTE5HztDcfe50jmvp3Yfb7sKmjMG70qu_jOfCANOq0LetpPKZkD7bzeRGxzwM-8Bc_u7qBHn8RehdQOHF2h0aIrb9__dhfjYzG6KKfCvzpi9iU41NzpaYWctYjEbyK3gfNo5Mfs0jSCugPRWdPF8exBkP-K4fbUCCUsrW3Gaum6rlm7mvHZ79gPMQpE`
+	groupMessageEditV1150 = `l1YYBimbex_k4D6-0iguf6zZS1T-lxzzs406LFNhgKVPpPBgXAk-feYymfbcSKuMXF6OBMIzJADcPGRkL-T8kwyit1dVIy7iWrkWLVIyweJSGN9BlZ_dWzk1uHi8eGGGVFH7Zd8HacnvrJXaIu7PMCuADMRAoIIn1NyWifn2uGdW4k00y2WMkTGih4FJlKs3u-h8ESmkqsptcMcO-0L4Hm4BhU1kCWdlsWDzdMqHcJX608cY8yNVE-JbFLaTVB-YUkGQw7qP58lmlEVjq5iPn2zJ`
+)
+
+func TestGroupMessageAsV1150SealedIt(t *testing.T) {
+	den := bytes.Repeat([]byte{0x0d}, IDSize)
+	alice, _ := DeriveIdentity(bytes.Repeat([]byte{0x01}, SealSize), den)
+	carol, _ := DeriveIdentity(bytes.Repeat([]byte{0x03}, SealSize), den)
+	defer alice.Close()
+	defer carol.Close()
+	named := func(signer int64) []byte {
+		switch signer {
+		case 1:
+			return alice.Public().Hash()
+		case 3:
+			return carol.Public().Hash()
+		}
+		return nil
+	}
+	key := bytes.Repeat([]byte{0x4b}, DMKeySize)
+	for i, c := range []struct {
+		sealed, text string
+		signer       int64
+	}{{groupMessageV1150, "[ ] snacks\n[ ] drinks", 1}, {groupMessageEditV1150, "[ ] snacks\n[x] drinks", 3}} {
+		sealed, err := base64.RawURLEncoding.DecodeString(c.sealed)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ad := MessageAD{DenID: den, Channel: 77, Author: 1, Nonce: bytes.Repeat([]byte{0x6e}, 16), KeyID: 88, Revision: i + 1}
+		p, signer, err := OpenGroupMessage(key, ad, named, sealed)
+		if err != nil || p.Text != c.text || p.Grant != nil || signer != c.signer {
+			t.Errorf("revision %d as v1.15.0 sealed it: %+v, signed by %d, %v", i+1, p, signer, err)
+		}
+	}
+}
+
+// A grant checks only by the author's identity, for the message, group
+// and den it was signed for, at no later revision than the message's, and
+// as it was signed.
+func TestEditGrants(t *testing.T) {
+	g := newGroupTest(t, "1", "2", "3")
+	alice := g.ids["1"]
+	nonce := bytes.Repeat([]byte{7}, NonceBytes)
+	grant, err := alice.SignGrant(g.den, g.channel, 1, nonce, 2, []string{"2"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := []Bytes{g.ids["3"].Public().Hash(), alice.Public().Hash()}
+	if !VerifyGrant(g.den, g.channel, 1, nonce, 2, grant, kept) || !VerifyGrant(g.den, g.channel, 1, nonce, 5, grant, kept) {
+		t.Fatal("alice's grant doesn't check")
+	}
+	other := bytes.Repeat([]byte{8}, IDSize)
+	moreEditors := grant
+	moreEditors.Editors = []string{"2", "3"}
+	later := grant
+	later.Revision = 3
+	for what, ok := range map[string]bool{
+		"under another author":           VerifyGrant(g.den, g.channel, 3, nonce, 2, grant, kept),
+		"on another message":             VerifyGrant(g.den, g.channel, 1, bytes.Repeat([]byte{6}, NonceBytes), 2, grant, kept),
+		"in another group":               VerifyGrant(g.den, g.channel+1, 1, nonce, 2, grant, kept),
+		"at another den":                 VerifyGrant(other, g.channel, 1, nonce, 2, grant, kept),
+		"by an identity never kept":      VerifyGrant(g.den, g.channel, 1, nonce, 2, grant, kept[:1]),
+		"at a revision after the latest": VerifyGrant(g.den, g.channel, 1, nonce, 1, grant, kept),
+		"naming another editor":          VerifyGrant(g.den, g.channel, 1, nonce, 2, moreEditors, kept),
+		"at another revision":            VerifyGrant(g.den, g.channel, 1, nonce, 5, later, kept),
+	} {
+		if ok {
+			t.Errorf("a grant checks %s", what)
+		}
+	}
+	// One carol signs, naming herself, for alice's message.
+	forged, err := g.ids["3"].SignGrant(g.den, g.channel, 1, nonce, 2, []string{"3"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if VerifyGrant(g.den, g.channel, 1, nonce, 2, forged, []Bytes{alice.Public().Hash()}) {
+		t.Error("carol's grant checks as alice's")
+	}
+	self, _ := alice.SignGrant(g.den, g.channel, 1, nonce, 2, []string{"1"})
+	if VerifyGrant(g.den, g.channel, 1, nonce, 2, self, kept) {
+		t.Error("a grant naming its author checks")
+	}
+	for _, bad := range [][]string{{"2", "2"}, {"x"}, {"2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}} {
+		if b, err := alice.SignGrant(g.den, g.channel, 1, nonce, 2, bad); err == nil && b.Check() == nil {
+			t.Errorf("a grant of %v checks", bad)
+		}
+	}
+	if err := CheckDMPayload(DMPayload{Text: "x", Grant: &EditGrant{Editors: []string{"2"}, Revision: 1}}); err == nil {
+		t.Error("a payload whose grant is unsigned checks")
+	}
+}
+
+// The name a key carries checks by its maker's signature, for the den,
+// the group, the key and the name it was signed for; a change carries
+// none, since its own signature covers its name.
+func TestGroupKeyNames(t *testing.T) {
+	g := newGroupTest(t, "1", "2", "3")
+	alice := g.ids["1"]
+	key, kid := Random(DMKeySize), Random(KIDSize)
+	n, err := SealGroupName(key, g.den, g.channel, kid, "Weekend")
+	if err != nil {
+		t.Fatal(err)
+	}
+	n.Sig = alice.SignGroupName(g.den, g.channel, n)
+	sig := alice.Public().Sig
+	if !VerifyGroupName(g.den, g.channel, n, sig) {
+		t.Fatal("alice's name doesn't check")
+	}
+	other, _ := SealGroupName(key, g.den, g.channel, kid, "Weekend")
+	other.Sig = n.Sig
+	moved := n
+	moved.KID = Random(KIDSize)
+	unsigned := n
+	unsigned.Sig = nil
+	for what, ok := range map[string]bool{
+		"another name":      VerifyGroupName(g.den, g.channel, other, sig),
+		"under another key": VerifyGroupName(g.den, g.channel, moved, sig),
+		"in another group":  VerifyGroupName(g.den, g.channel+1, n, sig),
+		"at another den":    VerifyGroupName(bytes.Repeat([]byte{8}, IDSize), g.channel, n, sig),
+		"by another":        VerifyGroupName(g.den, g.channel, n, g.ids["2"].Public().Sig),
+		"unsigned":          VerifyGroupName(g.den, g.channel, unsigned, sig),
+	} {
+		if ok {
+			t.Errorf("a key's name checks %s", what)
+		}
+	}
+	made := g.signed(GroupChange{N: 1, Prev: FirstPrev(), Kind: ChangeMade, By: "1", Subjects: []string{"2", "3"}, After: []string{"1", "2", "3"}, Name: &n}, "1")
+	if _, err := g.check(nil, made); err == nil {
+		t.Error("a change whose name carries a key's signature checks")
 	}
 }

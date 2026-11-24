@@ -27,6 +27,9 @@ const (
 	lockedLost      = "lost"      // the member started over since; their copy of the key is gone
 	lockedBroken    = "broken"    // it doesn't open: someone changed it
 	lockedKeys      = "keys"      // its key names identities other than those this Dens kept
+	// lockedAuthor is a group's message changed by someone its author
+	// didn't sign for, which waits for its author to keep or delete it.
+	lockedAuthor = "author"
 )
 
 var (
@@ -46,6 +49,17 @@ type PageMessage struct {
 	// DMReactions are a DM message's sets of reactions, opened, in place
 	// of the den's sealed ones.
 	DMReactions []PageReactionSet `json:"dm_reactions,omitempty"`
+	// Waiting is, on its author's devices alone, a group's message that
+	// waits for them (lockedAuthor): what it says, and who changed it.
+	Waiting *PageWaiting `json:"waiting,omitempty"`
+}
+
+// PageWaiting is a group's message changed by someone its author didn't
+// sign for, as its author's page shows it, for them to keep or delete.
+type PageWaiting struct {
+	By          string          `json:"by"`
+	Text        string          `json:"text"`
+	Attachments []denproto.File `json:"attachments"`
 }
 
 // PageReply previews the message another replies to, for the page.
@@ -131,8 +145,12 @@ func (c *conn) dmKeyLocked(channel, keyID string) ([]byte, string) {
 
 // openPayloadLocked opens a DM message's sealed text and files with the
 // key it names, and says who sealed it: in a DM its author, in a group
-// whoever its signature says, which must be a member its key
-// names, and its author at its first revision. The caller holds c.mu.
+// whoever its signature says, which must be a member its key names: its
+// author at its first revision, and after it, its author or a member they
+// signed for. The payload's grant is one that checks, in a group alone.
+// One another member changed with no grant waits for its author
+// (lockedAuthor), whose devices alone get what it says. The caller holds
+// c.mu.
 func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, revision int, sealed []byte) (denproto.DMPayload, string, string) {
 	key, locked := c.dmKeyLocked(channel, keyID)
 	if locked != "" {
@@ -154,6 +172,7 @@ func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, re
 		case err != nil:
 			return denproto.DMPayload{}, "", lockedBroken
 		}
+		p.Grant = nil
 		return p, author, ""
 	}
 	k, ok := c.den.signed[keyID]
@@ -168,7 +187,44 @@ func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, re
 	if err != nil || revision == 1 && signer != who {
 		return denproto.DMPayload{}, "", lockedBroken
 	}
-	return p, denproto.FormatID(signer), ""
+	if p.Grant != nil && !denproto.VerifyGrant(c.j.denID, ch, who, nonce, revision, *p.Grant, c.keptHashesLocked(author)) {
+		if signer != who {
+			return denproto.DMPayload{}, "", lockedBroken
+		}
+		p.Grant = nil
+	}
+	by := denproto.FormatID(signer)
+	switch {
+	case signer == who:
+	case p.Grant == nil:
+		// It can't be told from one whose grant was left out, so it opens as
+		// nobody's, but for its author to keep or delete.
+		if author != c.meLocked() {
+			return denproto.DMPayload{}, by, lockedAuthor
+		}
+		return p, by, lockedAuthor
+	case !slices.Contains(p.Grant.Editors, by):
+		return denproto.DMPayload{}, "", lockedBroken
+	}
+	return p, by, ""
+}
+
+// keptHashesLocked lists the identities this Dens kept for a member, by
+// their hashes, the current one and those before: for this member, their
+// own. The caller holds c.mu.
+func (c *conn) keptHashesLocked(member string) []denproto.Bytes {
+	if member == c.meLocked() {
+		own := c.ownHashLocked()
+		if own == nil {
+			return slices.Clone(c.ids.Record.Own)
+		}
+		return append([]denproto.Bytes{own}, c.ids.Record.Own...)
+	}
+	k := c.ids.Record.Members[member]
+	if k == nil {
+		return nil
+	}
+	return append([]denproto.Bytes{k.Hash}, k.Past...)
 }
 
 // openLocked opens a DM message for the page; other messages pass as they
@@ -179,7 +235,10 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 		reply = &PageReply{AuthorID: r.AuthorID, Text: r.Text}
 		if r.Sealed != nil {
 			p, _, locked := c.openPayloadLocked(m.ChannelID, r.AuthorID, r.KeyID, r.Nonce, r.Revision, r.Sealed)
-			reply.Text, reply.Locked = denproto.Excerpt(p.Text), locked != ""
+			reply.Text, reply.Locked = "", locked != ""
+			if locked == "" {
+				reply.Text = denproto.Excerpt(p.Text)
+			}
 		}
 	}
 	out := m
@@ -200,29 +259,47 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	sets := c.openSetsLocked(m)
 	out.Sealed, out.DMReactions = nil, nil
 	p, signer, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
-	// A group's message changed by someone the den doesn't say may edit it
-	// isn't shown as its author's.
-	if locked == "" && signer != m.AuthorID && signer != m.EditedBy && !slices.Contains(m.Editors, signer) {
-		locked = lockedBroken
+	// In a group, who may edit and who did are what its author signed for
+	// and who signed, never the den's word.
+	if c.den.channels[m.ChannelID].Kind == denproto.KindGroupDM {
+		out.Editors, out.EditedBy = nil, ""
+		if p.Grant != nil && locked == "" {
+			out.Editors = slices.Clone(p.Grant.Editors)
+		}
+		if signer != m.AuthorID {
+			out.EditedBy = signer
+		}
 	}
 	if locked != "" {
-		return PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
+		pm := PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
+		if locked == lockedAuthor && m.AuthorID == c.meLocked() {
+			pm.Waiting = &PageWaiting{By: signer, Text: p.Text, Attachments: c.dmFilesLocked(m, p)}
+		}
+		return pm
 	}
 	out.Text = p.Text
+	out.Attachments = append(out.Attachments, c.dmFilesLocked(m, p)...)
+	return PageMessage{Message: out, Reply: reply, DMReactions: sets}
+}
+
+// dmFilesLocked lists a DM message's files for the page, keeping their
+// keys for when the page asks for them. The caller holds c.mu.
+func (c *conn) dmFilesLocked(m denproto.Message, p denproto.DMPayload) []denproto.File {
 	channel, _ := denproto.ParseID(m.ChannelID)
 	message, _ := denproto.ParseID(m.ID)
+	out := []denproto.File{}
 	for _, f := range p.Files {
 		df := dmFile{channel: channel, key: f.Key, message: message}
 		if f.Thumb != nil {
 			df.thumb = f.Thumb.ID
 		}
-		out.Attachments = append(out.Attachments, dmUploaded(f).File)
+		out = append(out, dmUploaded(f).File)
 		if len(c.dmFiles) >= maxDMFiles {
 			clear(c.dmFiles)
 		}
 		c.dmFiles[f.ID] = df
 	}
-	return PageMessage{Message: out, Reply: reply, DMReactions: sets}
+	return out
 }
 
 // open opens a DM message for the page.

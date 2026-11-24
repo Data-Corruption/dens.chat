@@ -1,12 +1,15 @@
 // The groups check, of group DMs: alice, who owns the den, in Chromium, and
-// bob in the browser named; carol and dave through their pages' API. Alice
-// makes a group of bob, carol and herself from the DM tab's +,
-// naming it, and each change shows in it as a line: bob writes and sends a
-// photo, which alice reads, and carol, through her Dens; bob adds dave from
-// the group's members, who reads from his joining on; bob renames it, which
-// reaches the den only sealed; alice, who made it, removes bob, whose page
-// loses it and reads nothing written after; carol leaves through her Dens,
-// and alice from the group's members.
+// bob in the browser named; carol, on the last release's Dens, and dave
+// through their pages' API. Alice makes a group of bob, carol and herself
+// from the DM tab's +, naming it, and each change shows in it as a line:
+// bob writes and sends a photo, which alice reads, and carol, through her
+// Dens; bob renames it, which reaches the den only sealed; bob adds dave
+// from the group's members, who reads from his joining on, and the name
+// bob's key carries; alice lets bob edit a list, whose tick on his page and
+// edit dave reads; carol ticks a list alice let her edit, as her older Dens
+// seals it, which waits on bob's page until alice keeps it on hers; alice,
+// who made it, removes bob, whose page loses it and reads nothing written
+// after; carol leaves through her Dens, and alice from the group's members.
 //
 //   run.sh groups chromium|firefox
 import { execFileSync } from 'node:child_process';
@@ -113,6 +116,20 @@ try {
     report(await waitFor(() => A.b.eval(`[...document.querySelectorAll('img')].some((i) => i.naturalWidth > 0 && i.src.includes('/files/${photo}/'))`),
         "bob's photo on alice's page").then(() => true, () => false), "alice's page shows the photo bob sent, its preview opened for the group");
 
+    step('bob renames the group');
+    await openPanel(B);
+    await B.b.eval(`${button(PANEL + '.parentElement.parentElement', 'Rename')}.click(), true`);
+    await waitFor(() => B.b.eval(`!!${dialog('Rename the group')}`), 'the Rename dialog');
+    await B.b.eval(setValue(`${dialog('Rename the group')}.querySelector('input')`, 'Long weekend'));
+    await B.b.eval(`${button(dialog('Rename the group'), 'Save')}.click(), true`);
+    report(await waitFor(async () => (await A.b.eval(`${HEADER}?.textContent || ''`)) === 'Long weekend', "the new name on alice's page").then(() => true, () => false),
+        "alice's page shows the group's new name");
+    report(await lineShown(A, 'Bob named the group “Long weekend”.'), "alice's page shows bob renaming it");
+    // The name reaches the den only sealed: its database holds neither name.
+    const data = `${HOME}/.local/share/dens-dev/m2a`;
+    const plain = execFileSync('bash', ['-c', `grep -rlaE 'Long weekend|Weekend' "${data}" --include='*.db*' --include='dens*' 2>/dev/null || true`]).toString().trim();
+    report(plain === '', `the den's database holds the group's name only sealed${plain ? `: found in ${plain}` : ''}`);
+
     step('bob adds dave from the group\'s members');
     await openPanel(B);
     await B.b.eval(`${button(PANEL + '.parentElement', 'Add people')}.click(), true`);
@@ -123,6 +140,8 @@ try {
     report(await waitFor(() => (state('dave').group_dms?.[g]?.members || []).includes(daveID), "the group in dave's Dens").then(() => true, () => false),
         "dave's Dens knows the group, him in it, from bob's signed add");
     report(!history('dave', g).some((m) => m.text === 'hello group'), 'dave reads nothing from before he joined');
+    report(await waitFor(() => state('dave').group_dms?.[g]?.name === 'Long weekend', "the group's name in dave's Dens").then(() => true, () => false),
+        "dave's Dens names the group as bob's key carries the name, signed by bob, though he joined after the rename");
     api('carol', 'POST', `/api/dens/${den}/channels/${g}/messages`, { nonce: nonce(), text: 'welcome, dave' });
     report(await waitFor(() => history('dave', g).some((m) => m.text === 'welcome, dave' && !m.locked), "carol's message in dave's Dens").then(() => true, () => false),
         'dave reads what carol wrote after he joined');
@@ -143,18 +162,36 @@ try {
     report(carolItems === 'Compare codes', `carol's ⋯ on bob's page compares codes, and removes nobody: ${q(carolItems)}`);
     await B.b.eval(`document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })), true`);
 
-    step('bob renames the group');
-    await B.b.eval(`${button(PANEL + '.parentElement.parentElement', 'Rename')}.click(), true`);
-    await waitFor(() => B.b.eval(`!!${dialog('Rename the group')}`), 'the Rename dialog');
-    await B.b.eval(setValue(`${dialog('Rename the group')}.querySelector('input')`, 'Long weekend'));
-    await B.b.eval(`${button(dialog('Rename the group'), 'Save')}.click(), true`);
-    report(await waitFor(async () => (await A.b.eval(`${HEADER}?.textContent || ''`)) === 'Long weekend', "the new name on alice's page").then(() => true, () => false),
-        "alice's page shows the group's new name");
-    report(await lineShown(A, 'Bob named the group “Long weekend”.'), "alice's page shows bob renaming it");
-    // The name reaches the den only sealed: its database holds neither name.
-    const data = `${HOME}/.local/share/dens-dev/m2a`;
-    const plain = execFileSync('bash', ['-c', `grep -rlaE 'Long weekend|Weekend' "${data}" --include='*.db*' --include='dens*' 2>/dev/null || true`]).toString().trim();
-    report(plain === '', `the den's database holds the group's name only sealed${plain ? `: found in ${plain}` : ''}`);
+    step("alice lets bob edit a list, whose tick on his page and edit dave reads");
+    const list = JSON.parse(api('alice', 'POST', `/api/dens/${den}/channels/${g}/messages`, { nonce: nonce(), text: '[ ] snacks\n[ ] drinks', editors: [bobID] }));
+    const listBox = `document.querySelector('[data-id=${q(list.id)}] input[type=checkbox][aria-label="snacks"]')`;
+    await waitFor(() => B.b.eval(`!!${listBox} && !${listBox}.disabled`), "the list's boxes on bob's page");
+    await B.b.eval(`${listBox}.click(), true`);
+    const reads = (text) => waitFor(() => history('dave', g).some((m) => m.id === list.id && m.text === text && !m.locked && (m.editors || []).join() === bobID),
+        `${q(text)} in dave's Dens`).then(() => true, () => false);
+    report(await reads('[x] snacks\n[ ] drinks'), "dave's Dens reads bob's tick as alice's list, bob named to edit it by her signature");
+    api('bob', 'PATCH', `/api/dens/${den}/messages/${list.id}?channel=${g}`, { revision: 2, text: '[x] snacks\n[ ] drinks\n[ ] ice' });
+    report(await reads('[x] snacks\n[ ] drinks\n[ ] ice'), "dave's Dens reads bob's edit after his tick");
+    report(await waitFor(() => A.b.eval(`!!document.querySelector('[data-id=${q(list.id)}] input[type=checkbox][aria-label="ice"]')`), "bob's edit on alice's page")
+        .then(() => true, () => false), "alice's page shows bob's edit");
+
+    step("carol, on the last release, ticks a list alice let her edit, which waits for alice's Keep");
+    const shared = JSON.parse(api('alice', 'POST', `/api/dens/${den}/channels/${g}/messages`, { nonce: nonce(), text: '[ ] cake\n[ ] candles', editors: [carolID] }));
+    const sharedRow = `document.querySelector('[data-id=${q(shared.id)}]')`;
+    await waitFor(() => history('carol', g).some((m) => m.id === shared.id && !m.locked), "alice's list in carol's Dens");
+    api('carol', 'POST', `/api/dens/${den}/messages/${shared.id}/tasks/1?channel=${g}`, { checked: true, text: 'candles' });
+    report(await waitFor(() => B.b.eval(`${sharedRow}?.textContent.includes('waits for them')`), "carol's tick on bob's page").then(() => true, () => false),
+        "bob's page shows carol's tick as waiting for alice, saying nothing of it");
+    report(history('dave', g).some((m) => m.id === shared.id && m.locked === 'author' && m.text === ''), "dave's Dens holds carol's tick as waiting, unopened");
+    const waiting = `${sharedRow}?.querySelector('[data-waiting]')`;
+    const said = await waitFor(() => A.b.eval(`${waiting}?.textContent || ''`), "carol's tick on alice's page").catch(() => '');
+    report(said.includes('@carol changed this') && said.includes('candles'), `alice's page shows who changed her list, and how it reads: ${q(said)}`);
+    await A.b.shot(`${HOME}/shot-groups-waiting-alice-${which}.png`);
+    await A.b.eval(`${button(sharedRow + ".querySelector('[data-waiting]')", 'Keep')}.click(), true`);
+    report(await waitFor(() => B.b.eval(`!!${sharedRow}?.querySelector('input[type=checkbox][aria-label="candles"]')?.checked`), "the kept list on bob's page")
+        .then(() => true, () => false), "bob's page reads the list alice kept, candles ticked");
+    report(await waitFor(() => history('dave', g).some((m) => m.id === shared.id && !m.locked && m.text === '[ ] cake\n[x] candles' && !(m.editors || []).length),
+        "the kept list in dave's Dens").then(() => true, () => false), "dave's Dens reads it as alice's, with nobody else to edit it");
 
     step('alice, who made the group, removes bob');
     await openPanel(A);
