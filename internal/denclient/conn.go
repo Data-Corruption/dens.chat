@@ -115,6 +115,10 @@ type conn struct {
 	owners    map[string]fileOwner
 	readySync *pendingSync
 	syncDue   chan struct{}
+	// saving orders the saves of the den's state, which the worker makes
+	// and a snapshot that drops the cache does, so an earlier one can't
+	// land over a later.
+	saving sync.Mutex
 	// The den's emoji: one fill of the cache with their files at a
 	// time, and the worker's wake for one.
 	fillMu  sync.Mutex

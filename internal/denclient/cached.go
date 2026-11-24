@@ -272,6 +272,7 @@ func (c *conn) cacheReady(r denproto.Ready) {
 			c.m.log.Infof("A den can't say what changed since the client last synced, so its cache starts again")
 		}
 		c.cacheErr(cs.DropDen(den))
+		c.keepAgain()
 		c.cacheErr(cs.SetSynced(den, cache.Synced{Epoch: s.Epoch, Version: s.Version}))
 		p.fresh = true
 	}
@@ -469,7 +470,9 @@ func (c *conn) applyChanges(ctx context.Context, synced cache.Synced) error {
 			// Pruned since the last snapshot: what the cache holds goes,
 			// and the next snapshot says where to start.
 			c.m.log.Infof("A den no longer has the changes since the client last synced, so its cache starts again")
-			return cs.DropDen(den)
+			err := cs.DropDen(den)
+			c.keepAgain()
+			return err
 		}
 		if err != nil {
 			return err
@@ -563,6 +566,8 @@ func (c *conn) saveKept() {
 	if !c.cached() {
 		return
 	}
+	c.saving.Lock()
+	defer c.saving.Unlock()
 	c.mu.Lock()
 	if c.den == nil || (!c.stateDirty && !c.membersDirty) {
 		c.mu.Unlock()
@@ -588,6 +593,18 @@ func (c *conn) saveKept() {
 		}
 	}
 	c.cacheErr(err)
+}
+
+// keepAgain keeps the den's state in a cache that just dropped it, at
+// once. The state holds what this Dens keeps for good, the kinds of its
+// channels and the latest change it checked of each group, and the den can
+// have the cache dropped when it likes, so they don't wait in memory for
+// the state's next change.
+func (c *conn) keepAgain() {
+	c.mu.Lock()
+	c.stateDirty, c.membersDirty = true, true
+	c.mu.Unlock()
+	c.saveKept()
 }
 
 // restoreKept gives the connection the den's state as the cache kept it,

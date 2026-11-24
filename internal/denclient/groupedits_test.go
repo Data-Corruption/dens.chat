@@ -475,6 +475,64 @@ func TestGroupRolledBack(t *testing.T) {
 	}
 }
 
+// What a Dens keeps for good outlasts its cache. A den that says its
+// changes are gone has the cache start again, and the state goes back in
+// at once, so a Dens that stops before anything else changes still holds
+// the den to the latest change it checked of a group: one it was dropped
+// from, and listed in again from its start with a removal hidden, is
+// broken.
+func TestGroupMarkOutlastsItsCache(t *testing.T) {
+	h, ms, ids, denID := groupDen(t)
+	alice := ms[0]
+	ctx := context.Background()
+	s := newCachedStore(t)
+	erin, stop := cachedGroupMember(t, h, alice, denID, s, "erin", ids)
+	eid := me(t, erin, denID).ID
+	members := []string{ids[0], eid, ids[2], ids[3]}
+	g, err := alice.MakeGroup(ctx, denID, members[1:], "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	groupOf(t, erin, denID, g, members)
+	if err := alice.RemoveFromGroup(ctx, denID, g, ids[3]); err != nil {
+		t.Fatal(err)
+	}
+	groupOf(t, erin, denID, g, members[:3])
+	exec := func(q string, args ...any) {
+		t.Helper()
+		if _, err := h.s.db.Exec(q, args...); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	cid, _ := denproto.ParseID(g)
+	// The den drops the group from erin's list, which her Dens forgets but
+	// for its latest change, then says its changes are gone, at a sync a
+	// day brings.
+	exec(`DELETE FROM den_group_members WHERE channel_id = ? AND member_id = ?`, cid, eid)
+	h.restart()
+	viewOf(t, erin, denID, "the group dropped", func(v denclient.View) bool { _, ok := v.GroupDMs[g]; return !ok })
+	exec(`UPDATE den SET changes_floor = changes_floor + 1000000 WHERE id = 1`)
+	if err := denclient.SyncCacheAgain(erin, denID); err != nil {
+		t.Fatal(err)
+	}
+	// While her Dens is away, it lists the group again from her start, the
+	// removal hidden.
+	stop()
+	exec(`PRAGMA foreign_keys = OFF`)
+	exec(`DELETE FROM den_group_changes WHERE channel_id = ? AND n = 2`, cid)
+	exec(`INSERT INTO den_group_members (channel_id, member_id, position, joined, since) VALUES (?, ?, 1, 1, 0)`, cid, eid)
+	h.restart()
+	erin, stop = restartMember(t, h, s, stop)
+	defer stop()
+	got := viewOf(t, erin, denID, "the group listed again", func(v denclient.View) bool {
+		gr, ok := v.GroupDMs[g]
+		return ok && !gr.Syncing && (gr.Broken != "" || len(gr.Members) > 0)
+	}).GroupDMs[g]
+	if got.Broken == "" || slices.Contains(got.Members, ids[3]) {
+		t.Errorf("listed again once the den had erin's cache start again, the group isn't broken, or dave, removed, is in it: %+v", got)
+	}
+}
+
 // cachedGroupMember joins a member whose install keeps a cache, and waits
 // until their Dens and the others' hold each other's identities.
 func cachedGroupMember(t *testing.T, h *denHost, owner *denclient.Manager, denID string, s store, name string, others []string) (*denclient.Manager, func()) {
