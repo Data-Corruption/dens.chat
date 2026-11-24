@@ -159,6 +159,13 @@ Before the first release an audit checked every item here against the code (2026
 - [x] Only staff's @everyone mentions everyone, and only while staff put it there; nobody new takes the username `everyone`.
 - [x] Nothing about a poll is logged but IDs: who ended which early.
 
+### Forwarding
+
+- [x] A forward carries nothing of where it came from, to the den or in the seal: its sender's Dens sends the text and uploads each file again as the member's own, stripped again, and sealed anew under a key of its own where the place is sealed, with no author, channel, den, reply or link.
+- [x] A sealed place's mark goes inside the seal, so the den isn't told a message was forwarded: the den refuses one outside the seal there, and a client takes none the den set on a sealed message. What's sealed isn't padded, so a file's sealed size and the text's, and when they came, can still match a message the den holds.
+- [x] The place's limits hold before anything goes: a place the sender's Dens doesn't hold as a text channel or a sealed place, whose files would go up unsealed, a sealed one with no key to send under, as a DM that holds, a file over its den's size, sealed where the place is, or past the member's space or the den's, sends nothing, and an upload made before a later failure is dropped.
+- [x] A forward is its sender's to delete, not to edit, tick or share, at the den and in the sender's Dens, and carries no grant, so in a group it opens as its sender's. Its sender takes a file off it, and puts none on it or in another's place. An older Dens of the sender's can still edit a sealed one, which drops the mark.
+
 ## Sync
 
 ### The client's cache
@@ -207,6 +214,7 @@ Before the first release an audit checked every item here against the code (2026
 - [x] In a DM or a group a file's mark goes inside the seal, beside its name, so the den never learns which are spoilers: the den refuses one outside the seal there, and a client one the den set on a sealed file.
 - [x] In a channel the den keeps the mark on the file, which an edit can't take off, and a file swapped into a spoiler's place is one too.
 - [x] A spoiler shows covered, whatever its kind, naming nothing of the file, its name among it: a photo or a video as its preview blurred, nothing of a video playing before it's shown, and any other file as a card. The viewer leaves it out while it's covered, and a link in a spoiler draws no event's card.
+- [x] A covered text spoiler covers what's in it, links, mentions and chips too, whose own colors would show through, and holds it inert, so a link in it takes no focus and shows no address on hover, and an event's chip asks for nothing until it's shown.
 
 ### Media
 

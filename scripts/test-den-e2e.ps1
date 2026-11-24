@@ -1095,9 +1095,16 @@ den.test:$HttpsPort {
     foreach ($t in $ticks) {
         if (-not $t.Result.IsSuccessStatusCode) { Fail "a tick failed with $([int]$t.Result.StatusCode)" }
     }
-    $page = Invoke-Api $member GET "/api/dens/$denID/channels/$channel/messages?limit=10"
-    $got = (@($page.messages) | Where-Object { $_.id -eq $list.id }).text
+    # The member's page reads from its cache, which the den's events fill,
+    # and the last tick's can still be on its way.
     $want = (0..5 | ForEach-Object { "[x] item $_" }) -join "`n"
+    $got = ""
+    $deadline = (Get-Date).AddSeconds(10)
+    while ($got -ne $want -and (Get-Date) -lt $deadline) {
+        $page = Invoke-Api $member GET "/api/dens/$denID/channels/$channel/messages?limit=10"
+        $got = (@($page.messages) | Where-Object { $_.id -eq $list.id }).text
+        if ($got -ne $want) { Start-Sleep -Milliseconds 250 }
+    }
     if ($got -ne $want) { Fail "the checklist reads: $got" }
     Write-Host "Every tick from both members stayed."
 

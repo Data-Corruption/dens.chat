@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # The messages check's dens. Alice's install hosts hers: general, where bob
-# and alice have written, a link of alice's among it, a message of
-# bob's deleted since, and bob's links to messages, one at an address the
-# den left and one to a den bob hasn't joined at the den's address;
-# random, with a message of alice's; and staff, a staff-only channel bob
-# can't see, with another.
+# and alice have written, a link of alice's among it, a message of bob's
+# deleted since, alice's photo, and bob's links to messages, one at an
+# address the den left and one to a den bob hasn't joined at the den's
+# address; random, with a message of alice's and a spoiler of hers over a
+# link, a mention, a channel's chip and an event's; staff, a staff-only
+# channel bob can't see, with another; and a DM between bob and alice.
 # Carol's install hosts Second Den, which bob joins too, with a link in
 # its lobby to a message in alice's.
 # shellcheck source=scripts/test/browser/lib.sh
@@ -25,8 +26,11 @@ bob2=$(send bob "$general" "Bob's second")
 gone=$(send bob "$general" "Bob's mistake")
 api bob DELETE "/api/dens/$DEN/messages/$gone" >/dev/null
 rnd=$(send alice "$random" "In random")
+send alice "$random" "Covered ||see https://example.com/hidden and @bob in $DEN_URL/#c/$DEN/$general at $DEN_URL/#e/$DEN/999 soon||" >/dev/null
 stf=$(send alice "$staff" "Staff only")
 send bob "$general" "Bob's third" >/dev/null
+send alice "$general" "Alice's photo" "$(upload alice photo.jpg beach.jpg)" >/dev/null
+dm=$(open_dm bob alice)
 # A den's ID, of no den bob joined.
 other=NotAJoinedDenNotAJoinedDenNotAJoinedDen0000
 send bob "$general" "here $DEN_URL/#m/$DEN/$general/$bob1 there $DEN_URL/#m/$DEN/$random/$rnd staff $DEN_URL/#m/$DEN/$staff/$stf gone $DEN_URL/#m/$DEN/$general/$gone away http://127.0.0.1:18499/#m/$other/1/2 moved http://old.example/#m/$DEN/$general/$bob1 taken $DEN_URL/#m/$other/$general/$bob1" >/dev/null
@@ -53,4 +57,4 @@ echo "RANDOM_CHANNEL=$random"
 echo "LOBBY=$lobby"
 echo "BOB_FIRST=$bob1"
 echo "BOB_SECOND=$bob2"
-echo "RND=$rnd"
+echo "DM=$dm"

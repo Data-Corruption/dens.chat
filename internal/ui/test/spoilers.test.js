@@ -1,15 +1,31 @@
 // Spoilers, checked without a browser: which files waiting to go
 // may go as one, a spoiler's photo covered until it's clicked, with
-// nothing of it named, and the viewer leaving out those still covered.
+// nothing of it named, the viewer leaving out those still covered, and a
+// text spoiler holding its links out of reach until it's shown.
 
 import './dom.js';
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { Attachments, covers } from '../src/chat/files.jsx';
+import { Markdown, Preview } from '../src/chat/markdown.jsx';
+import { LinkContext } from '../src/chat/msglinks.jsx';
 import { spoilable, viewed } from '../src/chat/messages.jsx';
 
-globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
+globalThis.window = {
+    matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }),
+    addEventListener() {},
+    location: { protocol: 'http:', host: 'localhost:8484' },
+};
+// An event's chip, once shown, listens on the page's event stream.
+globalThis.document.addEventListener = () => {};
+globalThis.WebSocket = class {
+    static OPEN = 1;
+    readyState = 1;
+    addEventListener() {}
+    send() {}
+    close() {}
+};
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 5));
 
@@ -87,4 +103,40 @@ test("the viewer shows a message's images but the spoilers still covered", () =>
     assert.deepEqual(viewed(m, m.attachments[1], new Set(['a'])), { message: '5', files: [m.attachments[1]], index: 0 });
     assert.deepEqual(viewed(m, m.attachments[0]).files.map((f) => f.id), ['a', 'c']);
     assert.equal(viewed(m, m.attachments[0], new Set(['a'])), null);
+});
+
+test("a covered text spoiler holds what's in it out of reach, and its event's chip asks for nothing until it's shown", async () => {
+    const asked = [];
+    globalThis.fetch = async (path) => {
+        asked.push(path);
+        return { ok: false, status: 404, headers: { get: () => null }, text: async () => JSON.stringify({ error: 'gone' }) };
+    };
+    const den = 'TqFAWIFQdzzjqs54au739ASc4QD6ZJyU-73blg8dqUI';
+    const links = { denID: den, view: { me: { id: '1' }, channels: [], events: [] }, dens: [{ den_id: den, name: 'Home', url: 'https://den.example.com' }] };
+    const root = document.createElement('div');
+    // Effects run about 100 ms after a render, here.
+    const effects = () => new Promise((resolve) => setTimeout(resolve, 150));
+    mount(h(LinkContext.Provider, { value: links }, h(Markdown, { text: `||see https://example.com/x at https://den.example.com/#e/${den}/12||` })), root);
+    await effects();
+    const cover = find(root, (n) => n.attributes.role === 'button');
+    const chip = () => find(root, (n) => 'data-event-link' in n.attributes);
+    assert.ok(find(cover, (n) => n !== cover && n.attributes.inert !== undefined), 'what it covers takes no focus or pointer');
+    assert.equal(chip(), null, 'no chip while covered');
+    assert.deepEqual(asked, [], 'nothing asked for');
+
+    cover.dispatch('click');
+    await effects();
+    assert.equal(find(cover, (n) => n !== cover && n.attributes.inert !== undefined), null, 'shown, it takes them');
+    assert.ok(chip(), 'and the chip shows');
+    assert.deepEqual(asked, [`/api/dens/${den}/events/12`]);
+    mount(null, root);
+});
+
+test("a reply's quote covers a spoiler's link as its text", () => {
+    const root = document.createElement('div');
+    mount(h(Preview, { text: 'see ||https://example.com/x||' }), root);
+    const cover = find(root, (n) => /\bbg-base-300\b/.test(n.attributes.class || ''));
+    assert.ok(cover && find(cover, (n) => n.textContent === 'https://example.com/x'), 'the link is in the cover');
+    assert.match(cover.attributes.class, /\[&_\*\]:text-transparent/, "its own color doesn't show through");
+    mount(null, root);
 });

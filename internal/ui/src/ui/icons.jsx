@@ -216,6 +216,7 @@ export function CalendarIcon({ size = 'h-3.5 w-3.5' }) {
 // tests read. Each is paths in ICON's style.
 export const MENU_ICONS = {
     reply: 'M6.25 4 2.75 7.5 6.25 11M2.75 7.5h6.5a4.25 4.25 0 0 1 4.25 4.25v1',
+    forward: 'M9.75 4l3.5 3.5-3.5 3.5M13.25 7.5h-6.5a4.25 4.25 0 0 0-4.25 4.25v1',
     react: 'M14.5 8A6.5 6.5 0 1 1 8 1.5M5.25 9.6a3.25 3.25 0 0 0 5.5 0M12.5 1.5v4M10.5 3.5h4',
     unreact: 'M14.5 8A6.5 6.5 0 1 1 8 1.5M5.25 9.6a3.25 3.25 0 0 0 5.5 0M10.5 3.5h4',
     edit: 'M10.75 2.25l3 3-8.25 8.25H2.5v-3zM9.25 3.75l3 3',

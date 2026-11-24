@@ -67,6 +67,8 @@ func (m *Manager) Files(ctx context.Context, denID, after string) (FilesPage, er
 			if previews[f.ID] {
 				continue // it goes with its file
 			}
+			// A sealed message's mark is its seal's alone.
+			pf.Forwarded = false
 			pm, ok := opened[f.MessageID]
 			switch {
 			case !ok:
@@ -79,7 +81,7 @@ func (m *Manager) Files(ctx context.Context, denID, after string) (FilesPage, er
 					pf.Locked = lockedBroken
 					break
 				}
-				pf.File, pf.Excerpt = pm.Attachments[i], denproto.Excerpt(pm.Text)
+				pf.File, pf.Excerpt, pf.Forwarded = pm.Attachments[i], denproto.Excerpt(pm.Text), pm.Forwarded
 			}
 		}
 		out.Files = append(out.Files, pf)
@@ -216,6 +218,9 @@ func (c *conn) changeDMFile(ctx context.Context, channelID, messageID, fileID st
 		i := slices.IndexFunc(p.Files, func(f denproto.DMFile) bool { return f.ID == fileID })
 		if i < 0 {
 			return false, inputError(errors.New("that file isn't on that message any more"))
+		}
+		if with != nil && p.Forwarded {
+			return false, inputError(errors.New("a forward's file comes off it, and takes no other in its place"))
 		}
 		if with != nil {
 			// The file in its place is a spoiler if it was, as the

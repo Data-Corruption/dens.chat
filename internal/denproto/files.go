@@ -96,6 +96,10 @@ type OwnFile struct {
 	Event     string `json:"event,omitempty"`
 	Excerpt   string `json:"excerpt,omitempty"`
 	CreatedAt int64  `json:"created_at"`
+	// Forwarded says the file is on a channel's forwarded message, which
+	// it comes off and isn't swapped on; a sealed place's mark is in its
+	// message's seal.
+	Forwarded bool `json:"forwarded,omitempty"`
 }
 
 // OwnFiles is a page of a member's files, largest first. Messages are the

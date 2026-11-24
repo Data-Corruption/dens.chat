@@ -837,6 +837,17 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// A channel's message its author forwarded, which says nothing of
+	// where from; a sealed place's mark is in its seal.
+	m.Add("Forwards", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_messages ADD COLUMN forwarded INTEGER NOT NULL DEFAULT 0 CHECK (forwarded IN (0, 1));
+		`); err != nil {
+			return fmt.Errorf("add forwards: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

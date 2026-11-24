@@ -149,12 +149,20 @@ func (c *conn) message(ctx context.Context, channelID, messageID string) (denpro
 }
 
 // Send posts a message. The page picks the nonce, so a retry after a lost
-// answer doesn't post twice. In a DM, its text and files go sealed.
+// answer doesn't post twice. In a DM, its text and files go sealed. Only
+// Forward marks a message forwarded.
 func (m *Manager) Send(ctx context.Context, denID, channelID string, req denproto.SendRequest) (PageMessage, error) {
 	c, err := m.find(denID)
 	if err != nil {
 		return PageMessage{}, err
 	}
+	req.Forwarded = false
+	return c.sendMessage(ctx, channelID, req)
+}
+
+// sendMessage posts a message, as Send does. A sealed place's forwarded
+// mark goes inside its seal, never to the den.
+func (c *conn) sendMessage(ctx context.Context, channelID string, req denproto.SendRequest) (PageMessage, error) {
 	if err := checkID("channel", channelID); err != nil {
 		return PageMessage{}, err
 	}
@@ -189,11 +197,12 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 	}
 	req.Sealed, req.KeyID = nil, ""
 	dm := c.private(channelID)
+	var err error
 	if req.Poll, err = checkPollSend(req, dm); err != nil {
 		return PageMessage{}, err
 	}
 	if dm {
-		p := denproto.DMPayload{Text: req.Text}
+		p := denproto.DMPayload{Text: req.Text, Forwarded: req.Forwarded}
 		var blobs []string
 		if p.Files, blobs, err = c.takeUploads(channelID, req.Attachments); err != nil {
 			return PageMessage{}, err
@@ -211,7 +220,7 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 		if req.KeyID, req.Sealed, err = c.sealMessage(ctx, channelID, c.memberID(), req.Nonce, 1, p); err != nil {
 			return PageMessage{}, err
 		}
-		req.Text, req.Attachments, req.Spoilers = "", blobs, nil
+		req.Text, req.Attachments, req.Spoilers, req.Forwarded = "", blobs, nil, false
 	}
 	var msg denproto.Message
 	if err := c.call(ctx, http.MethodPost, "/api/channels/"+channelID+"/messages", req, &msg); err != nil {
@@ -368,6 +377,9 @@ func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision
 		return PageMessage{}, inputError(errors.New("this message waits for you: keep it, or delete it"))
 	case locked != "" && !waiting:
 		return PageMessage{}, inputError(errors.New("this device can't open that message, so it can't change it"))
+	// A forward takes no edit, but a file comes off it (changeDMFile).
+	case keep == nil && p.Forwarded && !files:
+		return PageMessage{}, inputError(errors.New("a forward is its sender's to delete, not to edit"))
 	case !group:
 	case current.AuthorID != me && (editors != nil || p.Grant == nil || !slices.Contains(p.Grant.Editors, me)):
 		return PageMessage{}, inputError(errors.New("its author didn't let you edit this message"))

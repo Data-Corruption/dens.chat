@@ -2,8 +2,10 @@ package denproto
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -289,6 +291,66 @@ func TestDMMessage(t *testing.T) {
 		if _, err := OpenDMMessage(key, ad, sealed); err == nil {
 			t.Errorf("%s was accepted", name)
 		}
+	}
+}
+
+// A DM's message with a photo as v1.15.0 sealed it, by bob, 2, and a
+// group's by alice, 1: each opens, unmarked.
+const (
+	dmFileMessageV1150    = `ukPyixiLanruKauFSYu73S2C5_NgkbpOu0qzskyn4xesV59y4WroKcBJhaXjj1sHB0yIQz_Bk5xYQw4k4z7Xmn05yrQhRPK7RY8WBfOU1rEvEVGvFYwU1r0jg7aAVBPdenAdihPFTCW9WnVcfm3STU0jw5XmRSYD7mZ7FmyZ2gJu_pSE0QC2FUhJ4YD6CNzYCW9dFZBDm4oBvHlxWXm67K6IbkV-XEkBW7Nle2fkzMPjGXQePXdl4W1hR609kYNlCKxzWQgTKRHlBUgX7-raw3cD6kIW1dQSRtdgKpmFVuixDgi-g1gjNXFCOxoufPOhhDrchlPeOpxAaWv3OfLOvF6KpiMOfiyLmAyPa_IQ6QhEEY8m`
+	groupFileMessageV1150 = `PIm6BlLmDmBa6alhoATebTqCMl_KeL7T63NvdR7XP_wBkgRjFkWPJE9ZBJOKRlBk4qdkm2KXgG5qHUV_CLVX3IlHyG6VPEIjJoitiKn99sMROv8xZE4pxqzA83QLHGEJJ-nvjRsYYQdoplk7GIWCf4epZ3bR6LqhjQvs69JnQPiKNIud91gmTS2LLUS6foKyU3_-r-bZ5CIUsuWUOjfC9M7nwtjIuuKZvuPol5aKxVg4tM2ptwo7RaUt2Vk2l2Fk0MB98E45CYIcMJgTiZC8WY96tymJfrQZTNXbl3ugfYYlKYtw3yLqSBq8aJ9OzbuHv6sCDT3RcvkUjBWtHHLWMJ_TKocut5z5xiDDtOwzzzkHOPCYQDUISlv5fFK2kfspbwec4GYY3t-pWm9TbxTxv0f9F5goPbwI-93XoH001X7-YSmh_0a-K0xq5HrIzufsEg6i9Ygesz5HQtDEEtQNYsebu7S2yw2bonHtx05ZUSCElIomvcJEwTVjXLw2cOawJA9hojAiF0MKCpcs1ZZ5XBg4WbLh4WAasoRKXg`
+)
+
+// A message v1.15.0 sealed opens as it did, unmarked, and a forward's
+// mark comes through its seal, with the rest of what's sealed.
+func TestForwardedMarkInTheSeal(t *testing.T) {
+	den := bytes.Repeat([]byte{0x0d}, IDSize)
+	key := bytes.Repeat([]byte{0x4b}, DMKeySize)
+	alice, _ := DeriveIdentity(bytes.Repeat([]byte{0x01}, SealSize), den)
+	defer alice.Close()
+	file := DMFile{ID: "301", Key: bytes.Repeat([]byte{0x6b}, 32), Name: "beach.jpg", Type: "image/jpeg", Size: 48211,
+		Width: 1200, Height: 1600, Thumb: &DMThumb{ID: "302", Width: 480, Height: 640}, Spoiler: true}
+	nonce := bytes.Repeat([]byte{0x6e}, 16)
+	dmAD := MessageAD{DenID: den, Channel: 66, Author: 2, Nonce: nonce, KeyID: 88, Revision: 1}
+	groupAD := MessageAD{DenID: den, Channel: 77, Author: 1, Nonce: nonce, KeyID: 89, Revision: 1}
+	named := func(int64) []byte { return alice.Public().Hash() }
+	open := func(what, literal string) DMPayload {
+		sealed, err := base64.RawURLEncoding.DecodeString(literal)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var p DMPayload
+		if what == "dm" {
+			p, err = OpenDMMessage(key, dmAD, sealed)
+		} else {
+			p, _, err = OpenGroupMessage(key, groupAD, named, sealed)
+		}
+		if err != nil {
+			t.Fatalf("the %s's message as v1.15.0 sealed it: %v", what, err)
+		}
+		return p
+	}
+	for what, literal := range map[string]string{"dm": dmFileMessageV1150, "group": groupFileMessageV1150} {
+		p := open(what, literal)
+		if p.Text != "the beach" || p.Forwarded || p.Grant != nil || len(p.Files) != 1 || !reflect.DeepEqual(p.Files[0], file) {
+			t.Errorf("the %s's message as v1.15.0 sealed it: %+v", what, p)
+		}
+	}
+
+	forwarded := DMPayload{Text: "the beach", Files: []DMFile{file}, Forwarded: true}
+	sealed, err := SealDMMessage(key, dmAD, forwarded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := OpenDMMessage(key, dmAD, sealed); err != nil || !reflect.DeepEqual(p, forwarded) {
+		t.Errorf("a DM's forward opened as %+v, %v", p, err)
+	}
+	sealed, err = SealGroupMessage(key, groupAD, alice, 1, forwarded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, signer, err := OpenGroupMessage(key, groupAD, named, sealed); err != nil || signer != 1 || !reflect.DeepEqual(p, forwarded) {
+		t.Errorf("a group's forward opened as %+v, by %d, %v", p, signer, err)
 	}
 }
 

@@ -456,6 +456,10 @@ function Files({ den, navigate }) {
     );
 }
 
+// swappable says whether a file takes another in its place: one on a
+// message this device opens, and no forward's, which only comes off.
+export const swappable = (f) => !!f.message_id && !f.locked && !f.forwarded;
+
 // FileRow is one of a member's files in their list: its preview, name,
 // size and what uses it, and what they can do with it. A file being
 // swapped shows how far its replacement is, and how far a video's copy.
@@ -495,7 +499,7 @@ function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, o
             ) : (
                 <span class="flex gap-1">
                     {onMessage && <Button kind="quiet" size="xs" onClick={onOpen}>Open</Button>}
-                    {onMessage && !f.locked && <Button kind="quiet" size="xs" disabled={busy} onClick={onSwap}>Swap</Button>}
+                    {swappable(f) && <Button kind="quiet" size="xs" disabled={busy} onClick={onSwap}>Swap</Button>}
                     {!f.locked && <Button kind="danger" size="xs" onClick={onConfirm}>{action}</Button>}
                 </span>
             )}

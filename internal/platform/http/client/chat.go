@@ -23,6 +23,7 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Patch("/api/dens/{den}/messages/{message}", rt.handleEdit)
 	r.Post("/api/dens/{den}/messages/{message}/tasks/{n}", rt.handleTask)
 	r.Post("/api/dens/{den}/messages/{message}/keep", rt.handleKeep)
+	r.Post("/api/dens/{den}/messages/{message}/forward", rt.handleForward)
 	r.Delete("/api/dens/{den}/messages/{message}", rt.handleDeleteMessage)
 	r.Post("/api/dens/{den}/messages/{message}/reactions", rt.handleReact)
 	r.Post("/api/dens/{den}/messages/{message}/reactions/clear", rt.handleClearReaction)
@@ -115,6 +116,21 @@ func (rt *router) handleKeep(w http.ResponseWriter, r *http.Request) {
 	}
 	m, err := rt.a.Dens.Keep(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), req.Shown)
 	rt.changed(w, r, m, err)
+}
+
+// handleForward forwards a message of the channel the query names to the
+// place the body names, in this den or another.
+func (rt *router) handleForward(w http.ResponseWriter, r *http.Request) {
+	var to denclient.ForwardTo
+	if !decodeJSON(w, r, &to) {
+		return
+	}
+	m, err := rt.a.Dens.Forward(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), to)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, m)
 }
 
 // changed answers an edit or a tick: the message as it now is, or a

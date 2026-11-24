@@ -94,7 +94,8 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // database v1.14.0 left, with a record, keeps it. Audit log adds staff's
 // lines, which start empty, each by and about members alone; a database
 // v1.15.0 left, with a line, keeps it. Group name signatures adds the
-// signature beside a group's name, which none has.
+// signature beside a group's name, which none has, and Forwards a
+// message's forwarded mark, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -355,6 +356,18 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					if _, err := db.Exec(`UPDATE den_group_dms SET name = NULL, name_kid = NULL WHERE channel_id = 5`); err == nil {
 						t.Errorf("%s keeps a signature with no name", what)
 					}
+				}
+				// No message is forwarded until a member forwards one,
+				// and a mark is 0 or 1.
+				var forwarded int
+				if err := db.QueryRow(`SELECT count(*) FROM den_messages WHERE forwarded != 0`).Scan(&forwarded); err != nil || forwarded != 0 {
+					t.Errorf("%s holds %d forwarded messages after the migration, %v", what, forwarded, err)
+				}
+				if _, err := db.Exec(`UPDATE den_messages SET forwarded = 1 WHERE id = 1`); err != nil {
+					t.Errorf("%s takes no forward's mark after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`UPDATE den_messages SET forwarded = 2 WHERE id = 1`); err == nil {
+					t.Errorf("%s takes a forward's mark other than 0 or 1", what)
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {

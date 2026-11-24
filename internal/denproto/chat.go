@@ -145,6 +145,9 @@ type Message struct {
 	// ExpiresAt is when a DM's or a group's message disappears, by the
 	// time its channel had as it was sent.
 	ExpiresAt int64 `json:"expires_at,omitempty"`
+	// Forwarded marks a channel's message its author forwarded, which
+	// says nothing of where from; a sealed place's mark is in its seal.
+	Forwarded bool `json:"forwarded,omitempty"`
 }
 
 // Reply previews the message another one replies to, so a reply reads
@@ -231,6 +234,9 @@ type SendRequest struct {
 	// in a channel, which the den keeps on each file. A DM's
 	// spoilers go inside its seal, so the den never learns them.
 	Spoilers []string `json:"spoilers,omitempty"`
+	// Forwarded marks a channel's message as forwarded, with no poll,
+	// reply or editors; a DM's goes inside its seal.
+	Forwarded bool `json:"forwarded,omitempty"`
 }
 
 // EditRequest replaces a message's text, and its editors when set, which

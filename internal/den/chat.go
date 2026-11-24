@@ -1003,7 +1003,8 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 
 // Messages --------------------------------------------------------------------
 
-const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id, everyone, expires_at`
+const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id, everyone, expires_at,
+	forwarded`
 
 func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	var m denproto.Message
@@ -1011,7 +1012,7 @@ func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	var editedAt, editedBy, replyTo, keyID, expiresAt sql.NullInt64
 	var text, nonce []byte
 	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &text, &replyTo, &nonce, &keyID, &m.Everyone,
-		&expiresAt); err != nil {
+		&expiresAt, &m.Forwarded); err != nil {
 		return m, err
 	}
 	m.ExpiresAt = expiresAt.Int64
@@ -1391,6 +1392,9 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err != nil {
 		return denproto.Message{}, err
 	}
+	if err := checkForward(req, dm); err != nil {
+		return denproto.Message{}, err
+	}
 	var replyTo *int64
 	var reply *denproto.Reply
 	if req.ReplyTo != "" {
@@ -1457,8 +1461,9 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		} else {
 			text = []byte{}
 		}
-		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id, everyone, expires_at)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID, everyone, expires)
+		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id, everyone, expires_at,
+			forwarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID, everyone, expires,
+			req.Forwarded)
 		if err != nil {
 			return err
 		}
@@ -1513,7 +1518,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	m := denproto.Message{
 		ID: denproto.FormatID(id), ChannelID: c.ID, AuthorID: denproto.FormatID(s.MemberID),
 		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Reply: reply, Nonce: req.Nonce,
-		Editors: formatIDs(editors), Poll: posted, Everyone: everyone,
+		Editors: formatIDs(editors), Poll: posted, Everyone: everyone, Forwarded: req.Forwarded,
 	}
 	if posted != nil {
 		d.planTimer()
@@ -1562,6 +1567,36 @@ func parseSpoilers(ids []string, files []int64, dm bool) ([]int64, error) {
 		out = append(out, id)
 	}
 	return out, nil
+}
+
+// checkForward checks a forward: a channel's, since a sealed place's mark
+// goes in its seal, with no poll, reply or editors, which aren't its
+// sender's to carry.
+func checkForward(req denproto.SendRequest, dm bool) error {
+	switch {
+	case !req.Forwarded:
+		return nil
+	case dm:
+		return invalid("forwarded: a DM's mark goes inside its sealed text")
+	case req.Poll != nil || req.ReplyTo != "" || len(req.Editors) > 0:
+		return invalid("forwarded: a forward has no poll, reply or editors")
+	}
+	return nil
+}
+
+// dropsFiles reports whether an edit only takes files off a message, the
+// one change a forward takes: it frees its sender's space, and puts
+// nothing under the mark.
+func dropsFiles(m denproto.Message, req denproto.EditRequest) bool {
+	if req.Attachments == nil || req.Editors != nil || denproto.CleanLinks(req.Text) != m.Text {
+		return false
+	}
+	for _, id := range *req.Attachments {
+		if !slices.ContainsFunc(m.Attachments, func(f denproto.File) bool { return f.ID == id }) {
+			return false
+		}
+	}
+	return true
 }
 
 // checkSealedText checks that a DM message's text comes sealed, with the
@@ -1680,6 +1715,9 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	}
 	if m.Poll != nil {
 		return m, forbidden("a poll can't be edited once posted, so no vote stands under a question it wasn't cast for")
+	}
+	if m.Forwarded && !dropsFiles(m, req) {
+		return m, forbidden("a forward is its sender's to delete, not to edit")
 	}
 	author, _ := denproto.ParseID(m.AuthorID)
 	if req.Editors != nil && author != s.MemberID {
@@ -1841,6 +1879,9 @@ func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req den
 	}
 	if m.Poll != nil {
 		return m, forbidden("a poll's question can't change once posted")
+	}
+	if m.Forwarded {
+		return m, forbidden("a forward is its sender's to delete, not to edit")
 	}
 	if isPrivate(c) {
 		return m, invalid("a DM message's tasks tick with an edit: the den can't read its text")

@@ -17,7 +17,7 @@ import { DenEmoji, EmojiContext } from './denemoji.jsx';
 import { emojiAlone, nameAt } from './emoji.js';
 import { channelLink, eventLink, messageLink, shownLink, steamApp, trimLink, videoOf } from './links.js';
 import { MessageLink } from './msglinks.jsx';
-import { EventLink } from './eventlinks.jsx';
+import { Covered, EventLink } from './eventlinks.jsx';
 
 const NAME_CHAR = /[A-Za-z0-9_]/;
 const SPACE = /\s/;
@@ -192,7 +192,7 @@ const DELIMITERS = ['**', '~~', '||', '*', '_'];
 const MAKE = [
     (c, k) => <strong key={k}>{c}</strong>,
     (c, k) => <del key={k}>{c}</del>,
-    (c, k, ctx) => (ctx.preview ? <span key={k} class="rounded bg-base-300 px-0.5 text-transparent select-none [&_img]:invisible">{c}</span> : <Spoiler key={k}>{c}</Spoiler>),
+    (c, k, ctx) => (ctx.preview ? <span key={k} class={`rounded bg-base-300 px-0.5 ${COVER}`}>{c}</span> : <Spoiler key={k}>{c}</Spoiler>),
     (c, k) => <em key={k}>{c}</em>,
     (c, k) => <em key={k}>{c}</em>,
 ];
@@ -374,20 +374,28 @@ function Task({ n, checked, text, onTask, children }) {
     );
 }
 
+// COVER hides what a spoiler covers, links and chips too, whose own
+// colors would show through.
+const COVER = 'text-transparent select-none [&_*]:bg-transparent [&_*]:text-transparent [&_img]:invisible [&_svg]:invisible';
+
 // Spoiler covers its text in the neutral surface, which hides it on a dark
-// theme and a light one without outshining the message around it.
+// theme and a light one without outshining the message around it. What it
+// covers is inert, so a link in it takes no focus and shows no address on
+// hover, and an event's chip asks for nothing until it's shown.
 function Spoiler({ children }) {
     const [shown, setShown] = useState(false);
     return (
         <span
             role="button"
             tabIndex={0}
-            class={`rounded bg-base-300 px-0.5 ${shown ? '' : 'cursor-pointer text-transparent select-none [&_img]:invisible'}`}
+            class={`rounded bg-base-300 px-0.5 ${shown ? '' : `cursor-pointer ${COVER}`}`}
             onClick={() => setShown(true)}
             onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setShown(true)}
             title={shown ? undefined : 'Spoiler: click to show'}
         >
-            {children}
+            <Covered.Provider value={!shown}>
+                <span inert={!shown}>{children}</span>
+            </Covered.Provider>
         </span>
     );
 }

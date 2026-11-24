@@ -4,12 +4,13 @@
 // unread comes first, the open den's before the others', and before
 // anything is typed the list is the unread alone. The open den's come from
 // its page's view, which showDen keeps here, and another den's from its
-// state on this computer, so only what the member sees is listed.
+// state on this computer, so only what the member sees is listed. Forward
+// lists the places a message can go from the same states.
 
 import { unread } from './ids.js';
 import { nameRank } from '../chat/emoji.js';
 import { inOrder } from '../chat/lists.js';
-import { groupTitle } from '../private/private.js';
+import { groupTitle, ownNotes } from '../private/private.js';
 
 // MOST is how many entries the list shows.
 const MOST = 50;
@@ -45,7 +46,8 @@ function entriesOf(den, view) {
         if (c.kind === 'dm') {
             const other = members.get(c.members.find((id) => id !== view.me.id));
             const name = other?.display_name || 'Unknown member';
-            out.push({ ...base, kind: 'dm', id: c.id, name, detail: other ? `@${other.username}` : '', words: other ? [name, other.username] : [name], ...waits(c) });
+            out.push({ ...base, kind: 'dm', id: c.id, name, detail: other ? `@${other.username}` : '', words: other ? [name, other.username] : [name], ...waits(c),
+                left: !other || !!other.left_at });
         } else if (c.kind === 'group_dm') {
             const name = groupTitle(view.group_dms?.[c.id], members, view.me.id);
             out.push({ ...base, kind: 'group', id: c.id, name, words: [name], ...waits(c) });
@@ -54,20 +56,44 @@ function entriesOf(den, view) {
     return out;
 }
 
-// switcherList is what the switcher lists for query: dens as /api/dens
-// lists them, views their states by den ID, null for one that couldn't be
-// fetched, and here the den the page shows. Each entry has a key unique in
-// the list.
-export function switcherList(dens, views, here, query) {
+// placesOf lists where a message can be forwarded in a den connected now:
+// its text channels, where the den keeps a forward's mark, and where this
+// device holds the member's seal, their DMs with members still in the den,
+// their groups and their notes, whose ID is empty until the den makes them.
+function placesOf(den, view) {
+    if (view?.state !== 'connected') return [];
+    const out = entriesOf(den, view).filter((e) => e.kind === 'text' ? !!view.forward : view.seal && (e.kind === 'group' || (e.kind === 'dm' && !e.left)));
+    if (view.seal && view.has_notes) out.push({ den: den.den_id, denName: den.name, kind: 'notes', id: ownNotes(view)?.id || '', name: 'Notes', words: ['Notes'] });
+    return out;
+}
+
+// listed is what a list holds for query: dens as /api/dens lists them, of
+// a den's entries by its view, views their states by den ID, null for one
+// that couldn't be fetched, and here the den the page shows. shown says
+// which show before anything is typed, and first which go first. Each
+// entry has a key unique in the list.
+function listed(dens, of, views, here, query, shown, first) {
     const q = query.trim().toLowerCase();
     const all = [];
-    dens.forEach((d, at) => entriesOf(d, views.get(d.den_id)).forEach((e, order) => all.push({ ...e, key: `${e.den}:${e.kind}:${e.id}`, at, order })));
+    dens.forEach((d, at) => of(d, views.get(d.den_id)).forEach((e, order) => all.push({ ...e, key: `${e.den}:${e.kind}:${e.id}`, at, order })));
     const matched = all
-        .filter((e) => (q ? true : e.kind !== 'den' && e.unread))
+        .filter((e) => q || shown(e))
         .map((e) => ({ e, rank: q ? Math.min(...e.words.map((w) => nameRank(w, q)).map((r) => (r < 0 ? Infinity : r))) : 0 }))
         .filter((x) => x.rank !== Infinity);
-    const first = (b) => (b ? 0 : 1);
-    matched.sort((a, b) => first(a.e.unread) - first(b.e.unread) || first(a.e.den === here) - first(b.e.den === here) ||
+    const before = (b) => (b ? 0 : 1);
+    matched.sort((a, b) => before(first(a.e)) - before(first(b.e)) || before(a.e.den === here) - before(b.e.den === here) ||
         a.rank - b.rank || a.e.at - b.e.at || a.e.order - b.e.order);
     return matched.slice(0, MOST).map((x) => x.e);
+}
+
+// switcherList is what the switcher lists for query: what has something
+// unread first, and before anything is typed nothing else.
+export function switcherList(dens, views, here, query) {
+    return listed(dens, entriesOf, views, here, query, (e) => e.kind !== 'den' && e.unread, (e) => e.unread);
+}
+
+// forwardList is where Forward offers to send a message for query: every
+// place, the open den's first.
+export function forwardList(dens, views, here, query) {
+    return listed(dens, placesOf, views, here, query, () => true, () => false);
 }

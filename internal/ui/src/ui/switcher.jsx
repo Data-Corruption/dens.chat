@@ -4,7 +4,7 @@
 // click on its row does, and a click or a tap opens a row. Ctrl+K opens
 // it, and so does the magnifier atop a den's list and in Home's header,
 // since a touch screen has no Ctrl. Every name in it is a den's, shown as
-// text.
+// text. Forward picks its place in the same box.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../core/api.js';
@@ -12,7 +12,7 @@ import { nav, useLayer, useNarrow } from '../core/nav.js';
 import { useCoarse } from '../core/touch.js';
 import { shownDen, switcherList } from '../core/switcher.js';
 import { openCall } from '../voice/voice.js';
-import { useBackdrop } from './components.jsx';
+import { ErrorText, useBackdrop } from './components.jsx';
 import { openSwitcher } from './dialogs.js';
 import { HashIcon, MenuIcon, SearchIcon, SpeakerIcon } from './icons.jsx';
 import { Handle, useDragDown } from './sheet.jsx';
@@ -42,10 +42,27 @@ function EntryIcon({ e }) {
     if (e.kind === 'voice') return <SpeakerIcon size="h-4 w-4" />;
     if (e.kind === 'dm') return <MenuIcon name="profile" />;
     if (e.kind === 'group') return <MenuIcon name="people" />;
+    if (e.kind === 'notes') return <MenuIcon name="notes" />;
     return <span class="flex h-4 w-4 items-center justify-center rounded bg-base-300 text-[10px] font-semibold uppercase">{[...e.name][0] || '?'}</span>;
 }
 
 export function Switcher({ onClose }) {
+    return (
+        <PlacePicker label={LABEL} placeholder="Where to?" list={switcherList} data="switcher" onClose={onClose}
+            empty={(q) => (q ? 'Nothing matches.' : 'Nothing unread. Type to find a channel, DM or den.')}
+            onPick={(e) => {
+                onClose();
+                go(e);
+            }} />
+    );
+}
+
+// PlacePicker is the switcher's box over what list lists for what's typed,
+// as switcherList does; empty says why it lists nothing, and onPick takes
+// the row picked. busy is the key of the row being sent, which holds the
+// box, and error why the last pick failed. data names the dialog for the
+// checks.
+export function PlacePicker({ label, placeholder, list: listed, empty, onPick, onClose, data, busy = '', error = '' }) {
     useLayer(onClose);
     const backdrop = useBackdrop(onClose);
     const narrow = useNarrow();
@@ -75,14 +92,13 @@ export function Switcher({ onClose }) {
             if (opener?.isConnected) opener.focus({ preventScroll: true });
         };
     }, []);
-    const entries = switcherList(dens || [], views, here.den, query);
+    const entries = listed(dens || [], views, here.den, query);
     const at = Math.min(index, Math.max(0, entries.length - 1));
     useLayoutEffect(() => {
         list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView?.({ block: 'nearest' });
     }, [at, query]);
     function open(e) {
-        onClose();
-        go(e);
+        if (!busy) onPick(e);
     }
     function keys(e) {
         const n = entries.length;
@@ -100,15 +116,15 @@ export function Switcher({ onClose }) {
     }
     return (
         <div class="fixed inset-0 z-50 flex items-end justify-center bg-black/40 md:items-start md:p-4 md:pt-[12vh]" {...backdrop}>
-            <div ref={drag.ref} role="dialog" aria-modal="true" aria-label={LABEL} data-switcher style={drag.style} {...drag.handlers}
+            <div ref={drag.ref} role="dialog" aria-modal="true" aria-label={label} {...{ [`data-${data}`]: '' }} style={drag.style} {...drag.handlers}
                 class="card flex max-h-[calc(100%-1.5rem)] w-full flex-col overflow-hidden bg-base-100 shadow-xl max-md:rounded-b-none md:max-h-[70vh] md:max-w-lg">
                 {narrow && <div data-sheet-top class="touch-none"><Handle /></div>}
                 <div class="p-3 max-md:pt-1">
                     <label class="input w-full">
                         <SearchIcon />
                         <input ref={box} type="search" role="combobox" aria-expanded="true" aria-controls="switcher-entries" aria-autocomplete="list"
-                            aria-activedescendant={entries[at] ? `switch-${at}` : undefined} aria-label={LABEL} placeholder="Where to?" value={query}
-                            enterkeyhint="go" autocomplete="off" spellcheck={false}
+                            aria-activedescendant={entries[at] ? `switch-${at}` : undefined} aria-label={label} placeholder={placeholder} value={query}
+                            enterkeyhint="go" autocomplete="off" spellcheck={false} readOnly={!!busy}
                             onInput={(e) => {
                                 setQuery(e.currentTarget.value);
                                 setIndex(0);
@@ -127,6 +143,7 @@ export function Switcher({ onClose }) {
                             <span class={`truncate ${e.unread ? 'font-semibold' : ''}`}>{e.name}</span>
                             {e.detail && <span class="truncate text-sm text-base-content/50">{e.detail}</span>}
                             <span class="ml-auto flex shrink-0 items-center gap-2">
+                                {busy === e.key && <span class="loading loading-spinner loading-xs" aria-label="Sending"></span>}
                                 {e.kind !== 'den' && e.den !== here.den && <span class="max-w-32 truncate text-xs text-base-content/50">{e.denName}</span>}
                                 {e.mentions > 0 ? <span class="badge badge-error badge-xs">{e.mentions}</span>
                                     : e.unread && <span class="h-2 w-2 rounded-full bg-base-content" aria-label="unread"></span>}
@@ -135,8 +152,9 @@ export function Switcher({ onClose }) {
                     ))}
                 </ul>
                 {dens && entries.length === 0 && (
-                    <p class="cursor-default select-none px-4 pb-4 text-sm text-base-content/60">{query.trim() ? 'Nothing matches.' : 'Nothing unread. Type to find a channel, DM or den.'}</p>
+                    <p class="cursor-default select-none px-4 pb-4 text-sm text-base-content/60">{empty(query.trim())}</p>
                 )}
+                {error && <div class="px-3 pb-3"><ErrorText message={error} /></div>}
             </div>
         </div>
     );

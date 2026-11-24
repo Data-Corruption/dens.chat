@@ -735,7 +735,13 @@ run() {
   member_ticks=$!
   wait "$owner_ticks" || { echo "error: the owner's ticks failed" >&2; return 1; }
   wait "$member_ticks" || { echo "error: the member's ticks failed" >&2; return 1; }
-  text=$(guest "$CLIENT" text-of "$den_id" "$channel" "$list")
+  # The member's page reads from its cache, which the den's events fill,
+  # and the last tick's can still be on its way.
+  for _ in $(seq 1 40); do
+    text=$(guest "$CLIENT" text-of "$den_id" "$channel" "$list")
+    [[ "$text" == "[x] item 0|[x] item 1|[x] item 2|[x] item 3|[x] item 4|[x] item 5" ]] && break
+    sleep 0.25
+  done
   [[ "$text" == "[x] item 0|[x] item 1|[x] item 2|[x] item 3|[x] item 4|[x] item 5" ]] ||
     { echo "error: the checklist reads: $text" >&2; return 1; }
   echo ">> Every tick from both members stayed"

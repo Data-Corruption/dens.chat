@@ -7,10 +7,10 @@ Messages and their links, history, sending and editing, read state, shared messa
 ```
 message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
            "text", "reply_to"?, "reply"?, "nonce"?, "attachments"?, "editors"?,
-           "sealed"?, "key_id"?, "reactions"?, "dm_reactions"?, "poll"?, "everyone"?, "expires_at"?}
+           "sealed"?, "key_id"?, "reactions"?, "dm_reactions"?, "poll"?, "everyone"?, "expires_at"?, "forwarded"?}
 ```
 
-A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](e2ee.md#private-dms)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls)). A DM's or a group's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](sync.md#disappearing-messages)).
+A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](e2ee.md#private-dms)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls)). A DM's or a group's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](sync.md#disappearing-messages)). A channel's message its author forwarded carries `forwarded: true`, and nothing of where it came from; a sealed place's mark is inside the seal (see [DM messages](e2ee.md#dm-messages)).
 
 `text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files, when it may be empty. It is the markdown subset in the design's [Text and replies](../design/messages.md#text-and-replies), which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links)).
 
@@ -82,7 +82,7 @@ GET /api/channels/{id}/messages?around=<id>&limit=50     id and about half each 
 ### Sending, editing, deleting
 
 ```
-POST   /api/channels/{id}/messages   {"nonce": "<16 bytes>", "text", "reply_to"?}   201 message
+POST   /api/channels/{id}/messages   {"nonce": "<16 bytes>", "text", "reply_to"?, "forwarded"?}   201 message
 PATCH  /api/messages/{id}            {"revision", "text", "attachments"?}       200 message
 DELETE /api/messages/{id}                                                            204
 ```
@@ -90,6 +90,7 @@ DELETE /api/messages/{id}                                                       
 - `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history, except on a DM's messages, whose sealed text is bound to it.
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
+- `forwarded: true` marks a forward, in a channel, where the den's info says `forward`: the den refuses it (`400 invalid_field`) on a sealed message, or with a poll, `reply_to` or `editors`, and refuses an edit or a tick of one with `403 forbidden`, but its author's edit that keeps its text, names no `editors` and lists only files already on it, which takes the others off.
 - The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's. In a DM only the author deletes a message.
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. An edit that takes files off a message lists them the same way, in `files` beside the message's own fields (see [Attachments](files.md#attachments)).
 - Each member a deleted message counted for, in a DM or a group each other member and in a channel each it mentioned, gets `read_state.updated` after its `message.deleted`: their `mention_count` without it, and where it was all that lay past their read position, the position moved past it. A client learns a channel's newest message only as messages come, so a DM whose last message went unread would otherwise stay unread until the next `ready`.

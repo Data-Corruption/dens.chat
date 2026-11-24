@@ -274,9 +274,9 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 		return PageMessage{Message: out, Reply: reply}
 	}
 	// Its members' sets of reactions open with the keys they name, which
-	// may be newer than the message's.
+	// may be newer than the message's. Its mark is its seal's alone.
 	sets := c.openSetsLocked(m)
-	out.Sealed, out.DMReactions = nil, nil
+	out.Sealed, out.DMReactions, out.Forwarded = nil, nil, false
 	p, signer, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
 	// In a group, who may edit and who did are what its author signed for
 	// and who signed, never the den's word.
@@ -296,7 +296,7 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 		}
 		return pm
 	}
-	out.Text = p.Text
+	out.Text, out.Forwarded = p.Text, p.Forwarded
 	out.Attachments = append(out.Attachments, c.dmFilesLocked(m, p)...)
 	return PageMessage{Message: out, Reply: reply, DMReactions: sets}
 }
@@ -369,8 +369,9 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			return "", nil, errNoSeal
 		}
 		// The member's notes go under the key their seal makes, named by
-		// the notes' channel.
-		if c.den.channels[channel].Kind == denproto.KindNotes {
+		// the notes' channel, or by the kind kept from the den's answer
+		// until the notes' event comes, since Forward makes and sends at once.
+		if c.den.channels[channel].Kind == denproto.KindNotes || c.den.kinds[channel] == denproto.KindNotes {
 			key, err := c.notesKeyLocked()
 			c.mu.Unlock()
 			return channel, key, err

@@ -56,6 +56,7 @@ import { createPress, useCoarse } from '../core/touch.js';
 import { MenuIcon, PlusIcon, SmileyIcon, StatusIcon, TimerIcon } from '../ui/icons.jsx';
 import { setFoot } from '../voice/voice.jsx';
 import { Videos } from './youtube.jsx';
+import { Forward, placeName } from './forward.jsx';
 import { Games } from './steam.jsx';
 import { EventCards } from './denevents.jsx';
 
@@ -120,6 +121,13 @@ export function viewed(m, file, covered = new Set()) {
     return index < 0 ? null : { message: m.id, files, index };
 }
 
+// editable says whether a member may edit a message and tick its tasks:
+// its author, or another it names, while it opens, and unless it's a poll
+// or a forward.
+export function editable(m, me) {
+    return !m.locked && !m.poll && !m.forwarded && (m.author_id === me.id || (m.editors || []).includes(me.id));
+}
+
 // dividerAt is where a channel's New divider goes, as the channel opens:
 // after the read position when messages came after it, and nowhere when
 // none did, so messages that arrive while it's open get none.
@@ -145,6 +153,12 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // waits on the member's word.
     const [menu, setMenu] = useState(null);
     const [deleting, setDeleting] = useState(null);
+    // forwarding is the message whose Forward is open, and forwarded the
+    // one just forwarded, with where to, which it says for a moment.
+    const [forwarding, setForwarding] = useState(null);
+    const [forwarded, setForwarded] = useState(null);
+    const forwardedTimer = useRef(null);
+    useEffect(() => () => clearTimeout(forwardedTimer.current), []);
     // reacting is the message whose picker is open to react to it, with
     // what opened it, and removing the one whose reactions staff take off.
     const [reacting, setReacting] = useState(null);
@@ -724,7 +738,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     }
 
     function editLast() {
-        const mine = listRef.current.messages.filter((m) => m.author_id === me.id);
+        const mine = listRef.current.messages.filter((m) => m.author_id === me.id && !m.forwarded);
         if (mine.length) setEditing(mine[mine.length - 1].id);
     }
 
@@ -788,8 +802,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 highlighted={highlight === m.id}
                 editing={editing === m.id}
                 canReply={!closed && canSend}
-                canEdit={!m.locked && !m.poll && (m.author_id === me.id || (m.editors || []).includes(me.id))}
-                canShare={!notes && !m.locked && !m.poll && m.author_id === me.id}
+                canEdit={editable(m, me)}
+                canShare={!notes && !m.locked && !m.poll && !m.forwarded && m.author_id === me.id}
+                canForward={!m.locked && !m.poll && (!!m.text.trim() || m.attachments?.length > 0)}
+                note={forwarded?.id === m.id ? forwarded.text : ''}
                 canDelete={m.author_id === me.id || (!sealed && rank(role) > rank(members.get(m.author_id)?.role))}
                 link={denURL ? linkTo(denURL, denID, channel.id, m.id) : ''}
                 menuOpen={menu?.id === m.id}
@@ -816,6 +832,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 onReply={() => setReplyTo(m)}
                 onEdit={() => setEditing(m.id)}
                 onEditors={() => setSharing(m.id)}
+                onForward={() => setForwarding(m.id)}
                 onEditDone={() => setEditing(null)}
                 onDelete={() => setDeleting(m)}
                 onJump={jumpTo}
@@ -967,6 +984,15 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
             {sharing && byId.has(sharing) && (
                 <EditorsDialog denID={denID} channelID={channel.id} m={byId.get(sharing)} candidates={candidates} onClose={() => setSharing(null)} />
             )}
+            {forwarding && byId.has(forwarding) && (
+                <Forward denID={denID} channelID={channel.id} m={byId.get(forwarding)} onClose={() => setForwarding(null)}
+                    onDone={(e) => {
+                        setForwarding(null);
+                        setForwarded({ id: forwarding, text: `Forwarded to ${placeName(e)}` });
+                        clearTimeout(forwardedTimer.current);
+                        forwardedTimer.current = setTimeout(() => setForwarded(null), 2500);
+                    }} />
+            )}
             {reacting && byId.has(reacting.id) && (
                 <ReactingPicker m={byId.get(reacting.id)} me={me} anchor={reacting.anchor} sheet={narrow}
                     onPick={(item, chips) => pickReaction(reacting.id, item, chips)} onClose={() => setReacting(null)} />
@@ -1075,14 +1101,15 @@ function Quoted({ text, locked, me }) {
 }
 
 // MessageRow is a message in the list, with its ⋯ menu of what the member
-// may do with it: link is the link to it, for Copy message link. A
+// may do with it: link is the link to it, for Copy message link, and note
+// a word on what was just done with it, as Forward's. A
 // finger's long press opens the menu in the ⋯'s place, which a touch
 // screen has none of, and on the phone layout, narrow, it's a sheet;
 // a mouse's right click opens it at the pointer, menuAt. compact
 // is a run's later message, under its first's name; line is Compact's row,
 // each a line of its own. children go under its files, as
 // Appearance's preview puts its photo.
-export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, waitingBy, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
+export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canForward = false, canDelete, link, note = '', menuOpen, menuAt, narrow, touch, editorNames, waitingBy, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onForward, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1111,6 +1138,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
     // a sheet.
     const actions = [
         canReply && { key: 'reply', label: 'Reply', icon: 'reply', run: onReply },
+        canForward && { key: 'forward', label: 'Forward', icon: 'forward', run: onForward },
         canReact && { key: 'react', label: 'Add reaction', icon: 'react', run: (from) => onReactPick(from) },
         canEdit && { key: 'edit', label: 'Edit', icon: 'edit', run: onEdit },
         canShare && { key: 'editors', label: 'Let others edit', icon: 'people', run: onEditors },
@@ -1264,12 +1292,18 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
                             {m.expires_at ? <Disappears at={m.expires_at} /> : null}
                         </div>
                     )}
+                    {m.forwarded && !m.locked && (
+                        <p class={`flex cursor-default select-none items-center gap-1 text-xs italic text-base-content/60 ${line ? 'clear-both' : ''}`} data-forwarded>
+                            <MenuIcon name="forward" size="h-3 w-3" />
+                            Forwarded
+                        </p>
+                    )}
                     {body}
                     {line ? <div class="clear-both">{below}</div> : below}
                 </div>
             </div>
             {!editing && actions.length > 0 && (
-                <MessageMenu open={menuOpen} at={menuAt} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied} onReact={canReact ? onReactPick : null}
+                <MessageMenu open={menuOpen} at={menuAt} narrow={narrow} onOpen={onMenu} actions={actions} copied={copied || note} onReact={canReact ? onReactPick : null}
                     onReply={canReply ? onReply : null} onEdit={canEdit && m.author_id === me.id ? onEdit : null} />
             )}
             {!editing && menuOpen && narrow && actions.length > 0 && (
