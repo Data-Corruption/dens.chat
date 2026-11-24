@@ -356,7 +356,7 @@ function Get-JpegSize([string]$Path) {
 # its color profile and nothing of the phone's.
 function Get-Photo($Browser, [string]$DenID, [string]$FileID, [string]$Size, [string]$What, [string]$Channel = "", [string]$Message = "") {
     $got = Join-Path $Work "photo-check.jpg"
-    $resp = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$FileID$(Get-Under $Channel $Message)" -WebSession $Browser.Session `
+    $resp = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$FileID$(Get-Under $Browser $DenID $FileID $Channel $Message)" -WebSession $Browser.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "$What came as $($resp.Headers['Content-Type'])" }
     Test-Clean $got $What
@@ -366,11 +366,23 @@ function Get-Photo($Browser, [string]$DenID, [string]$FileID, [string]$Size, [st
 }
 
 # Get-Under is the query a file's address takes to be asked for where the
-# page shows it, under its message in its channel, which a DM's file
-# needs; empty for none.
-function Get-Under([string]$Channel, [string]$Message) {
-    if ($Message) { return "?channel=$Channel&message=$Message" }
-    return ""
+# page shows it, under its message in its channel, with the tag the
+# service gives of a DM's file there, read from the message as the page
+# reads it first; empty for none.
+function Get-Under($Browser, [string]$DenID, [string]$FileID, [string]$Channel, [string]$Message) {
+    if (-not $Message) { return "" }
+    $as = ""
+    try {
+        $page = Invoke-Api $Browser GET "/api/dens/$DenID/channels/$Channel/messages?around=$Message&limit=1"
+        foreach ($m in @(@($page.messages) | Where-Object { $_.id -eq $Message })) {
+            foreach ($f in @(Get-Field $m "attachments")) {
+                if ($null -ne $f -and $f.id -eq $FileID -and (Get-Field $f "sealed_as")) { $as = "&as=$(Get-Field $f 'sealed_as')" }
+            }
+        }
+    } catch {
+        $as = ""
+    }
+    return "?channel=$Channel&message=$Message$as"
 }
 
 # Get-Attachments returns a message's files as an instance sees them,
@@ -390,7 +402,7 @@ function Wait-Gone($Browser, [string]$DenID, [string]$File, [string]$Channel = "
     $deadline = (Get-Date).AddSeconds(10)
     while ((Get-Date) -lt $deadline) {
         try {
-            Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$File$(Get-Under $Channel $Message)" -WebSession $Browser.Session -UseBasicParsing `
+            Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$File$(Get-Under $Browser $DenID $File $Channel $Message)" -WebSession $Browser.Session -UseBasicParsing `
                 -OutFile (Join-Path $Work "gone.bin") -TimeoutSec 60 | Out-Null
         } catch {
             return
@@ -421,7 +433,7 @@ function Test-Clean([string]$Path, [string]$What) {
 # under the message it's on, and fails unless they're those of the whole
 # file at Path. Windows PowerShell won't set a Range header itself.
 function Test-Range($Browser, [string]$DenID, [string]$FileID, [string]$Path, [int]$From, [int]$To, [string]$Channel = "", [string]$Message = "") {
-    $request = [Net.HttpWebRequest]::Create("$($Browser.Origin)/api/dens/$DenID/files/$FileID$(Get-Under $Channel $Message)")
+    $request = [Net.HttpWebRequest]::Create("$($Browser.Origin)/api/dens/$DenID/files/$FileID$(Get-Under $Browser $DenID $FileID $Channel $Message)")
     $request.CookieContainer = $Browser.Session.Cookies
     $request.AddRange($From, $To)
     $response = $request.GetResponse()
@@ -953,7 +965,7 @@ den.test:$HttpsPort {
     $videoCopy = Join-Path $Work "cached-video.mp4"
     foreach ($fetch in @(@("$($cachedPhoto.id)", "cached-photo.jpg", $cachedMessage), @("$($cachedPhoto.id)/thumb", "cached-preview.jpg", $cachedMessage),
             @("$($cachedVideo.id)", "cached-video.mp4", $cachedVideoMessage))) {
-        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($fetch[0])$(Get-Under $channel $fetch[2])" -WebSession $member.Session -UseBasicParsing `
+        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($fetch[0])$(Get-Under $member $denID ($fetch[0] -split '/')[0] $channel $fetch[2])" -WebSession $member.Session -UseBasicParsing `
             -OutFile (Join-Path $Work $fetch[1]) -TimeoutSec 60 | Out-Null
     }
     if ((Invoke-Api $member GET "/api/settings").cacheUsed -le 0) { Fail "the member's cache holds nothing" }
@@ -977,7 +989,7 @@ den.test:$HttpsPort {
     $history = Get-History $member $denID $channel
     if (-not (& $readsRight $history)) { Fail "the member's history with the den stopped: $history" }
     $again = Join-Path $Work "cached-video-again.mp4"
-    Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($cachedVideo.id)$(Get-Under $channel $cachedVideoMessage)" -WebSession $member.Session -UseBasicParsing `
+    Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($cachedVideo.id)$(Get-Under $member $denID $cachedVideo.id $channel $cachedVideoMessage)" -WebSession $member.Session -UseBasicParsing `
         -OutFile $again -TimeoutSec 60 | Out-Null
     if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($again)) -ne [Convert]::ToBase64String([IO.File]::ReadAllBytes($videoCopy))) {
         Fail "the cached video came back changed"
@@ -1037,7 +1049,7 @@ den.test:$HttpsPort {
     Get-History $owner $denID $dm | Out-Null
     foreach ($variant in @("", "/thumb")) {
         $got = Join-Path $Work "dm-photo.jpg"
-        $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$variant$(Get-Under $dm $sent)" -WebSession $owner.Session `
+        $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$variant$(Get-Under $owner $denID $file.id $dm $sent)" -WebSession $owner.Session `
             -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
         if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the DM photo$variant came as $($resp.Headers['Content-Type'])" }
         $text = $latin1.GetString([IO.File]::ReadAllBytes($got))
@@ -1062,7 +1074,7 @@ den.test:$HttpsPort {
     # which the page reads before it asks for the file under it.
     Get-History $owner $denID $dm | Out-Null
     $got = Join-Path $Work "dm-video.mp4"
-    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$(Get-Under $dm $sent)" -WebSession $owner.Session `
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$(Get-Under $owner $denID $file.id $dm $sent)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "video/mp4") { Fail "the DM video came as $($resp.Headers['Content-Type'])" }
     Test-Clean $got "the DM video"
@@ -1075,13 +1087,13 @@ den.test:$HttpsPort {
     $sent = (Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) }).id
     Get-History $owner $denID $dm | Out-Null
     $got = Join-Path $Work "dm-video-copy.mp4"
-    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$(Get-Under $dm $sent)" -WebSession $owner.Session `
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$(Get-Under $owner $denID $file.id $dm $sent)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "video/mp4" -or -not $latin1.GetString([IO.File]::ReadAllBytes($got)).Contains("av01")) {
         Fail "the DM video's copy came as $($resp.Headers['Content-Type']), without AV1"
     }
     Test-Clean $got "the DM video's copy"
-    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)/thumb$(Get-Under $dm $sent)" -WebSession $owner.Session `
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)/thumb$(Get-Under $owner $denID $file.id $dm $sent)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile (Join-Path $Work "dm-video-copy.jpg") -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the DM video's copy has a preview of $($resp.Headers['Content-Type'])" }
     # The -shm file holds only the write-ahead log's index, where a write in

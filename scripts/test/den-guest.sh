@@ -35,6 +35,16 @@ json() {
     python3 -c "import json, sys; d = json.load(sys.stdin); print($1)"
 }
 
+# under DEN_ID FILE_ID CHANNEL_ID MESSAGE_ID prints the query a file's
+# address takes where the page shows it: its message and channel, and the
+# tag the service gives of a DM's file there, read from the message as
+# the page reads it before it asks for the file.
+under() {
+    as=$(api GET "/api/dens/$1/channels/$3/messages?around=$4&limit=1" 2>/dev/null |
+        json '"".join(f.get("sealed_as", "") for m in d["messages"] if m["id"] == "'"$4"'" for f in m.get("attachments") or [] if f["id"] == "'"$2"'")' 2>/dev/null) || as=
+    printf 'channel=%s&message=%s%s' "$3" "$4" "${as:+&as=$as}"
+}
+
 step=$1
 shift
 case $step in
@@ -770,7 +780,7 @@ range)
     # range DEN_ID FILE_ID WHOLE FROM TO [CHANNEL_ID MESSAGE_ID]: fetch bytes
     # FROM to TO of a file as a player seeking does, where the page shows
     # it, and fail unless they're those of WHOLE.
-    curl -sS --fail-with-body -b "$JAR" -o /root/range -D /root/headers -r "$4-$5" "$BASE/api/dens/$1/files/$2${7:+?channel=$6&message=$7}"
+    curl -sS --fail-with-body -b "$JAR" -o /root/range -D /root/headers -r "$4-$5" "$BASE/api/dens/$1/files/$2${7:+?$(under "$1" "$2" "$6" "$7")}"
     head -n 1 /root/headers | grep -q ' 206' || fail "a range came back as $(head -n 1 /root/headers)"
     tail -c +"$(($4 + 1))" "$3" | head -c "$(($5 - $4 + 1))" >/root/want
     cmp -s /root/range /root/want || fail "a range holds the wrong bytes"
@@ -818,7 +828,7 @@ wait-gone)
     # client no longer serves a file where the page showed it, once the
     # den's word that it's gone reached it.
     for _ in $(seq 1 40); do
-        curl -s -o /dev/null --fail -b "$JAR" "$BASE/api/dens/$1/files/$2${4:+?channel=$3&message=$4}" || exit 0
+        curl -s -o /dev/null --fail -b "$JAR" "$BASE/api/dens/$1/files/$2${4:+?$(under "$1" "$2" "$3" "$4")}" || exit 0
         sleep 0.25
     done
     fail "file $2 is still served"
@@ -846,14 +856,14 @@ fetch)
     # fetch DEN_ID FILE_ID OUT [thumb] [CHANNEL_ID MESSAGE_ID]: save a file,
     # or its preview, as the page gets it where it shows it, which a DM's
     # file takes; print the type it came as.
-    path="/api/dens/$1/files/$2" out=$3
+    den=$1 file=$2 path="/api/dens/$1/files/$2" out=$3
     shift 3
     if [ "${1:-}" = thumb ]; then
         path="$path/thumb"
         shift
     fi
     if [ $# -eq 2 ]; then
-        path="$path?channel=$1&message=$2"
+        path="$path?$(under "$den" "$file" "$1" "$2")"
     fi
     curl -sS --fail-with-body -b "$JAR" -o "$out" -D /root/headers "$BASE$path"
     sed -n 's/^[Cc]ontent-[Tt]ype: *\([^;\r]*\).*/\1/p' /root/headers
