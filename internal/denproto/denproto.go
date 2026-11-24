@@ -335,6 +335,9 @@ type Den struct {
 	// neither route.
 	AuditLog    bool `json:"audit_log,omitempty"`
 	MembersSeen bool `json:"members_seen,omitempty"`
+	// Forward says the den keeps a channel's message's forwarded mark; a
+	// den older than it drops the mark.
+	Forward bool `json:"forward,omitempty"`
 }
 
 // Roles.
