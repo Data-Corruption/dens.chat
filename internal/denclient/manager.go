@@ -378,7 +378,7 @@ func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *c
 		done: make(chan struct{}), wake: make(chan struct{}, 1),
 		ids: ids, verdicts: map[string]string{}, copies: map[string]denproto.Bytes{}, idDue: make(chan struct{}, 1),
 		groups: map[string]*groupState{}, marks: map[string]groupMark{}, groupDue: make(chan struct{}, 1),
-		dmFiles: map[string]dmFile{},
+		dmFiles: map[string]map[int64]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
 		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1),
 		fillDue: make(chan struct{}, 1)}

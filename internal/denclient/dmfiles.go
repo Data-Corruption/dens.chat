@@ -166,25 +166,28 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 
 	file.Key = denproto.Random(32)
 	ch, _ := denproto.ParseID(channelID)
+	// The digests are of what goes up, as it goes, which the sealing
+	// goroutine hands over once it has sealed the last chunk.
+	sums := vault.NewRunSums(vault.SealedSize(file.Size))
+	summed := make(chan error, 1)
 	pr, pw := io.Pipe()
 	defer pr.Close()
 	go func() {
 		r, err := reopen()
 		if err == nil {
 			var sw io.WriteCloser
-			if sw, err = vault.SealStreamWith(file.Key, pw, denproto.DMFileAD(c.j.denID, ch, false)); err == nil {
+			if sw, err = vault.SealStreamWith(file.Key, io.MultiWriter(pw, sums), denproto.DMFileAD(c.j.denID, ch, false)); err == nil {
 				if _, err = io.Copy(sw, r); err == nil {
 					err = sw.Close()
 				}
 			}
 		}
+		summed <- err
 		pw.CloseWithError(err)
 	}()
 	var oldThumb string
 	if replaces != "" {
-		c.mu.Lock()
-		oldThumb = c.dmFiles[replaces].thumb
-		c.mu.Unlock()
+		oldThumb = c.ownPreview(replaces)
 	}
 	var sealed io.Reader = pr
 	if p != nil && p.sending != nil {
@@ -192,6 +195,12 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 	}
 	sent, err := c.uploadSealed(ctx, sealed, vault.SealedSize(file.Size), replaces)
 	if err != nil {
+		return Uploaded{}, err
+	}
+	if err := <-summed; err != nil {
+		return Uploaded{}, err
+	}
+	if file.Sums, err = sums.Sums(); err != nil {
 		return Uploaded{}, err
 	}
 	file.ID = sent.ID
@@ -209,10 +218,6 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		}
 	}
 	c.uploads[file.ID] = dmUpload{channel: channelID, file: file, at: now}
-	c.dmFiles[file.ID] = dmFile{channel: ch, key: file.Key}
-	if file.Thumb != nil {
-		c.dmFiles[file.ID] = dmFile{channel: ch, key: file.Key, thumb: file.Thumb.ID}
-	}
 	c.mu.Unlock()
 	up := dmUploaded(file)
 	up.Stripped = res.Removed
@@ -220,6 +225,20 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		up.Stripped, up.Converted = true, p.converted
 	}
 	return up, nil
+}
+
+// ownPreview is the blob of the preview of a file of this member's, as a
+// message of theirs names it, or one of anyone's, or empty.
+func (c *conn) ownPreview(fileID string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	preview := ""
+	for _, df := range c.dmFiles[fileID] {
+		if df.file.Thumb != nil && (df.mine || preview == "") {
+			preview = df.file.Thumb.ID
+		}
+	}
+	return preview
 }
 
 // dmFit is the largest file that fits a den's limit sealed, as a DM's file
@@ -253,11 +272,17 @@ func (c *conn) uploadDMThumb(ctx context.Context, key denproto.Bytes, channel in
 	if err := sw.Close(); err != nil {
 		return nil, err
 	}
+	sums := vault.NewRunSums(int64(sealed.Len()))
+	sums.Write(sealed.Bytes())
+	digests, err := sums.Sums()
+	if err != nil {
+		return nil, err
+	}
 	preview, err := c.uploadSealed(ctx, &sealed, int64(sealed.Len()), replaces)
 	if err != nil {
 		return nil, err
 	}
-	return &denproto.DMThumb{ID: preview.ID, Width: th.Width, Height: th.Height}, nil
+	return &denproto.DMThumb{ID: preview.ID, Width: th.Width, Height: th.Height, Size: int64(len(th.Data)), Sums: digests}, nil
 }
 
 // uploadSealed sends a sealed blob to the den, of the given length, made

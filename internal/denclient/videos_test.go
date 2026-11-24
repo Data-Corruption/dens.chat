@@ -189,7 +189,7 @@ func TestDMVideoGoesSmaller(t *testing.T) {
 	if raceOn {
 		t.Skip("encoding in the module under the race detector takes minutes")
 	}
-	_, owner, member, denID, _ := chatDen(t)
+	h, owner, member, denID, _ := chatDen(t)
 	ctx := context.Background()
 	dm := openDM(t, owner, member, denID)
 	readyDM(t, owner, member, denID, dm)
@@ -206,22 +206,19 @@ func TestDMVideoGoesSmaller(t *testing.T) {
 	if err != nil || back.Thumb == nil {
 		t.Fatalf("switched back: %+v %v", back, err)
 	}
-	if _, err := owner.Send(ctx, denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{back.ID}}); err != nil {
+	sent, err := owner.Send(ctx, denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{back.ID}})
+	if err != nil {
 		t.Fatal(err)
 	}
-	var got []byte
-	for range 100 {
-		if got, _, err = fetch(t, member, denID, back.ID, false); err == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	messageOn(t, member, denID, dm, sent.ID, "the copy's message", func(denclient.PageMessage) bool { return true })
+	got, _, err := fetchIn(t, member, denID, dm, sent.ID, back.ID, false)
 	if err != nil || !bytes.Contains(got, []byte("av01")) {
 		t.Fatalf("the member fetching the copy: %v", err)
 	}
-	if _, kind, err := fetch(t, member, denID, back.ID, true); err != nil || kind != media.JPEG {
+	if _, kind, err := fetchIn(t, member, denID, dm, sent.ID, back.ID, true); err != nil || kind != media.JPEG {
 		t.Fatalf("the copy's preview: %v %s", err, kind)
 	}
+	digestsHold(t, h, member, denID, dm, sent.ID)
 }
 
 // A video over the den's limit goes as a copy fitted to it, whatever the

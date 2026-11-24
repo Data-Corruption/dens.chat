@@ -90,13 +90,23 @@ func (c *conn) noteOwnFiles(files []denproto.OwnFile) {
 	}
 }
 
-// ownerOf says what a file is on, as far as this service knows: a message,
-// in a channel or a DM, a member's picture, or one of the den's emoji.
-func (c *conn) ownerOf(fileID string) cache.Owner {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	if df, ok := c.dmFiles[fileID]; ok && df.message != 0 {
-		return cache.Owner{Message: df.message, Channel: df.channel}
+// ownerLocked says what a file the page asks for where it shows it is on,
+// as far as this service knows: that message, in a channel or a DM, a
+// member's picture, or one of the den's emoji. A DM's file is known only
+// as a message this service opened names it, and an upload waiting to be
+// sent isn't kept. The caller holds c.mu.
+func (c *conn) ownerLocked(fileID string, at place) cache.Owner {
+	if at.message != 0 {
+		if df, ok := c.dmFiles[fileID][at.message]; ok && df.channel == at.channel {
+			return cache.Owner{Message: at.message, Channel: at.channel}
+		}
+		if o, ok := c.owners[fileID]; ok && o.message == at.message && o.channel == at.channel {
+			return cache.Owner{Message: o.message, Channel: o.channel}
+		}
+		return cache.Owner{}
+	}
+	if _, ok := c.dmFiles[fileID]; ok {
+		return cache.Owner{}
 	}
 	if o, ok := c.owners[fileID]; ok {
 		return cache.Owner{Message: o.message, Channel: o.channel}
@@ -118,10 +128,12 @@ func (c *conn) ownerOf(fileID string) cache.Owner {
 	return cache.Owner{}
 }
 
-// openCached opens a file of another den through the cache. An emoji's
-// comes from the cache alone while emoji are on: one it let go of
-// brings every one it lacks, rather than the den hearing which showed.
-func (c *conn) openCached(ctx context.Context, fileID string, thumb bool) (*OpenedFile, error) {
+// openCached opens a file of another den through the cache, as the page
+// shows it where it is. An emoji's comes from the cache alone while
+// emoji are on: one it let go of brings every one it lacks, rather than
+// the den hearing which showed.
+func (c *conn) openCached(ctx context.Context, ref fileRef) (*OpenedFile, error) {
+	fileID, thumb := ref.id, ref.thumb
 	id, err := denproto.ParseID(fileID)
 	if err != nil {
 		return nil, inputError(errors.New("invalid file ID"))
@@ -138,8 +150,8 @@ func (c *conn) openCached(ctx context.Context, fileID string, thumb bool) (*Open
 			}
 		}
 	}
-	h, err := c.m.Cache.File(c.j.denID, id, thumb, c.ownerOf(fileID), func() (cache.Source, error) {
-		return c.fileSource(ctx, fileID, thumb)
+	h, err := c.m.Cache.File(c.j.denID, id, thumb, cache.Owner{Message: ref.at.message, Channel: ref.at.channel}, ref.owner, func() (cache.Source, error) {
+		return c.fileSource(ctx, ref)
 	})
 	if err != nil {
 		return nil, err

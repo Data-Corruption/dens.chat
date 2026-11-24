@@ -122,15 +122,20 @@ func (rt *router) handleSetThumb(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, up)
 }
 
-// handleFile serves a file, or its preview, to the page. Only a file that
-// turned out to be an image of a kind Dens reads, or video or audio in a
-// container the media module writes, shows inline, as that type; anything
-// else downloads, and never as a type the browser would render. Byte
-// ranges let a player seek. The sandbox keeps even a file opened on its own
-// from running anything, and no-store keeps it out of the browser's cache.
+// handleFile serves a file, or its preview, to the page, where the page
+// shows it: under a message, in its channel, which a DM's file opens as
+// that message seals it.
+// Only a file that turned out to be an image of a kind Dens reads, or
+// video or audio in a container the media module writes, shows inline, as
+// that type; anything else downloads, and never as a type the browser
+// would render. Byte ranges let a player seek. The sandbox keeps even a
+// file opened on its own from running anything, and no-store keeps it out
+// of the browser's cache.
 func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		f, err := rt.a.Dens.OpenFile(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "file"), thumb)
+		q := r.URL.Query()
+		at := denclient.FileAt{Channel: q.Get("channel"), Message: q.Get("message")}
+		f, err := rt.a.Dens.OpenFile(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "file"), at, thumb)
 		if err != nil {
 			if r.Context().Err() != nil {
 				return // the page moved on, as it does when a message scrolls away

@@ -120,6 +120,44 @@ type denHost struct {
 	upgradeMu                                           sync.Mutex
 	upgrades                                            []string
 	sends                                               []json.RawMessage
+	// swaps answers a file's GET with another's, as a den that put other
+	// bytes under a file would, and gets are the GETs of files it
+	// answered, each its path and the range it asked for.
+	swaps map[string]string
+	gets  []fileGet
+}
+
+// fileGet is a GET of a file a den answered: its path and its range.
+type fileGet struct{ path, from string }
+
+// swap has the den answer GETs of file's blob with other's, until restore.
+func (h *denHost) swap(file, other string) {
+	h.upgradeMu.Lock()
+	defer h.upgradeMu.Unlock()
+	if h.swaps == nil {
+		h.swaps = map[string]string{}
+	}
+	h.swaps["/api/files/"+file] = "/api/files/" + other
+}
+
+func (h *denHost) restore() {
+	h.upgradeMu.Lock()
+	defer h.upgradeMu.Unlock()
+	clear(h.swaps)
+}
+
+// fileGets returns the GETs of a file's blob the den answered from the
+// n-th on.
+func (h *denHost) fileGets(file string, n int) []string {
+	h.upgradeMu.Lock()
+	defer h.upgradeMu.Unlock()
+	var out []string
+	for _, g := range h.gets {
+		if g.path == "/api/files/"+file {
+			out = append(out, g.from)
+		}
+	}
+	return out[min(n, len(out)):]
 }
 
 func startDen(t *testing.T, s store, lifetime time.Duration) *denHost {
@@ -152,6 +190,12 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 		switch p := r.URL.Path; {
 		case strings.HasPrefix(p, "/api/files/"):
 			h.files.Add(1)
+			h.upgradeMu.Lock()
+			h.gets = append(h.gets, fileGet{path: p, from: r.Header.Get("Range")})
+			if other, ok := h.swaps[p]; ok {
+				r.URL.Path = other
+			}
+			h.upgradeMu.Unlock()
 		case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/channels/") && strings.HasSuffix(p, "/messages"):
 			h.history.Add(1)
 		case p == "/api/changes":

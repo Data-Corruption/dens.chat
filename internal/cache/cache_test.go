@@ -114,9 +114,11 @@ func (f *fixture) reopen() {
 	f.s = s
 }
 
+// open opens a file as the page asks for it: a message's under that
+// message, in its channel.
 func (f *fixture) open(id int64, owner Owner, d *den) *File {
 	f.t.Helper()
-	h, err := f.s.File(denA, id, false, owner, d.open)
+	h, err := f.s.File(denA, id, false, Owner{Message: owner.Message, Channel: owner.Channel}, owner, d.open)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -198,7 +200,7 @@ func TestReadersAtOnce(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			h, err := f.s.File(denA, 1, false, onMessage, d.open)
+			h, err := f.s.File(denA, 1, false, onMessage, onMessage, d.open)
 			if err != nil {
 				t.Error(err)
 				return
@@ -310,7 +312,7 @@ func TestAnotherKeyOrFormatEmptiesTheCache(t *testing.T) {
 	if files, _ := os.ReadDir(filepath.Join(f.dir, filesDir)); len(files) != 0 {
 		t.Fatalf("the files of a cache under another key stayed: %v", files)
 	}
-	h, _ = s.File(denA, 1, false, onMessage, d.open)
+	h, _ = s.File(denA, 1, false, onMessage, onMessage, d.open)
 	h.ReadAt(make([]byte, 10), 0)
 	h.Close()
 	if _, err := s.db.Exec(`PRAGMA user_version = 99`); err != nil {
@@ -430,7 +432,7 @@ func TestDrops(t *testing.T) {
 		for _, x := range files {
 			for _, thumb := range []bool{false, true} {
 				d := newDen(t, 3000)
-				h, err := f.s.File(denA, x.id, thumb, x.owner, d.open)
+				h, err := f.s.File(denA, x.id, thumb, x.owner, x.owner, d.open)
 				if err != nil {
 					t.Fatal(err)
 				}

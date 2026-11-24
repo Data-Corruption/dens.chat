@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net/http"
 	"slices"
 	"strconv"
 
@@ -95,21 +96,88 @@ type PageHistory struct {
 	HasNewer bool          `json:"has_newer"`
 }
 
-// dmFile is a DM's file this service can open for the page: its key, the
-// blob of its preview, and the DM it's in.
+// dmFile is a DM's file as a message this service opened seals it, for
+// the page: its key, size and digests, its preview's, and the DM it's in.
+// mine is a message of this member's.
 type dmFile struct {
 	channel int64
-	key     []byte
-	thumb   string
-	// message is the message the file is on, which the cache drops it
-	// with; 0 for one waiting to be sent.
-	message int64
+	file    denproto.DMFile
+	mine    bool
 }
 
-// maxDMFiles bounds the DM files a den connection remembers keys for; past
-// it they're forgotten, and the page's next load of their messages brings
-// them back.
+// maxDMFiles bounds the DM files a den connection remembers keys for, by
+// the messages that name them; past it they're forgotten, and the page's
+// next load of their messages brings them back.
 const maxDMFiles = 20_000
+
+// errNotOpened is a file asked for in a DM, a group or notes under a
+// message this service hasn't opened, or that doesn't name it, or in a
+// channel it never held: a sealed file's key and digests are its
+// message's, so it opens under no other, and never as the den's bytes.
+var errNotOpened = &denproto.Error{Status: http.StatusNotFound, Code: denproto.CodeNotFound,
+	Message: "This file's message isn't open here; load it again."}
+
+// place is where the page shows a file: a message, in its channel, or
+// neither, for a picture or an upload waiting to be sent.
+type place struct{ channel, message int64 }
+
+// keepDMFileLocked remembers a file a message names, by the message. The
+// caller holds c.mu.
+func (c *conn) keepDMFileLocked(id string, message int64, df dmFile) {
+	byMessage := c.dmFiles[id]
+	if _, ok := byMessage[message]; !ok {
+		if c.dmFileN >= maxDMFiles {
+			clear(c.dmFiles)
+			c.dmFileN, byMessage = 0, nil
+		}
+		c.dmFileN++
+	}
+	if byMessage == nil {
+		byMessage = map[int64]dmFile{}
+		c.dmFiles[id] = byMessage
+	}
+	byMessage[message] = df
+}
+
+// dropDMFilesLocked forgets files, under every message. The caller holds
+// c.mu.
+func (c *conn) dropDMFilesLocked(ids ...string) {
+	for _, id := range ids {
+		c.dmFileN -= len(c.dmFiles[id])
+		delete(c.dmFiles, id)
+	}
+}
+
+// sealedLocked finds the file the page asks for where it shows it: in a
+// DM, a group or notes, by the kind this service keeps for good, as the
+// message it's on seals it; under no message, as an upload of this
+// member's waiting to be sent. A file in a channel isn't sealed, nor one
+// under no message that no message this service opened names. The caller
+// holds c.mu.
+func (c *conn) sealedLocked(id string, at place) (dmFile, bool, error) {
+	if at.message == 0 {
+		if u, ok := c.uploads[id]; ok {
+			ch, _ := denproto.ParseID(u.channel)
+			return dmFile{channel: ch, file: u.file, mine: true}, true, nil
+		}
+		if _, ok := c.dmFiles[id]; ok {
+			return dmFile{}, true, errNotOpened
+		}
+		return dmFile{}, false, nil
+	}
+	channel := denproto.FormatID(at.channel)
+	if !c.privateLocked(channel) {
+		if _, held := c.den.channels[channel]; !held && c.den.kinds[channel] == "" {
+			return dmFile{}, false, errNotOpened
+		}
+		return dmFile{}, false, nil
+	}
+	df, ok := c.dmFiles[id][at.message]
+	if !ok || df.channel != at.channel {
+		return dmFile{}, true, errNotOpened
+	}
+	return df, true, nil
+}
 
 // me is this member's ID; the caller holds c.mu.
 func (c *conn) meLocked() string { return c.profile.Member.ID }
@@ -306,17 +374,11 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 func (c *conn) dmFilesLocked(m denproto.Message, p denproto.DMPayload) []denproto.File {
 	channel, _ := denproto.ParseID(m.ChannelID)
 	message, _ := denproto.ParseID(m.ID)
+	mine := m.AuthorID == c.meLocked()
 	out := []denproto.File{}
 	for _, f := range p.Files {
-		df := dmFile{channel: channel, key: f.Key, message: message}
-		if f.Thumb != nil {
-			df.thumb = f.Thumb.ID
-		}
 		out = append(out, dmUploaded(f).File)
-		if len(c.dmFiles) >= maxDMFiles {
-			clear(c.dmFiles)
-		}
-		c.dmFiles[f.ID] = df
+		c.keepDMFileLocked(f.ID, message, dmFile{channel: channel, file: f, mine: mine})
 	}
 	return out
 }

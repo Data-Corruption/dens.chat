@@ -108,22 +108,23 @@ func newest(t *testing.T, m *denclient.Manager, denID, channel string) denclient
 // sameFile checks that a forward's file opens for its reader as the
 // original does for its own, its preview too, under an ID of its own in
 // the same den.
-func sameFile(t *testing.T, what string, from *denclient.Manager, fromDen string, orig denproto.File, to *denclient.Manager, toDen string, got denproto.File) {
+func sameFile(t *testing.T, what string, from *denclient.Manager, fromDen, fromCh, fromMsg string, orig denproto.File, to *denclient.Manager,
+	toDen, toCh, toMsg string, got denproto.File) {
 	t.Helper()
 	if fromDen == toDen && got.ID == orig.ID || got.Name != orig.Name || got.Type != orig.Type || got.Spoiler != orig.Spoiler || (got.Thumb == nil) != (orig.Thumb == nil) {
 		t.Errorf("%s: %+v, from %+v", what, got, orig)
 		return
 	}
-	want, _, err := fetch(t, from, fromDen, orig.ID, false)
+	want, _, err := fetchIn(t, from, fromDen, fromCh, fromMsg, orig.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
-	data, _, err := fetch(t, to, toDen, got.ID, false)
+	data, _, err := fetchIn(t, to, toDen, toCh, toMsg, got.ID, false)
 	if err != nil || !bytes.Equal(data, want) {
 		t.Errorf("%s opens as %d bytes, %v, not the original's %d", what, len(data), err, len(want))
 	}
 	if got.Thumb != nil {
-		if _, kind, err := fetch(t, to, toDen, got.ID, true); err != nil || !kind.Image() {
+		if _, kind, err := fetchIn(t, to, toDen, toCh, toMsg, got.ID, true); err != nil || !kind.Image() {
 			t.Errorf("%s's preview: %v, %v", what, kind, err)
 		}
 	}
@@ -181,8 +182,9 @@ func TestForwardWithItsFiles(t *testing.T) {
 			t.Fatalf("%s reads %+v", place.name, got)
 		}
 		for i := range src.Attachments {
-			sameFile(t, place.name+"'s file", alice, denID, src.Attachments[i], place.reader, denID, got.Attachments[i])
+			sameFile(t, place.name+"'s file", alice, denID, general, src.ID, src.Attachments[i], place.reader, denID, place.id, got.ID, got.Attachments[i])
 		}
+		digestsHold(t, h, place.reader, denID, place.id, fwd.ID)
 	}
 
 	// From the DM to a channel, its spoiler kept by the den.
@@ -196,7 +198,7 @@ func TestForwardWithItsFiles(t *testing.T) {
 		t.Fatalf("general reads %+v", got)
 	}
 	for i := range inDM.Attachments {
-		sameFile(t, "general's file", bob, denID, inDM.Attachments[i], alice, denID, got.Attachments[i])
+		sameFile(t, "general's file", bob, denID, dm, inDM.ID, inDM.Attachments[i], alice, denID, general, got.ID, got.Attachments[i])
 	}
 
 	// A sealed place's mark is its seal's alone, and only a forward
@@ -279,7 +281,7 @@ func TestForwardKeepsAPagesPreview(t *testing.T) {
 	if got.ID != fwd.ID || len(got.Attachments) != 1 || got.Attachments[0].Thumb == nil {
 		t.Fatalf("the DM reads %+v", got)
 	}
-	sameFile(t, "the clip", bob, denID, src.Attachments[0], alice, denID, got.Attachments[0])
+	sameFile(t, "the clip", bob, denID, general, src.ID, src.Attachments[0], alice, denID, dm, got.ID, got.Attachments[0])
 }
 
 // A forward goes to another den, from a channel and from a DM, where
@@ -297,7 +299,7 @@ func TestForwardToAnotherDen(t *testing.T) {
 	if got.ID != fwd.ID || !got.Forwarded || got.Text != "look" || len(got.Attachments) != 1 {
 		t.Fatalf("lobby reads %+v", got)
 	}
-	sameFile(t, "lobby's photo", alice, denID, src.Attachments[0], carol, den2, got.Attachments[0])
+	sameFile(t, "lobby's photo", alice, denID, general, src.ID, src.Attachments[0], carol, den2, lobby, got.ID, got.Attachments[0])
 	if body, raw := lastSent(t, h2); !slices.Equal(keysOf(body), []string{"attachments", "forwarded", "nonce", "text"}) || strings.Contains(raw, denID) {
 		t.Errorf("Second Den was sent %s", raw)
 	}
@@ -312,7 +314,7 @@ func TestForwardToAnotherDen(t *testing.T) {
 	if got.ID != across.ID || !got.Forwarded || got.Text != "look" || len(got.Attachments) != 1 {
 		t.Fatalf("carol's DM reads %+v", got)
 	}
-	sameFile(t, "the DM's photo", bob, denID, inDM.Attachments[0], carol, den2, got.Attachments[0])
+	sameFile(t, "the DM's photo", bob, denID, dm, inDM.ID, inDM.Attachments[0], carol, den2, theirs, got.ID, got.Attachments[0])
 }
 
 // A member whose Dens keeps a cache forwards a DM's photo, read through
@@ -351,7 +353,7 @@ func TestForwardThroughTheCache(t *testing.T) {
 	if got.ID != fwd.ID || !got.Forwarded || len(got.Attachments) != 1 {
 		t.Fatalf("lobby reads %+v", got)
 	}
-	sameFile(t, "lobby's photo", erin, denID, src.Attachments[0], carol, den2, got.Attachments[0])
+	sameFile(t, "lobby's photo", erin, denID, dm, src.ID, src.Attachments[0], carol, den2, lobby, got.ID, got.Attachments[0])
 
 	h2.stop()
 	stop()
