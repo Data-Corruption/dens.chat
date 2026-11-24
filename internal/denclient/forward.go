@@ -54,11 +54,11 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 	if !dst.connected() {
 		return PageMessage{}, inputError(errors.New("That den is offline, so nothing goes there now."))
 	}
-	sealed := dst.private(to.Channel)
-	if !sealed && !dst.forwards() {
-		return PageMessage{}, inputError(errors.New("That den is too old to mark a forward in its channels."))
-	}
 	msg, err := src.toForward(ctx, channelID, messageID)
+	if err != nil {
+		return PageMessage{}, err
+	}
+	sealed, err := dst.takesForward(ctx, to.Channel)
 	if err != nil {
 		return PageMessage{}, err
 	}
@@ -155,12 +155,29 @@ func (m *Manager) forwardFile(ctx context.Context, denID string, a denproto.File
 	return m.uploadTo(ctx, dst, channel, a.Name, f.Size(), io.NewSectionReader(f, 0, f.Size()), "")
 }
 
-// forwards reports whether the den keeps a channel's message's forwarded
-// mark.
-func (c *conn) forwards() bool {
+// takesForward says whether a place is sealed, or why nothing forwards to
+// it, before a file goes up: this Dens holds it as neither a text channel
+// nor a sealed place, so its files would go unsealed; its den keeps no
+// channel's mark; or it has no key to send under, as a DM that holds.
+func (c *conn) takesForward(ctx context.Context, channel string) (bool, error) {
 	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.den != nil && c.den.forward
+	if c.den == nil {
+		c.mu.Unlock()
+		return false, ErrNotStarted
+	}
+	sealed, kind, forwards := c.privateLocked(channel), c.den.channels[channel].Kind, c.den.forward
+	c.mu.Unlock()
+	switch {
+	case sealed:
+		_, key, err := c.sendKey(ctx, channel)
+		clear(key)
+		return true, err
+	case kind != denproto.KindText:
+		return false, inputError(errors.New("messages go in text channels, DMs, groups and notes"))
+	case !forwards:
+		return false, inputError(errors.New("That den is too old to mark a forward in its channels."))
+	}
+	return false, nil
 }
 
 // roomFor checks that files of those sizes fit the den's limits as a

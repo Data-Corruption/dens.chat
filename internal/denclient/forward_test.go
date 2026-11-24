@@ -224,6 +224,36 @@ func TestForwardWithItsFiles(t *testing.T) {
 		if _, err := bob.SetTask(ctx, denID, m.ChannelID, m.ID, 0, denproto.TaskRequest{Checked: true, Text: "the beach ||at noon||"}); err == nil {
 			t.Errorf("bob ticked a forward in %s", m.ChannelID)
 		}
+		// Its sender takes a file off it, which frees their space, and
+		// swaps none: their files list it as a forward's.
+		page, err := bob.Files(ctx, denID, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, f := range page.Files {
+			if f.Forwarded != (f.MessageID != "") {
+				t.Errorf("bob's files list %s, on message %q, as forwarded: %v", f.Name, f.MessageID, f.Forwarded)
+			}
+		}
+		doc := m.Attachments[1].ID
+		place := ""
+		if m.ChannelID == dm {
+			place = dm
+		}
+		up, err := bob.Replace(ctx, denID, place, doc, "other.txt", 5, strings.NewReader("other"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := bob.SwapFile(ctx, denID, m.ChannelID, m.ID, doc, up.ID); err == nil {
+			t.Errorf("bob swapped a file of a forward in %s: %v", m.ChannelID, err)
+		}
+		if err := bob.RemoveFile(ctx, denID, m.ChannelID, m.ID, doc); err != nil {
+			t.Errorf("bob taking a file off his forward in %s: %v", m.ChannelID, err)
+		}
+		if left, _ := messageIn(t, alice, denID, m.ChannelID, m.ID); !left.Forwarded || left.Text != m.Text || len(left.Attachments) != 1 ||
+			left.Attachments[0].ID != m.Attachments[0].ID {
+			t.Errorf("alice reads the forward in %s, a file off, as %+v", m.ChannelID, left)
+		}
 		if err := bob.DeleteMessage(ctx, denID, m.ID); err != nil {
 			t.Errorf("bob deleting his forward in %s: %v", m.ChannelID, err)
 		}
@@ -384,10 +414,11 @@ func TestForwardWithinThePlacesLimits(t *testing.T) {
 }
 
 // What can't go says so: a poll; a message to a channel whose den keeps
-// no forward's mark, though a DM there takes it; and a DM that holds since
-// the other member's keys changed.
+// no forward's mark, though a DM there takes it; one to a voice channel or
+// a place this Dens doesn't hold; and a DM that holds since the other
+// member's keys changed. None of its files goes up first.
 func TestForwardRefusals(t *testing.T) {
-	_, ms, ids, denID := groupDen(t)
+	h, ms, ids, denID := groupDen(t)
 	alice, bob := ms[0], ms[1]
 	ctx := context.Background()
 	general := channelIn(t, alice, denID, "general")
@@ -410,6 +441,26 @@ func TestForwardRefusals(t *testing.T) {
 	}
 	forward(t, bob, denID, general, plain.ID, denID, dm)
 
+	filed, err := alice.Send(ctx, denID, general, denproto.SendRequest{Nonce: denproto.Random(16), Text: "data",
+		Attachments: []string{upload(t, alice, denID, "data.bin", denproto.Random(1000)).ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	name, kind := "hall", denproto.KindVoice
+	if err := alice.Manage(ctx, denID, "channels", "POST", "", denproto.ChannelRequest{Name: &name, Kind: kind}); err != nil {
+		t.Fatal(err)
+	}
+	hall := channelIn(t, alice, denID, "hall")
+	for _, place := range []string{hall, "987654"} {
+		before := h.uploads.Load()
+		if _, err := alice.Forward(ctx, denID, general, filed.ID, denclient.ForwardTo{Den: denID, Channel: place, Nonce: denproto.Random(16)}); !isInput(err) {
+			t.Errorf("forwarded to %s, no place for a message: %v", place, err)
+		}
+		if n := h.uploads.Load() - before; n != 0 {
+			t.Errorf("a forward to %s, no place for a message, made %d uploads", place, n)
+		}
+	}
+
 	if _, err := alice.Compare(ctx, denID, ids[1], codeOf(t, bob, denID, ids[0]).Mine); err != nil {
 		t.Fatal(err)
 	}
@@ -423,5 +474,36 @@ func TestForwardRefusals(t *testing.T) {
 	if _, err := alice.Forward(ctx, denID, general, plain.ID, denclient.ForwardTo{Den: denID, Channel: dm, Nonce: denproto.Random(16)}); !isInput(err) ||
 		!strings.Contains(err.Error(), "keys changed") {
 		t.Errorf("forwarded into a DM that holds: %v", err)
+	}
+	before := h.uploads.Load()
+	if _, err := alice.Forward(ctx, denID, general, filed.ID, denclient.ForwardTo{Den: denID, Channel: dm, Nonce: denproto.Random(16)}); !isInput(err) ||
+		!strings.Contains(err.Error(), "keys changed") {
+		t.Errorf("forwarded a file into a DM that holds: %v", err)
+	}
+	if n := h.uploads.Load() - before; n != 0 {
+		t.Errorf("a forward into a DM that holds made %d uploads", n)
+	}
+}
+
+// Forward makes the member's notes as they're picked, so it sends to them
+// before the den's word of them comes: the notes' kind, kept from the den's
+// answer, is enough to seal under.
+func TestForwardToNotesJustMade(t *testing.T) {
+	h, alice, bob, denID, general := chatDen(t)
+	ctx := context.Background()
+	src := send(t, alice, denID, general, "for later")
+	viewOf(t, bob, denID, "notes offered", func(v denclient.View) bool { return v.HasNotes })
+	notes, err := bob.OpenNotes(ctx, denID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := denclient.ForgetChannel(bob, denID, notes.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := bob.Forward(ctx, denID, general, src.ID, denclient.ForwardTo{Den: denID, Channel: notes.ID, Nonce: denproto.Random(16)}); err != nil {
+		t.Fatalf("forwarded to notes just made: %v", err)
+	}
+	if body, _ := lastSent(t, h); !slices.Equal(keysOf(body), []string{"key_id", "nonce", "sealed", "text"}) {
+		t.Errorf("the den was sent %v", keysOf(body))
 	}
 }

@@ -43,3 +43,20 @@ func ForgetForward(m *Manager, denID string) error {
 	c.den.forward = false
 	return nil
 }
+
+// ForgetChannel takes a channel out of a den's state and leaves its kind
+// kept, as where the den answered with it and its event hasn't come, for
+// the tests of package denclient_test.
+func ForgetChannel(m *Manager, denID, channelID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil {
+		return ErrNotStarted
+	}
+	delete(c.den.channels, channelID)
+	return nil
+}

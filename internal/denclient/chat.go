@@ -377,7 +377,8 @@ func (c *conn) editDM(ctx context.Context, channelID, messageID string, revision
 		return PageMessage{}, inputError(errors.New("this message waits for you: keep it, or delete it"))
 	case locked != "" && !waiting:
 		return PageMessage{}, inputError(errors.New("this device can't open that message, so it can't change it"))
-	case keep == nil && p.Forwarded:
+	// A forward takes no edit, but a file comes off it (changeDMFile).
+	case keep == nil && p.Forwarded && !files:
 		return PageMessage{}, inputError(errors.New("a forward is its sender's to delete, not to edit"))
 	case !group:
 	case current.AuthorID != me && (editors != nil || p.Grant == nil || !slices.Contains(p.Grant.Editors, me)):

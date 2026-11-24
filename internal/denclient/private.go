@@ -369,8 +369,9 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			return "", nil, errNoSeal
 		}
 		// The member's notes go under the key their seal makes, named by
-		// the notes' channel.
-		if c.den.channels[channel].Kind == denproto.KindNotes {
+		// the notes' channel, or by the kind kept from the den's answer
+		// until the notes' event comes, since Forward makes and sends at once.
+		if c.den.channels[channel].Kind == denproto.KindNotes || c.den.kinds[channel] == denproto.KindNotes {
 			key, err := c.notesKeyLocked()
 			c.mu.Unlock()
 			return channel, key, err
