@@ -10,8 +10,9 @@ import (
 
 // A channel's forwarded message keeps its mark, in history and its
 // event, and is its author's to delete, never to edit, tick or share: it
-// comes with no poll, reply or editors. A DM's mark goes inside its seal,
-// so the den takes none beside one.
+// comes with no poll, reply or editors. Its author takes a file off it,
+// which frees their space, and puts none on it. A DM's mark goes inside
+// its seal, so the den takes none beside one.
 func TestForwardedMessages(t *testing.T) {
 	f, owner, member := chatFixture(t)
 	ctx := context.Background()
@@ -73,5 +74,41 @@ func TestForwardedMessages(t *testing.T) {
 	}
 	if err := f.d.Delete(ctx, member, m.ID); err != nil {
 		t.Errorf("its author deleting a forward: %v", err)
+	}
+
+	var ups []string
+	for _, name := range []string{"a.txt", "b.txt", "c.txt"} {
+		up, err := f.upload(member, name, []byte(name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ups = append(ups, up.ID)
+	}
+	m, err = f.d.Send(ctx, member, c.ID, denproto.SendRequest{Nonce: denproto.Random(16), Text: "two files", Attachments: ups[:2], Forwarded: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	own, err := f.d.OwnFiles(ctx, member, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, file := range own.Files {
+		if file.Forwarded != (file.MessageID == m.ID) {
+			t.Errorf("the member's own files list %s, on message %q, as forwarded: %v", file.Name, file.MessageID, file.Forwarded)
+		}
+	}
+	one, other := ups[:1], []string{ups[0], ups[2]}
+	for name, req := range map[string]denproto.EditRequest{
+		"another file in one's place": {Revision: 1, Text: "two files", Attachments: &other},
+		"a file off and other words":  {Revision: 1, Text: "one file", Attachments: &one},
+		"a file off and editors":      {Revision: 1, Text: "two files", Attachments: &one, Editors: &[]string{denproto.FormatID(owner.MemberID)}},
+	} {
+		if _, err := f.d.Edit(ctx, member, m.ID, req); !denproto.IsCode(err, denproto.CodeForbidden) {
+			t.Errorf("a forward's edit with %s: %v", name, err)
+		}
+	}
+	left, err := f.d.Edit(ctx, member, m.ID, denproto.EditRequest{Revision: 1, Text: "two files", Attachments: &one})
+	if err != nil || !left.Forwarded || left.Text != "two files" || len(left.Attachments) != 1 || left.Attachments[0].ID != ups[0] {
+		t.Errorf("a file taken off a forward: %+v %v", left, err)
 	}
 }

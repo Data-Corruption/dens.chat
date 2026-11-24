@@ -1584,6 +1584,21 @@ func checkForward(req denproto.SendRequest, dm bool) error {
 	return nil
 }
 
+// dropsFiles reports whether an edit only takes files off a message, the
+// one change a forward takes: it frees its sender's space, and puts
+// nothing under the mark.
+func dropsFiles(m denproto.Message, req denproto.EditRequest) bool {
+	if req.Attachments == nil || req.Editors != nil || denproto.CleanLinks(req.Text) != m.Text {
+		return false
+	}
+	for _, id := range *req.Attachments {
+		if !slices.ContainsFunc(m.Attachments, func(f denproto.File) bool { return f.ID == id }) {
+			return false
+		}
+	}
+	return true
+}
+
 // checkSealedText checks that a DM message's text comes sealed, with the
 // key it's sealed with, and that nothing else does.
 func checkSealedText(dm bool, text string, sealed denproto.Bytes, keyID string) error {
@@ -1701,7 +1716,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if m.Poll != nil {
 		return m, forbidden("a poll can't be edited once posted, so no vote stands under a question it wasn't cast for")
 	}
-	if m.Forwarded {
+	if m.Forwarded && !dropsFiles(m, req) {
 		return m, forbidden("a forward is its sender's to delete, not to edit")
 	}
 	author, _ := denproto.ParseID(m.AuthorID)

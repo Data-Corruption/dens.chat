@@ -45,7 +45,7 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 		m.channel_id, CASE WHEN EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id) THEN 'avatar'
 			WHEN EXISTS (SELECT 1 FROM den_members WHERE banner_id = f.id) THEN 'banner' ELSE '' END,
 		(SELECT e.id FROM den_events e LEFT JOIN den_channels c ON c.id = e.channel_id
-			WHERE e.banner_id = f.id AND (`+eventStaffOnly+` = 0 OR ?5))
+			WHERE e.banner_id = f.id AND (`+eventStaffOnly+` = 0 OR ?5)), coalesce(m.forwarded, 0)
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id LEFT JOIN den_channels mc ON mc.id = m.channel_id
 		WHERE f.uploader_id = ?1 AND NOT EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
 			AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?2, ?3)
@@ -67,7 +67,7 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 		var message, channel, w, h, tw, th, duration, event sql.NullInt64
 		var name []byte
 		if err := rows.Scan(&l.id, &message, &name, &f.Type, &f.Size, &w, &h, &f.Animated, &tw, &th, &duration, &f.Sealed,
-			&f.CreatedAt, &l.space, &channel, &f.Profile, &event); err != nil {
+			&f.CreatedAt, &l.space, &channel, &f.Profile, &event, &f.Forwarded); err != nil {
 			rows.Close()
 			return page, err
 		}
