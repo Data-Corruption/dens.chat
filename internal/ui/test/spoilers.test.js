@@ -99,8 +99,8 @@ test('a spoiler drawn as a card, a photo too large to preview or a sound, shows 
 });
 
 test("the viewer shows a message's images but the spoilers still covered", () => {
-    const m = { id: '5', attachments: [photo('a', 'twist.jpg', true), photo('c', 'credits.jpg', false), { id: 'd', name: 'notes.txt', type: 'text/plain' }] };
-    assert.deepEqual(viewed(m, m.attachments[1], new Set(['a'])), { message: '5', files: [m.attachments[1]], index: 0 });
+    const m = { id: '5', channel_id: '3', attachments: [photo('a', 'twist.jpg', true), photo('c', 'credits.jpg', false), { id: 'd', name: 'notes.txt', type: 'text/plain' }] };
+    assert.deepEqual(viewed(m, m.attachments[1], new Set(['a'])), { message: '5', at: { channel: '3', message: '5' }, files: [m.attachments[1]], index: 0 });
     assert.deepEqual(viewed(m, m.attachments[0]).files.map((f) => f.id), ['a', 'c']);
     assert.equal(viewed(m, m.attachments[0], new Set(['a'])), null);
 });

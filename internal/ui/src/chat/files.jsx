@@ -61,9 +61,14 @@ export function fitBox(w, h, maxW, maxH) {
     };
 }
 
-export const fileURL = (denID, id) => `/api/dens/${denID}/files/${id}`;
-export const thumbURL = (denID, id) => `/api/dens/${denID}/files/${id}/thumb`;
-export const downloadURL = (denID, f) => `/api/dens/${denID}/files/${f.id}?download=${encodeURIComponent(f.name)}`;
+// A message's file is asked for where it's shown, at: the message and its
+// channel, which a DM's opens only under; a picture, or an upload waiting
+// to be sent, at none. placeOf is where a message's files are.
+export const placeOf = (m) => ({ channel: m.channel_id, message: m.id });
+const where = (at, join = '?') => (at?.message ? `${join}channel=${encodeURIComponent(at.channel)}&message=${encodeURIComponent(at.message)}` : '');
+export const fileURL = (denID, id, at) => `/api/dens/${denID}/files/${id}${where(at)}`;
+export const thumbURL = (denID, id, at) => `/api/dens/${denID}/files/${id}/thumb${where(at)}`;
+export const downloadURL = (denID, f, at) => `/api/dens/${denID}/files/${f.id}?download=${encodeURIComponent(f.name)}${where(at, '&')}`;
 
 // upload sends a file to a den through the local service, which takes an
 // image's metadata out on the way, and seals a DM's. channelID names the
@@ -173,8 +178,8 @@ export function attachmentKind(f) {
 // A file sent as a spoiler shows covered until it's clicked or tapped,
 // each time its message shows, and nothing of it plays before; onOpen
 // opens the viewer at an image with the spoilers still covered, which
-// the viewer leaves out.
-export function Attachments({ denID, files, onOpen }) {
+// the viewer leaves out. at is where they are (placeOf).
+export function Attachments({ denID, at, files, onOpen }) {
     const [shown, setShown] = useState(() => new Set());
     const tiles = files.filter((f) => ['image', 'video'].includes(attachmentKind(f)));
     const others = files.filter((f) => !tiles.includes(f));
@@ -187,17 +192,17 @@ export function Attachments({ denID, files, onOpen }) {
             {tiles.length > 0 && (
                 <div class="flex flex-wrap gap-1">
                     {tiles.map((f) => covered.has(f.id)
-                        ? <Covered key={f.id} denID={denID} file={f} box={box} onShow={() => setShown((s) => new Set(s).add(f.id))} />
+                        ? <Covered key={f.id} denID={denID} at={at} file={f} box={box} onShow={() => setShown((s) => new Set(s).add(f.id))} />
                         : attachmentKind(f) === 'video'
-                            ? <VideoTile key={f.id} denID={denID} file={f} box={box} />
-                            : <ImageTile key={f.id} denID={denID} file={f} box={box} onOpen={() => onOpen(f, covered)} />)}
+                            ? <VideoTile key={f.id} denID={denID} at={at} file={f} box={box} />
+                            : <ImageTile key={f.id} denID={denID} at={at} file={f} box={box} onOpen={() => onOpen(f, covered)} />)}
                 </div>
             )}
             {others.map((f) => covers(f, shown)
                 ? <CoveredCard key={f.id} onShow={() => setShown((s) => new Set(s).add(f.id))} />
                 : attachmentKind(f) === 'audio'
-                    ? <AudioCard key={f.id} denID={denID} file={f} />
-                    : <FileCard key={f.id} denID={denID} file={f} />)}
+                    ? <AudioCard key={f.id} denID={denID} at={at} file={f} />
+                    : <FileCard key={f.id} denID={denID} at={at} file={f} />)}
         </div>
     );
 }
@@ -251,7 +256,7 @@ function setVideoVolume(v) {
 // gives the video itself. A thin video keeps its full screen button, where
 // every control shows, as the rest give way to the width: the time first,
 // then the mute, the seek bar, and play, which a click on the video does.
-function VideoTile({ denID, file, box }) {
+function VideoTile({ denID, at, file, box }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
     const named = useFileNames();
     const frame = useRef(null);
@@ -330,7 +335,7 @@ function VideoTile({ denID, file, box }) {
         <div ref={frame} onPointerMove={stir} onPointerDown={stir} onPointerLeave={rest}
             class="@container group relative max-w-full overflow-hidden rounded bg-base-300 [&:fullscreen]:rounded-none [&:fullscreen]:bg-black"
             style={full ? undefined : { width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}>
-            <video ref={video} src={fileURL(denID, file.id)} poster={file.thumb ? thumbURL(denID, file.id) : undefined} preload="none"
+            <video ref={video} src={fileURL(denID, file.id, at)} poster={file.thumb ? thumbURL(denID, file.id, at) : undefined} preload="none"
                 title={named ? file.name : undefined} aria-label={file.name} class="h-full w-full object-contain" onClick={toggle}
                 onPlay={() => { setPaused(false); setStarted(true); }} onPause={() => setPaused(true)}
                 onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
@@ -341,7 +346,7 @@ function VideoTile({ denID, file, box }) {
             {failed ? (
                 <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 p-2 text-center text-xs text-white">
                     <span>{failed}</span>
-                    <a class={buttonClass('secondary', 'xs')} href={downloadURL(denID, file)} download={file.name}>Download</a>
+                    <a class={buttonClass('secondary', 'xs')} href={downloadURL(denID, file, at)} download={file.name}>Download</a>
                 </div>
             ) : (
                 (!started || (waiting && !paused)) && (
@@ -414,7 +419,7 @@ export function FullIcon({ full }) {
     );
 }
 
-function AudioCard({ denID, file }) {
+function AudioCard({ denID, at, file }) {
     return (
         <div class="flex w-full max-w-sm flex-col gap-2 rounded border border-base-300 bg-base-200 p-2">
             <div class="flex items-center gap-3">
@@ -424,9 +429,9 @@ function AudioCard({ denID, file }) {
                         {file.duration_ms > 0 && `${formatDuration(file.duration_ms)} · `}{formatSize(file.size)}
                     </p>
                 </div>
-                <a class="btn btn-ghost btn-sm" href={downloadURL(denID, file)} download={file.name}>Download</a>
+                <a class="btn btn-ghost btn-sm" href={downloadURL(denID, file, at)} download={file.name}>Download</a>
             </div>
-            <audio src={fileURL(denID, file.id)} controls preload="none" aria-label={file.name} class="w-full" />
+            <audio src={fileURL(denID, file.id, at)} controls preload="none" aria-label={file.name} class="w-full" />
         </div>
     );
 }
@@ -435,7 +440,7 @@ function AudioCard({ denID, file }) {
 // the den stated, so nothing below it moves when it arrives. An animated
 // one plays as Animations says, as it nears the screen, since a GIF can be
 // as large as the den's files go.
-function ImageTile({ denID, file, box, onOpen }) {
+function ImageTile({ denID, at, file, box, onOpen }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
     const [failed, setFailed] = useState(false);
     const how = usePicture(!!file.animated);
@@ -451,14 +456,14 @@ function ImageTile({ denID, file, box, onOpen }) {
             title={named ? file.name : undefined}
         >
             {file.animated ? (
-                <Picture how={how} file={fileURL(denID, file.id)} preview={thumbURL(denID, file.id)} cls="h-full w-full object-cover" lazy under
+                <Picture how={how} file={fileURL(denID, file.id, at)} preview={thumbURL(denID, file.id, at)} cls="h-full w-full object-cover" lazy under
                     width={size.width} height={size.height} />
             ) : (
-                <img src={thumbURL(denID, file.id)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
+                <img src={thumbURL(denID, file.id, at)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
                     class="h-full w-full object-cover" />
             )}
             {sharp && (
-                <img src={fileURL(denID, file.id)} alt="" loading="lazy" draggable={false} data-sharp
+                <img src={fileURL(denID, file.id, at)} alt="" loading="lazy" draggable={false} data-sharp
                     class="absolute inset-0 h-full w-full object-cover" onError={() => setFailed(true)} />
             )}
             {file.animated && <span class="badge badge-neutral badge-sm absolute bottom-1 left-1 select-none opacity-90">GIF</span>}
@@ -475,7 +480,7 @@ export function covers(file, shown) {
 // Covered is a spoiler's photo or video before it's clicked or tapped:
 // its preview, blurred past telling, under Spoiler, at the size
 // the file takes once shown, and nothing that names it.
-function Covered({ denID, file, box, onShow }) {
+function Covered({ denID, at, file, box, onShow }) {
     const size = fitBox(file.width, file.height, box.w, box.h);
     return (
         <button
@@ -487,7 +492,7 @@ function Covered({ denID, file, box, onShow }) {
             data-spoiler
         >
             {file.thumb && (
-                <img src={thumbURL(denID, file.id)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
+                <img src={thumbURL(denID, file.id, at)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
                     class="h-full w-full scale-125 object-cover blur-2xl" />
             )}
             <span class="absolute inset-0 flex items-center justify-center">
@@ -509,7 +514,7 @@ function CoveredCard({ onShow }) {
     );
 }
 
-function FileCard({ denID, file }) {
+function FileCard({ denID, at, file }) {
     return (
         <div class="flex w-full max-w-sm items-center gap-3 rounded border border-base-300 bg-base-200 p-2">
             <FileIcon />
@@ -520,7 +525,7 @@ function FileCard({ denID, file }) {
                     {file.width > 0 && !file.thumb && ' · too large to preview'}
                 </p>
             </div>
-            <a class="btn btn-ghost btn-sm" href={downloadURL(denID, file)} download={file.name}>Download</a>
+            <a class="btn btn-ghost btn-sm" href={downloadURL(denID, file, at)} download={file.name}>Download</a>
         </div>
     );
 }
@@ -547,12 +552,12 @@ const SETTLE = 200;
 // ViewedImage is an image in the viewer: its preview at once, and the
 // original over it, which takes the preview's place once it has loaded,
 // so none of the preview shows where it's transparent.
-function ViewedImage({ denID, file, alt }) {
+function ViewedImage({ denID, at, file, alt }) {
     const [loaded, setLoaded] = useState(false);
     return (
         <>
-            {file.thumb && !loaded && <img src={thumbURL(denID, file.id)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
-            <img src={fileURL(denID, file.id)} alt={alt} class="relative h-full w-full object-contain" draggable={false} onLoad={() => setLoaded(true)} />
+            {file.thumb && !loaded && <img src={thumbURL(denID, file.id, at)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
+            <img src={fileURL(denID, file.id, at)} alt={alt} class="relative h-full w-full object-contain" draggable={false} onLoad={() => setLoaded(true)} />
         </>
     );
 }
@@ -566,11 +571,12 @@ function ViewedImage({ denID, file, alt }) {
 // do the wheel and a double click, and a finger or the mouse pans it then
 // (zoom.js). Its name and size, Download and its ✕ sit in a bar at its
 // top, as a dialog's ✕ does, and ‹ and › at the picture's edges.
-// onIndex hears where to move; Back closes it.
+// onIndex hears where to move; Back closes it. at is where they are
+// (placeOf).
 // ARROW is the width of the viewer's ‹ and ›, a circle button's.
 const ARROW = 40;
 
-export function Viewer({ denID, files, index, onIndex, onClose }) {
+export function Viewer({ denID, at: place, files, index, onIndex, onClose }) {
     useLayer(onClose);
     const narrow = useNarrow();
     const stageRef = useRef(null);
@@ -683,7 +689,7 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
         const style = { left: `${v.x + d * (stage.width + GAP)}px`, top: `${v.y}px`, width: `${b.width * v.scale}px`, height: `${b.height * v.scale}px` };
         return (
             <div key={f.id} class="absolute overflow-hidden md:rounded" style={style} aria-hidden={d !== 0 || undefined} data-shown={d === 0 || undefined}>
-                <ViewedImage denID={denID} file={f} alt={d === 0 ? f.name : ''} />
+                <ViewedImage denID={denID} at={place} file={f} alt={d === 0 ? f.name : ''} />
             </div>
         );
     };
@@ -694,7 +700,7 @@ export function Viewer({ denID, files, index, onIndex, onClose }) {
                 {several && <span class="shrink-0 cursor-default select-none text-white/60">{index + 1} of {files.length}</span>}
                 <span class="min-w-0 flex-1 truncate" title={file.name}>{file.name}</span>
                 <span class="shrink-0 cursor-default select-none text-white/60">{formatSize(file.size)}</span>
-                <a class={`${buttonClass('secondary')} shrink-0`} href={downloadURL(denID, file)} download={file.name}>Download</a>
+                <a class={`${buttonClass('secondary')} shrink-0`} href={downloadURL(denID, file, place)} download={file.name}>Download</a>
                 <button ref={close} type="button" class="btn btn-circle btn-ghost btn-sm shrink-0 text-lg text-white hover:bg-white/15" aria-label="Close"
                     title="Close" onClick={onClose}>✕</button>
             </div>
