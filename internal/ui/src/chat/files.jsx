@@ -62,13 +62,19 @@ export function fitBox(w, h, maxW, maxH) {
 }
 
 // A message's file is asked for where it's shown, at: the message and its
-// channel, which a DM's opens only under; a picture, or an upload waiting
-// to be sent, at none. placeOf is where a message's files are.
+// channel, with the tag the service gave of a DM's file there
+// (sealed_as), which opens only so; a picture, or an upload waiting to be
+// sent, at none. placeOf is where a message's files are, and f the file,
+// or a picture.
 export const placeOf = (m) => ({ channel: m.channel_id, message: m.id });
-const where = (at, join = '?') => (at?.message ? `${join}channel=${encodeURIComponent(at.channel)}&message=${encodeURIComponent(at.message)}` : '');
-export const fileURL = (denID, id, at) => `/api/dens/${denID}/files/${id}${where(at)}`;
-export const thumbURL = (denID, id, at) => `/api/dens/${denID}/files/${id}/thumb${where(at)}`;
-export const downloadURL = (denID, f, at) => `/api/dens/${denID}/files/${f.id}?download=${encodeURIComponent(f.name)}${where(at, '&')}`;
+function where(f, at, join = '?') {
+    if (!at?.message) return '';
+    const as = f.sealed_as ? `&as=${encodeURIComponent(f.sealed_as)}` : '';
+    return `${join}channel=${encodeURIComponent(at.channel)}&message=${encodeURIComponent(at.message)}${as}`;
+}
+export const fileURL = (denID, f, at) => `/api/dens/${denID}/files/${f.id}${where(f, at)}`;
+export const thumbURL = (denID, f, at) => `/api/dens/${denID}/files/${f.id}/thumb${where(f, at)}`;
+export const downloadURL = (denID, f, at) => `/api/dens/${denID}/files/${f.id}?download=${encodeURIComponent(f.name)}${where(f, at, '&')}`;
 
 // upload sends a file to a den through the local service, which takes an
 // image's metadata out on the way, and seals a DM's. channelID names the
@@ -335,7 +341,7 @@ function VideoTile({ denID, at, file, box }) {
         <div ref={frame} onPointerMove={stir} onPointerDown={stir} onPointerLeave={rest}
             class="@container group relative max-w-full overflow-hidden rounded bg-base-300 [&:fullscreen]:rounded-none [&:fullscreen]:bg-black"
             style={full ? undefined : { width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}>
-            <video ref={video} src={fileURL(denID, file.id, at)} poster={file.thumb ? thumbURL(denID, file.id, at) : undefined} preload="none"
+            <video ref={video} src={fileURL(denID, file, at)} poster={file.thumb ? thumbURL(denID, file, at) : undefined} preload="none"
                 title={named ? file.name : undefined} aria-label={file.name} class="h-full w-full object-contain" onClick={toggle}
                 onPlay={() => { setPaused(false); setStarted(true); }} onPause={() => setPaused(true)}
                 onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
@@ -431,7 +437,7 @@ function AudioCard({ denID, at, file }) {
                 </div>
                 <a class="btn btn-ghost btn-sm" href={downloadURL(denID, file, at)} download={file.name}>Download</a>
             </div>
-            <audio src={fileURL(denID, file.id, at)} controls preload="none" aria-label={file.name} class="w-full" />
+            <audio src={fileURL(denID, file, at)} controls preload="none" aria-label={file.name} class="w-full" />
         </div>
     );
 }
@@ -456,14 +462,14 @@ function ImageTile({ denID, at, file, box, onOpen }) {
             title={named ? file.name : undefined}
         >
             {file.animated ? (
-                <Picture how={how} file={fileURL(denID, file.id, at)} preview={thumbURL(denID, file.id, at)} cls="h-full w-full object-cover" lazy under
+                <Picture how={how} file={fileURL(denID, file, at)} preview={thumbURL(denID, file, at)} cls="h-full w-full object-cover" lazy under
                     width={size.width} height={size.height} />
             ) : (
-                <img src={thumbURL(denID, file.id, at)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
+                <img src={thumbURL(denID, file, at)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
                     class="h-full w-full object-cover" />
             )}
             {sharp && (
-                <img src={fileURL(denID, file.id, at)} alt="" loading="lazy" draggable={false} data-sharp
+                <img src={fileURL(denID, file, at)} alt="" loading="lazy" draggable={false} data-sharp
                     class="absolute inset-0 h-full w-full object-cover" onError={() => setFailed(true)} />
             )}
             {file.animated && <span class="badge badge-neutral badge-sm absolute bottom-1 left-1 select-none opacity-90">GIF</span>}
@@ -492,7 +498,7 @@ function Covered({ denID, at, file, box, onShow }) {
             data-spoiler
         >
             {file.thumb && (
-                <img src={thumbURL(denID, file.id, at)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
+                <img src={thumbURL(denID, file, at)} alt="" width={size.width} height={size.height} loading="lazy" draggable={false}
                     class="h-full w-full scale-125 object-cover blur-2xl" />
             )}
             <span class="absolute inset-0 flex items-center justify-center">
@@ -556,8 +562,8 @@ function ViewedImage({ denID, at, file, alt }) {
     const [loaded, setLoaded] = useState(false);
     return (
         <>
-            {file.thumb && !loaded && <img src={thumbURL(denID, file.id, at)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
-            <img src={fileURL(denID, file.id, at)} alt={alt} class="relative h-full w-full object-contain" draggable={false} onLoad={() => setLoaded(true)} />
+            {file.thumb && !loaded && <img src={thumbURL(denID, file, at)} alt="" class="absolute inset-0 h-full w-full object-contain" draggable={false} />}
+            <img src={fileURL(denID, file, at)} alt={alt} class="relative h-full w-full object-contain" draggable={false} onLoad={() => setLoaded(true)} />
         </>
     );
 }
@@ -811,7 +817,7 @@ function drawPreview(src) {
 // addPreview gives an uploaded video the page's preview, and resolves to
 // the upload as it is then: with the preview, or as it was.
 export async function addPreview(denID, file) {
-    const blob = await drawPreview(fileURL(denID, file.id));
+    const blob = await drawPreview(fileURL(denID, file));
     if (!blob) return file;
     try {
         const res = await fetch(`/api/dens/${denID}/uploads/${file.id}/thumb`, {

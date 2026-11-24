@@ -2355,7 +2355,7 @@ function FileChip({ denID, f, limits, canSpoil, onSpoiler, onRemove, onCompare }
                 {isImageFile(f.file) ? (
                     <Thumb file={f.file} size={40} />
                 ) : f.result?.thumb ? (
-                    <img src={thumbURL(denID, f.result.id)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" draggable={false} />
+                    <img src={thumbURL(denID, f.result)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" draggable={false} />
                 ) : (
                     <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>
                 )}

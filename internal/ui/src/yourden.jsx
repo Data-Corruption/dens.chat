@@ -462,7 +462,7 @@ export const swappable = (f) => !!f.message_id && !f.locked && !f.forwarded;
 
 // ownFileThumb is the address of one of a member's files' preview, where
 // it is, if it's on a message.
-export const ownFileThumb = (denID, f) => thumbURL(denID, f.id, f.message_id ? { channel: f.channel_id, message: f.message_id } : undefined);
+export const ownFileThumb = (denID, f) => thumbURL(denID, f, f.message_id ? { channel: f.channel_id, message: f.message_id } : undefined);
 
 // FileRow is one of a member's files in their list: its preview, name,
 // size and what uses it, and what they can do with it. A file being

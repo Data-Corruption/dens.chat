@@ -80,14 +80,17 @@ test("a drawn preview keeps the video's shape", () => {
 test("a download link carries the file's name as data, and the message it's on", () => {
     assert.equal(downloadURL('abc', { id: '7', name: 'a b&c=d/e?.pdf' }), '/api/dens/abc/files/7?download=a%20b%26c%3Dd%2Fe%3F.pdf');
     assert.equal(downloadURL('abc', { id: '7', name: 'a.pdf' }, { channel: '9', message: '42' }), '/api/dens/abc/files/7?download=a.pdf&channel=9&message=42');
+    assert.equal(downloadURL('abc', { id: '7', name: 'a.pdf', sealed_as: 'a_b-c' }, { channel: '9', message: '42' }),
+        '/api/dens/abc/files/7?download=a.pdf&channel=9&message=42&as=a_b-c');
 });
 
-// A DM's file opens only under the message that sealed it, so each of a
-// message's files, and its preview, is asked for where it's shown, its
-// message and that message's channel: in the list, covered or not, in the
-// viewer, and in the member's own files; a picture, or an upload waiting
-// to be sent, at none.
-test("a message's files and their previews are asked for under the message, in its channel", async () => {
+// A DM's file opens only under the message that sealed it, as the page
+// was shown it, so each of a message's files, and its preview, is asked
+// for where it's shown, its message and that message's channel, with the
+// tag the service gave of it there: in the list, covered or not, in the
+// viewer, and in the member's own files; a channel's file has no tag, and
+// a picture, or an upload waiting to be sent, is asked for at none.
+test("a message's files and their previews are asked for under the message, in its channel, as it sealed them", async () => {
     const kept = new Map();
     globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) };
     const listeners = { addEventListener() {}, removeEventListener() {} };
@@ -106,21 +109,27 @@ test("a message's files and their previews are asked for under the message, in i
     const addresses = (root) => all(root, (n) => n.attributes?.src || n.attributes?.poster || n.attributes?.href)
         .flatMap((n) => [n.attributes.src, n.attributes.poster, n.attributes.href]).filter((a) => a?.startsWith('/api/'));
     const root = document.createElement('div');
+    // A DM's files, the first three, and a channel's, which have no tag.
+    files.slice(0, 3).forEach((f) => { f.sealed_as = `tag${f.id}`; });
+    const under = (id) => `channel=9&message=42${id <= 3 ? `&as=tag${id}` : ''}`;
     mount(h(Attachments, { denID: 'D', at: placeOf({ id: '42', channel_id: '9' }), files, onOpen() {} }), root);
     await new Promise((resolve) => setTimeout(resolve, 20));
     const listed = addresses(root);
-    for (const id of ['1', '2', '3', '4', '5']) assert.ok(listed.some((a) => a.includes(`/files/${id}`)), `file ${id} in ${listed}`);
-    assert.ok(listed.every((a) => /[?&]channel=9&message=42$/.test(a)), listed.join(' '));
+    for (const id of [1, 2, 3, 4, 5]) {
+        const its = listed.filter((a) => a.includes(`/files/${id}`));
+        assert.ok(its.length > 0 && its.every((a) => new RegExp(`[?&]${under(id)}$`).test(a)), `file ${id} in ${listed}`);
+    }
     mount(null, root);
 
     mount(h(Viewer, { denID: 'D', at: { channel: '9', message: '42' }, files: files.slice(0, 1), index: 0, onIndex() {}, onClose() {} }), root);
     await new Promise((resolve) => setTimeout(resolve, 20));
     const viewed = addresses(root);
-    assert.ok(viewed.includes('/api/dens/D/files/1?channel=9&message=42') && viewed.includes('/api/dens/D/files/1/thumb?channel=9&message=42'), viewed.join(' '));
-    assert.ok(viewed.every((a) => /[?&]channel=9&message=42$/.test(a)), viewed.join(' '));
+    assert.ok(viewed.includes(`/api/dens/D/files/1?${under(1)}`) && viewed.includes(`/api/dens/D/files/1/thumb?${under(1)}`), viewed.join(' '));
+    assert.ok(viewed.every((a) => new RegExp(`[?&]${under(1)}$`).test(a)), viewed.join(' '));
     mount(null, root);
 
     assert.equal(ownFileThumb('D', { id: '9', message_id: '43', channel_id: '8' }), '/api/dens/D/files/9/thumb?channel=8&message=43');
+    assert.equal(ownFileThumb('D', { id: '9', message_id: '43', channel_id: '8', sealed_as: 'x' }), '/api/dens/D/files/9/thumb?channel=8&message=43&as=x');
     assert.equal(ownFileThumb('D', { id: '9' }), '/api/dens/D/files/9/thumb', 'an upload waiting to be sent');
 });
 

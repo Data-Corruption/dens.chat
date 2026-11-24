@@ -456,7 +456,7 @@ export function BadgePicture({ denID, image, size = 'h-8 w-8' }) {
     const fit = 'h-full w-full select-none rounded object-cover';
     return (
         <span class={`relative inline-block shrink-0 ${size}`}>
-            <Picture how={how} file={fileURL(denID, image.id)} preview={thumbURL(denID, image.id)} cls={fit} />
+            <Picture how={how} file={fileURL(denID, image)} preview={thumbURL(denID, image)} cls={fit} />
         </span>
     );
 }
@@ -489,7 +489,7 @@ export function Banner({ denID, image, edge = false }) {
     const cover = 'h-full w-full select-none object-cover';
     return (
         <div class={`relative aspect-[3/1] w-full overflow-hidden bg-base-300 ${edge ? '' : 'rounded'}`}>
-            <Picture how={how} file={fileURL(denID, image.id)} preview={thumbURL(denID, image.id)} cls={cover} />
+            <Picture how={how} file={fileURL(denID, image)} preview={thumbURL(denID, image)} cls={cover} />
         </div>
     );
 }
