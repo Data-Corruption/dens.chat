@@ -165,6 +165,15 @@ func (m *Manager) SetThumb(ctx context.Context, denID, fileID string, size int64
 	if len(data) > denproto.MaxPreviewUpload {
 		return Uploaded{}, ErrTooLarge
 	}
+	return c.setThumb(ctx, fileID, data)
+}
+
+// setThumb gives a video uploaded and not sent yet a preview, as SetThumb
+// does.
+func (c *conn) setThumb(ctx context.Context, fileID string, data []byte) (Uploaded, error) {
+	if len(data) > denproto.MaxPreviewUpload {
+		return Uploaded{}, ErrTooLarge
+	}
 	kind := media.Sniff(data)
 	if kind != media.JPEG && kind != media.PNG {
 		return Uploaded{}, inputError(errors.New("A video's preview is a JPEG or PNG."))

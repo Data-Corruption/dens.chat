@@ -540,6 +540,10 @@ func (m *Manager) Storage(ctx context.Context, denID string) (denproto.Storage, 
 	if err != nil {
 		return denproto.Storage{}, err
 	}
+	return c.storage(ctx)
+}
+
+func (c *conn) storage(ctx context.Context) (denproto.Storage, error) {
 	var st denproto.Storage
 	if err := c.call(ctx, http.MethodGet, "/api/me/storage", nil, &st); err != nil {
 		return st, err

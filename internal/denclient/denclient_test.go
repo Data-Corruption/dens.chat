@@ -1,12 +1,14 @@
 package denclient_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -109,13 +111,15 @@ type denHost struct {
 	loopback *httptest.Server
 	handler  http.Handler
 	// files counts the requests for files and previews the den answers,
-	// history those for pages of history, and changes those for what
-	// changed since a version; requests counts every request but
-	// those for the member's record, which records counts;
-	// upgrades are the members cursors the socket upgrades named.
-	files, history, changes, requests, records atomic.Int64
-	upgradeMu                                  sync.Mutex
-	upgrades                                   []string
+	// history those for pages of history, changes those for what changed
+	// since a version, and uploads those that upload; requests counts
+	// every request but those for the member's record, which records
+	// counts; upgrades are the members cursors the socket upgrades named,
+	// and sends the bodies of the messages sent.
+	files, history, changes, uploads, requests, records atomic.Int64
+	upgradeMu                                           sync.Mutex
+	upgrades                                            []string
+	sends                                               []json.RawMessage
 }
 
 func startDen(t *testing.T, s store, lifetime time.Duration) *denHost {
@@ -152,9 +156,17 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 			h.history.Add(1)
 		case p == "/api/changes":
 			h.changes.Add(1)
+		case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/uploads"):
+			h.uploads.Add(1)
 		case p == "/api/ws":
 			h.upgradeMu.Lock()
 			h.upgrades = append(h.upgrades, r.URL.Query().Get("members"))
+			h.upgradeMu.Unlock()
+		case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/channels/") && strings.HasSuffix(p, "/messages"):
+			body, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(body))
+			h.upgradeMu.Lock()
+			h.sends = append(h.sends, body)
 			h.upgradeMu.Unlock()
 		}
 		routes.ServeHTTP(w, r)
