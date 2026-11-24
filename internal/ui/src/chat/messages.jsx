@@ -797,6 +797,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 narrow={narrow}
                 touch={touch}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
+                waitingBy={m.waiting ? members.get(m.waiting.by) : null}
                 candidates={candidates}
                 canReact={reactions && !m.locked && !closed && canSend}
                 canRemoveReactions={!sealed && isStaff(role) &&
@@ -1005,6 +1006,35 @@ function clock(ms) {
 
 // Quoted shows the first line of a message a reply quotes, that it has
 // only files, or that it can't be opened.
+// Waiting shows its author a group's message that someone they didn't
+// let edit it changed, as it reads now, to keep as theirs or delete.
+function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
+    const act = useAction();
+    const keep = () => act.run(async () => {
+        try {
+            onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/keep?channel=${channelID}`, { revision: m.revision }));
+        } catch (e) {
+            // Changed again meanwhile: it shows as it is now.
+            if (e.status === 409 && e.data?.message) onUpdated(e.data.message);
+            else throw e;
+        }
+    });
+    return (
+        <div class="mt-1 flex flex-col gap-2 border-l-2 border-warning pl-3" data-waiting>
+            <p class="cursor-default select-none text-sm text-base-content/70">
+                @{by?.username || 'someone'} changed this without your say. <DocsLink page="usage/#group-dms" label="Why it waits" />
+            </p>
+            {m.waiting.text.trim() && <div class="wrap-break-word"><Markdown text={m.waiting.text} me={me} /></div>}
+            {m.waiting.attachments?.length > 0 && <Attachments denID={denID} files={m.waiting.attachments} onOpen={onView} />}
+            <ErrorText message={act.error} />
+            <Actions>
+                <Button kind="primary" disabled={act.busy} onClick={keep}>Keep</Button>
+                <Button kind="danger" disabled={act.busy} onClick={onDelete}>Delete</Button>
+            </Actions>
+        </div>
+    );
+}
+
 function Quoted({ text, locked, me }) {
     if (locked) return <span class="italic">A message this device can't open</span>;
     return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
@@ -1018,7 +1048,7 @@ function Quoted({ text, locked, me }) {
 // is a run's later message, under its first's name; line is Compact's row,
 // each a line of its own. children go under its files, as
 // Appearance's preview puts its photo.
-export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
+export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canDelete, link, menuOpen, menuAt, narrow, touch, editorNames, waitingBy, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1101,7 +1131,9 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         </span>
     ) : null;
     let body = lead;
-    if (m.locked) {
+    if (m.waiting) {
+        body = <div>{lead}<Waiting m={m} by={waitingBy} me={me} denID={denID} channelID={channelID} onUpdated={onUpdated} onDelete={onDelete} onView={onView} /></div>;
+    } else if (m.locked) {
         body = <div>{lead}<p class="cursor-default select-none text-sm italic text-base-content/60">{LOCKED[m.locked] || LOCKED.broken}</p></div>;
     } else if (editing) {
         body = (
