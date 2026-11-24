@@ -259,6 +259,11 @@ and the keys. What's different:
 - **Let others edit** names up to 20 people who can see the channel to edit
   your message with you, but not delete it. Change who from the message's
   **⋯**.
+- **Forward**, in a message's **⋯**, sends its text and files to a channel,
+  DM, group or your notes, in this den or another you're in. It goes as your
+  message, marked **Forwarded**, with nothing of who wrote it or where, and
+  its mentions count where it goes. Its files count toward your space there.
+  Nobody edits a forward, and polls don't forward.
 - A message holds up to 4,000 characters, and one taller than about 16 lines
   shows folded until it's opened.
 
