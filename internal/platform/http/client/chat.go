@@ -104,16 +104,16 @@ func (rt *router) handleTask(w http.ResponseWriter, r *http.Request) {
 	rt.changed(w, r, m, err)
 }
 
-// handleKeep keeps a group's message that waits for its author as theirs,
-// at the revision their page showed.
+// handleKeep keeps a group's message that waits for its author as theirs:
+// the revision their page showed, by its digest.
 func (rt *router) handleKeep(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Revision int `json:"revision"`
+		Shown denproto.Bytes `json:"shown"`
 	}
 	if !decodeJSON(w, r, &req) {
 		return
 	}
-	m, err := rt.a.Dens.Keep(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), req.Revision)
+	m, err := rt.a.Dens.Keep(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), req.Shown)
 	rt.changed(w, r, m, err)
 }
 

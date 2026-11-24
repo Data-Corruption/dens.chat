@@ -130,7 +130,8 @@ func TestGroupEditorsTheAuthorSigned(t *testing.T) {
 // every edit, opens for its author alone, as waiting, and for nobody else,
 // nor its quote, until they keep it, which signs it as theirs with no
 // editors. Nothing else of theirs signs it: an edit or a tick waits for
-// Keep, and Keep a message that doesn't wait, or at a revision gone, doesn't.
+// Keep, and Keep of a message that doesn't wait, or of another revision
+// than their page showed, signs nothing.
 func TestGroupEditsFromBefore(t *testing.T) {
 	h, ms, ids, denID, g := fourInAGroup(t)
 	alice, bob, carol, dave := ms[0], ms[1], ms[2], ms[3]
@@ -185,17 +186,18 @@ func TestGroupEditsFromBefore(t *testing.T) {
 	if _, err := alice.Edit(ctx, denID, g, list.ID, denproto.EditRequest{Revision: 2, Text: ticked}); !isInput(err) {
 		t.Errorf("alice's edit signed carol's: %v", err)
 	}
-	if _, err := alice.Keep(ctx, denID, g, old.ID, old.Revision); !isInput(err) {
+	shown := waiting.Waiting.Shown
+	var conflict *denclient.ErrEditConflict
+	if _, err := alice.Keep(ctx, denID, g, old.ID, shown); !errors.As(err, &conflict) || conflict.Current.Waiting != nil {
 		t.Errorf("alice kept a message that doesn't wait: %v", err)
 	}
-	var conflict *denclient.ErrEditConflict
-	if _, err := alice.Keep(ctx, denID, g, list.ID, 1); !errors.As(err, &conflict) {
-		t.Errorf("alice kept a revision gone: %v", err)
+	if _, err := alice.Keep(ctx, denID, g, list.ID, denproto.Random(len(shown))); !errors.As(err, &conflict) {
+		t.Errorf("alice kept another revision than her page showed: %v", err)
 	}
-	if _, err := bob.Keep(ctx, denID, g, list.ID, 2); !isInput(err) {
+	if _, err := bob.Keep(ctx, denID, g, list.ID, shown); !isInput(err) {
 		t.Errorf("bob kept alice's message: %v", err)
 	}
-	if _, err := alice.Keep(ctx, denID, g, list.ID, 2); err != nil {
+	if _, err := alice.Keep(ctx, denID, g, list.ID, shown); err != nil {
 		t.Fatalf("alice keeps carol's tick: %v", err)
 	}
 	for _, m := range []*denclient.Manager{alice, bob, dave} {
@@ -203,6 +205,56 @@ func TestGroupEditsFromBefore(t *testing.T) {
 		if got.Locked != "" || got.Text != ticked || got.AuthorID != ids[0] || len(got.Editors) != 0 || got.EditedBy != "" {
 			t.Errorf("the message alice kept reads %+v", got)
 		}
+	}
+}
+
+// Keep signs only what its author's page showed. Where the den, with the
+// member who changed a message, puts other words in the revision's place
+// before the author keeps it, their Dens signs nothing and gives the
+// message as it is now, for them to keep or not.
+func TestGroupKeepSignsWhatWasShown(t *testing.T) {
+	h, ms, ids, denID, g := fourInAGroup(t)
+	alice, bob, carol := ms[0], ms[1], ms[2]
+	ctx := context.Background()
+	list, err := alice.Send(ctx, denID, g, denproto.SendRequest{Nonce: denproto.Random(16), Text: "[ ] snacks\n[ ] drinks", Editors: []string{ids[2]}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const ticked = "[ ] snacks\n[x] drinks"
+	if err := denclient.EditAs(carol, denID, g, list.ID, ticked, false); err != nil {
+		t.Fatal(err)
+	}
+	shown := messageOn(t, alice, denID, g, list.ID, "carol's tick", func(m denclient.PageMessage) bool { return m.Waiting != nil })
+	if shown.Waiting.Text != ticked || len(shown.Waiting.Shown) == 0 {
+		t.Fatalf("carol's tick on alice's Dens: %+v", shown.Waiting)
+	}
+	const forged = "alice never wrote this"
+	sealed, err := denclient.SealRevisionAs(carol, denID, g, ids[0], list.Nonce, shown.Revision, forged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mid, _ := denproto.ParseID(list.ID)
+	if _, err := h.s.db.Exec(`UPDATE den_messages SET text = ? WHERE id = ?`, []byte(sealed), mid); err != nil {
+		t.Fatal(err)
+	}
+	var conflict *denclient.ErrEditConflict
+	if _, err := alice.Keep(ctx, denID, g, list.ID, shown.Waiting.Shown); !errors.As(err, &conflict) {
+		t.Fatalf("alice kept words her page never showed: %v", err)
+	}
+	now := conflict.Current.Waiting
+	if now == nil || now.Text != forged || bytes.Equal(now.Shown, shown.Waiting.Shown) {
+		t.Fatalf("the message as it is now: %+v", now)
+	}
+	got := messageOn(t, bob, denID, g, list.ID, "the message alice didn't keep", func(denclient.PageMessage) bool { return true })
+	if got.Locked != "author" || got.Revision != shown.Revision {
+		t.Errorf("after a Keep that signed nothing, bob reads %+v", got)
+	}
+	if _, err := alice.Keep(ctx, denID, g, list.ID, now.Shown); err != nil {
+		t.Fatalf("alice keeps what her page shows now: %v", err)
+	}
+	got = messageOn(t, bob, denID, g, list.ID, "alice's keep", func(m denclient.PageMessage) bool { return m.Revision == shown.Revision+1 })
+	if got.Locked != "" || got.Text != forged {
+		t.Errorf("the message alice kept reads %+v", got)
 	}
 }
 

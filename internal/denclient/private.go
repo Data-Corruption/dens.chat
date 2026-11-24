@@ -2,9 +2,12 @@ package denclient
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -60,6 +63,22 @@ type PageWaiting struct {
 	By          string          `json:"by"`
 	Text        string          `json:"text"`
 	Attachments []denproto.File `json:"attachments"`
+	// Shown is the digest of the revision this shows, which Keep gives
+	// back.
+	Shown denproto.Bytes `json:"shown"`
+}
+
+// shownSum is a digest of a message's revision as the den gave it: the
+// key, nonce and revision it opens under, and what's sealed. Keep signs
+// only the revision its author's page showed, and the den's word for
+// which that is, its number, is no check: a member can seal two at one.
+func shownSum(m denproto.Message) denproto.Bytes {
+	h := sha256.New()
+	for _, part := range [][]byte{[]byte(m.KeyID), m.Nonce, []byte(strconv.Itoa(m.Revision)), m.Sealed} {
+		h.Write(binary.BigEndian.AppendUint64(nil, uint64(len(part))))
+		h.Write(part)
+	}
+	return h.Sum(nil)
 }
 
 // PageReply previews the message another replies to, for the page.
@@ -273,7 +292,7 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	if locked != "" {
 		pm := PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
 		if locked == lockedAuthor && m.AuthorID == c.meLocked() {
-			pm.Waiting = &PageWaiting{By: signer, Text: p.Text, Attachments: c.dmFilesLocked(m, p)}
+			pm.Waiting = &PageWaiting{By: signer, Text: p.Text, Attachments: c.dmFilesLocked(m, p), Shown: shownSum(m)}
 		}
 		return pm
 	}
