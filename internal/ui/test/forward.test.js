@@ -1,6 +1,6 @@
 // Forward, checked without a browser: the places it lists across two
-// dens, and those it leaves out; and a forward's mark, with no Edit or
-// tick under it.
+// dens, and those it leaves out; a forward's mark, with no Edit or tick
+// under it; and no Swap for its file among the member's own.
 
 import './dom.js';
 import assert from 'node:assert/strict';
@@ -8,6 +8,7 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { forwardList } from '../src/core/switcher.js';
 import { MessageRow, editable } from '../src/chat/messages.jsx';
+import { swappable } from '../src/yourden.jsx';
 
 globalThis.window = { matchMedia: () => ({ matches: false, addEventListener() {}, removeEventListener() {} }) };
 
@@ -88,4 +89,12 @@ test('a forward shows as forwarded, and its author may forward or delete it, not
     assert.deepEqual(items, ['Reply', 'Forward', 'Copy text', 'Delete']);
     assert.ok('disabled' in find(root, (n) => n.localName === 'input').attributes, 'its task ticks for nobody');
     mount(null, root);
+});
+
+test("a forward's file comes off its message from Your files, and swaps for no other", () => {
+    const f = { id: '5', message_id: '10', channel_id: '2', name: 'list.txt' };
+    assert.equal(swappable(f), true);
+    assert.equal(swappable({ ...f, forwarded: true }), false);
+    assert.equal(swappable({ ...f, locked: 'key' }), false);
+    assert.equal(swappable({ id: '6', name: 'waiting.txt' }), false);
 });
