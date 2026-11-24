@@ -128,6 +128,11 @@ add people, rename it or leave; whoever made it can remove people. Each change
 is signed by the member who made it, so the den can't add anyone on its own.
 Groups have no calls.
 
+Only the people you let edit a message can change it. A change from anyone
+else, as an older Dens makes, shows only to you until you choose: **Keep**
+makes it yours as it reads now, or delete it. Someone an older Dens added to
+a group may see it unnamed until it's renamed.
+
 ### Disappearing messages
 
 Anyone in a DM or a group DM can have its messages disappear 1 hour, 1 day, 1

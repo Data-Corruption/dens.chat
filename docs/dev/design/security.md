@@ -235,11 +235,14 @@ Before the first release an audit checked every item here against the code (2026
 
 ### Group DMs
 
-- [x] Each change to a group is a statement its maker's identity signs, bound to the den and the group, naming its number, the hash of the change before and the members after. Each member's client checks it against the members it had, by the group's rules, and its signer against the identity it kept, so the den can't add anyone, skip a change or fork them; a den's own change takes one member out and nobody in.
+- [x] Each change to a group is a statement its maker's identity signs, bound to the den and the group, naming its number, the hash of the change before and the members after. Each member's client checks it against the members it had, by the group's rules, and its signer against the identity it kept, so the den can't add anyone or skip a change; a den's own change takes one member out and nobody in. Members the den shows different changes stay apart until a signed change from one reaches another, which marks the group broken there; the den's own removals, signed by nobody, can differ between members until then.
+- [x] A client keeps the latest change it checked of each group for good, across its cache and the group's going, and takes an answer from before it, or the group listed again from a start before it, as the den breaking the protocol, so the den can't show a member removed as in the group again, nor have a key sealed to them; a check from the group's start takes the group's place only once it reaches that change. A device that never held the group, or whose cache didn't read, has nothing to hold it to.
 - [x] A group holds 3 to 10 members: any member adds, the first in the order they joined removes, anyone leaves. The den takes a change only from its maker, signed with their published identity, against the latest.
 - [x] A client knows a group's members from its checked changes alone: someone the den lists without a signed add gets no key and shows nowhere. A change that doesn't check marks the group broken, and the client makes no key for it and sends nothing there.
 - [x] A group's key is sealed and signed as a DM's is, and a client sends under one only where it names the group's members as its changes make them, with the identities kept now. The den gives a key's copies only to the members it names, so a member added holds the keys from their joining on, and one removed none made after.
 - [x] A group's message, and each member's set of reactions, is signed inside the seal by its author's identity, and its first revision opens only as its author's.
+- [x] A later revision opens only from its author or a member they named, whose names the author's identity signs inside the seal, bound to the den, the group, the author and the message, checked against an identity kept for the author; the den's list of editors decides nothing, Let others edit reads the signed names, and a reply's quote opens by the same check. One another member signed with no names, as an older Dens seals every edit, opens on its author's devices alone, which sign it only by Keep. The den can still hold back the revision by which an author took an editor off, and that member edits on.
+- [x] A group shows the name of its latest checked change that carries one, and to a member added since, the name a key they hold carries, signed by the identity that key names for its maker, so the den can't show a name no member gave. A key's maker can carry another name than the group's, which renames it for members added since with no line saying so, and the den can show such a member no name.
 - [x] A group's name is sealed under one of its keys, bound to the den, the group and the key, and padded to one length, so the den reads neither it nor its length.
 - [x] A member is in at most 100 groups, each of at most 1,000 changes, and making a group, each change and each key counts toward their writes.
 - [x] A Dens speaking version 1 of the protocol gets nothing of groups.
@@ -293,7 +296,7 @@ Before the first release an audit checked every item here against the code (2026
 
 ### Call records
 
-- [x] The den's database keeps of a call its length alone, as its voice channel's record, never who was in it or when.
+- [x] A call's record keeps of it its length alone, as its voice channel's record, never who was in it or when.
 - [x] Only staff read a channel's record and reset it, for a voice channel they see, and a call going on as it's reset writes no record.
 - [x] A client takes a call's length and its record only as numbers from 0 to 100 years, and a call's start never steps back.
 - [x] A reset is logged by member and channel alone.
