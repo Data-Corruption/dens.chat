@@ -228,8 +228,15 @@ func TestAvatar(t *testing.T) {
 		bob, ok := memberIn(v, m.ID)
 		return ok && bob.Avatar.ID == next.ID
 	})
-	if _, _, err := fetch(t, owner, denID, up.ID, false); err == nil {
-		t.Fatal("the old avatar is still served")
+	// The view shows the new avatar a moment before the event's handling
+	// drops the old one's copy, which the page hears of only after.
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		if _, _, err := fetch(t, owner, denID, up.ID, false); err != nil {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the old avatar is still served")
+		}
 	}
 }
 
