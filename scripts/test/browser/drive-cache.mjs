@@ -8,7 +8,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { BOB, HOME, SETTINGS, checks, launch, lib, openSettings as openTab, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
-const { DEN: den, GENERAL: general, PHOTO: photo, PHOTO_MESSAGE: photoMessage, CLIP: clip } = process.env;
+const { DEN: den, GENERAL: general, PHOTO: photo, PHOTO_MESSAGE: photoMessage, CLIP: clip, CLIP_MESSAGE: clipMessage } = process.env;
 const c = checks();
 const ok = (what) => c.report(true, what);
 const step = (what) => console.error(`.. ${what}`);
@@ -21,7 +21,7 @@ const bob = await launch(which, 9321);
 const shot = (name) => bob.shot(`${HOME}/shot-cache-${which}-${name}.png`);
 const photoTile = `document.querySelector('button[aria-label="Open photo.jpg"]')`;
 const loaded = (img) => `(() => { const i = ${img}; return !!i && i.complete && i.naturalWidth > 0; })()`;
-const viewerPhoto = `[...document.querySelectorAll('[role=dialog] img')].find((i) => i.src.endsWith('/files/${photo}'))`;
+const viewerPhoto = `[...document.querySelectorAll('[role=dialog] img')].find((i) => new URL(i.src).pathname.endsWith('/files/${photo}'))`;
 const seek = (to) => `(async () => {
     const v = document.querySelector('video');
     v.muted = true;
@@ -84,7 +84,8 @@ try {
     await waitFor(() => bob.eval(loaded(viewerPhoto)), 'the photo full size from the cache');
     await escape();
     ok(`with the den stopped, the photo opens and the clip seeks: ${await bob.eval(seek('v.duration / 2'))}`);
-    const range = await bob.eval(`fetch('/api/dens/${den}/files/${clip}', { headers: { Range: 'bytes=100000-199999' } }).then(async (r) => r.status + ' ' + (await r.arrayBuffer()).byteLength)`);
+    const range = await bob.eval(`fetch('/api/dens/${den}/files/${clip}?channel=${general}&message=${clipMessage}', { headers: { Range: 'bytes=100000-199999' } })
+        .then(async (r) => r.status + ' ' + (await r.arrayBuffer()).byteLength)`);
     if (range !== '206 100000') throw new Error(`a range of the clip with the den stopped: ${range}`);
     ok('a range of the clip came from the cache with the den stopped');
     await shot('offline');
@@ -99,7 +100,7 @@ try {
     await waitFor(() => bobDens().state === 'connected', 'bob back');
     await waitFor(() => bob.eval(`!${photoTile} && !!document.querySelector('video')`), 'the page without the photo');
     // A file the cache held would come back; the den says it's gone.
-    await waitFor(() => bob.eval(`fetch('/api/dens/${den}/files/${photo}').then(async (r) => !r.ok && (await r.text()).includes("doesn't exist on the den"))`),
+    await waitFor(() => bob.eval(`fetch('/api/dens/${den}/files/${photo}?channel=${general}&message=${photoMessage}').then(async (r) => !r.ok && (await r.text()).includes("doesn't exist on the den"))`),
         "the deleted photo out of bob's cache");
     ok("the photo deleted while bob was away left his cache, and the page");
 

@@ -351,18 +351,26 @@ function Get-JpegSize([string]$Path) {
     return "none"
 }
 
-# Get-Photo fetches a file as the owner's page gets it, and fails unless it
-# came as a JPEG of the size given, carrying its color profile and nothing
-# of the phone's.
-function Get-Photo($Browser, [string]$DenID, [string]$FileID, [string]$Size, [string]$What) {
+# Get-Photo fetches a file as the owner's page gets it, under the message
+# it's on, and fails unless it came as a JPEG of the size given, carrying
+# its color profile and nothing of the phone's.
+function Get-Photo($Browser, [string]$DenID, [string]$FileID, [string]$Size, [string]$What, [string]$Channel = "", [string]$Message = "") {
     $got = Join-Path $Work "photo-check.jpg"
-    $resp = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$FileID" -WebSession $Browser.Session `
+    $resp = Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$FileID$(Get-Under $Channel $Message)" -WebSession $Browser.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "$What came as $($resp.Headers['Content-Type'])" }
     Test-Clean $got $What
     $stored = Get-JpegSize $got
     $text = [Text.Encoding]::GetEncoding(28591).GetString([IO.File]::ReadAllBytes($got))
     if ($stored -ne $Size -or -not $text.Contains("ICC_PROFILE")) { Fail "$What arrived at $stored, with its profile: $($text.Contains('ICC_PROFILE'))" }
+}
+
+# Get-Under is the query a file's address takes to be asked for where the
+# page shows it, under its message in its channel, which a DM's file
+# needs; empty for none.
+function Get-Under([string]$Channel, [string]$Message) {
+    if ($Message) { return "?channel=$Channel&message=$Message" }
+    return ""
 }
 
 # Get-Attachments returns a message's files as an instance sees them,
@@ -376,13 +384,13 @@ function Get-Attachments($Browser, [string]$DenID, [string]$Channel, [string]$Me
     return (@($files | ForEach-Object { $_.id }) -join " ")
 }
 
-# Wait-Gone waits until an instance no longer serves a file, once the den's
-# word that it's gone reached it.
-function Wait-Gone($Browser, [string]$DenID, [string]$File) {
+# Wait-Gone waits until an instance no longer serves a file where the page
+# showed it, once the den's word that it's gone reached it.
+function Wait-Gone($Browser, [string]$DenID, [string]$File, [string]$Channel = "", [string]$Message = "") {
     $deadline = (Get-Date).AddSeconds(10)
     while ((Get-Date) -lt $deadline) {
         try {
-            Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$File" -WebSession $Browser.Session -UseBasicParsing `
+            Invoke-WebRequest -Uri "$($Browser.Origin)/api/dens/$DenID/files/$File$(Get-Under $Channel $Message)" -WebSession $Browser.Session -UseBasicParsing `
                 -OutFile (Join-Path $Work "gone.bin") -TimeoutSec 60 | Out-Null
         } catch {
             return
@@ -410,10 +418,10 @@ function Test-Clean([string]$Path, [string]$What) {
 }
 
 # Test-Range fetches bytes From to To of a file as a player seeking does,
-# and fails unless they're those of the whole file at Path. Windows
-# PowerShell won't set a Range header itself.
-function Test-Range($Browser, [string]$DenID, [string]$FileID, [string]$Path, [int]$From, [int]$To) {
-    $request = [Net.HttpWebRequest]::Create("$($Browser.Origin)/api/dens/$DenID/files/$FileID")
+# under the message it's on, and fails unless they're those of the whole
+# file at Path. Windows PowerShell won't set a Range header itself.
+function Test-Range($Browser, [string]$DenID, [string]$FileID, [string]$Path, [int]$From, [int]$To, [string]$Channel = "", [string]$Message = "") {
+    $request = [Net.HttpWebRequest]::Create("$($Browser.Origin)/api/dens/$DenID/files/$FileID$(Get-Under $Channel $Message)")
     $request.CookieContainer = $Browser.Session.Cookies
     $request.AddRange($From, $To)
     $response = $request.GetResponse()
@@ -937,14 +945,15 @@ den.test:$HttpsPort {
     $cachedPhoto = Send-Upload $owner $denID $channel $photo "cached.jpg"
     $cachedMessage = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($cachedPhoto.id) }).id
     $cachedVideo = Send-Upload $owner $denID $channel (Join-Path $media "with-gps.mov") "cached.mov"
-    Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($cachedVideo.id) } | Out-Null
+    $cachedVideoMessage = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = ""; attachments = @($cachedVideo.id) }).id
     $toEdit = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = "to be edited" }).id
     $toDelete = (Invoke-Api $owner POST "/api/dens/$denID/channels/$channel/messages" @{ nonce = New-Nonce; text = "to be deleted" }).id
     # The member's page loads the channel, and shows its photo and video.
     Get-History $member $denID $channel | Out-Null
     $videoCopy = Join-Path $Work "cached-video.mp4"
-    foreach ($fetch in @(@("$($cachedPhoto.id)", "cached-photo.jpg"), @("$($cachedPhoto.id)/thumb", "cached-preview.jpg"), @("$($cachedVideo.id)", "cached-video.mp4"))) {
-        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($fetch[0])" -WebSession $member.Session -UseBasicParsing `
+    foreach ($fetch in @(@("$($cachedPhoto.id)", "cached-photo.jpg", $cachedMessage), @("$($cachedPhoto.id)/thumb", "cached-preview.jpg", $cachedMessage),
+            @("$($cachedVideo.id)", "cached-video.mp4", $cachedVideoMessage))) {
+        Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($fetch[0])$(Get-Under $channel $fetch[2])" -WebSession $member.Session -UseBasicParsing `
             -OutFile (Join-Path $Work $fetch[1]) -TimeoutSec 60 | Out-Null
     }
     if ((Invoke-Api $member GET "/api/settings").cacheUsed -le 0) { Fail "the member's cache holds nothing" }
@@ -958,7 +967,7 @@ den.test:$HttpsPort {
     Wait-Connected $owner 0 | Out-Null
     Invoke-Native -FilePath $Dens -Arguments @("service", "start", "--instance", "second") | Out-Null
     Wait-Connected $member 0 | Out-Null
-    Wait-Gone $member $denID $cachedPhoto.id
+    Wait-Gone $member $denID $cachedPhoto.id $channel $cachedMessage
     # The edit and the delete reached the member's history.
     $readsRight = { param($h) $h.Contains("edited while away") -and -not $h.Contains("to be deleted") }
     Wait-Value { & $readsRight (Get-History $member $denID $channel) } "the edit and the delete in the member's history" | Out-Null
@@ -968,12 +977,12 @@ den.test:$HttpsPort {
     $history = Get-History $member $denID $channel
     if (-not (& $readsRight $history)) { Fail "the member's history with the den stopped: $history" }
     $again = Join-Path $Work "cached-video-again.mp4"
-    Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($cachedVideo.id)" -WebSession $member.Session -UseBasicParsing `
+    Invoke-WebRequest -Uri "$($member.Origin)/api/dens/$denID/files/$($cachedVideo.id)$(Get-Under $channel $cachedVideoMessage)" -WebSession $member.Session -UseBasicParsing `
         -OutFile $again -TimeoutSec 60 | Out-Null
     if ([Convert]::ToBase64String([IO.File]::ReadAllBytes($again)) -ne [Convert]::ToBase64String([IO.File]::ReadAllBytes($videoCopy))) {
         Fail "the cached video came back changed"
     }
-    Test-Range $member $denID $cachedVideo.id $videoCopy 100000 199999
+    Test-Range $member $denID $cachedVideo.id $videoCopy 100000 199999 $channel $cachedVideoMessage
     $restarted = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
     Invoke-Native -FilePath $Dens -Arguments @("service", "start") | Out-Null
     Wait-Connected $owner 0 | Out-Null
@@ -1024,10 +1033,11 @@ den.test:$HttpsPort {
     if (-not $file.stripped -or $file.width -ne 300 -or $file.height -ne 400 -or -not $file.thumb) {
         Fail "the DM upload came back as $($upload.Content)"
     }
-    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $sent = (Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) }).id
+    Get-History $owner $denID $dm | Out-Null
     foreach ($variant in @("", "/thumb")) {
         $got = Join-Path $Work "dm-photo.jpg"
-        $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$variant" -WebSession $owner.Session `
+        $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$variant$(Get-Under $dm $sent)" -WebSession $owner.Session `
             -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
         if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the DM photo$variant came as $($resp.Headers['Content-Type'])" }
         $text = $latin1.GetString([IO.File]::ReadAllBytes($got))
@@ -1040,38 +1050,38 @@ den.test:$HttpsPort {
     if ($null -eq $versions -or $versions.sent -ne "smaller" -or $file.height -ne 2560 -or $versions.full.height -ne 4032) {
         Fail "the DM photo went as $($file | ConvertTo-Json -Compress -Depth 4)"
     }
-    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $sent = (Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) }).id
     Get-History $owner $denID $dm | Out-Null
-    Get-Photo $owner $denID $file.id "1920x2560" "the DM photo's copy"
+    Get-Photo $owner $denID $file.id "1920x2560" "the DM photo's copy" $dm $sent
     $file = Send-Upload $member $denID $dm (Join-Path $media "with-gps.mov") "IMG_0005.MOV"
     if ($file.type -ne "video/mp4" -or $file.width -ne 320 -or -not (Get-Field $file "thumb") -or (Get-Field $file "duration_ms") -lt 3900) {
         Fail "the DM video came back as $($file | ConvertTo-Json -Compress)"
     }
-    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
-    # The owner's Dens learns the video's key from the message, which the
-    # page reads before it asks for the file.
+    $sent = (Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) }).id
+    # The owner's Dens learns the video's key and digests from the message,
+    # which the page reads before it asks for the file under it.
     Get-History $owner $denID $dm | Out-Null
     $got = Join-Path $Work "dm-video.mp4"
-    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$(Get-Under $dm $sent)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "video/mp4") { Fail "the DM video came as $($resp.Headers['Content-Type'])" }
     Test-Clean $got "the DM video"
-    Test-Range $owner $denID $file.id $got 200000 299999
+    Test-Range $owner $denID $file.id $got 200000 299999 $dm $sent
     $file = Send-Upload $member $denID $dm (Join-Path $media "with-gps.mov") "IMG_0009.MOV" "smaller"
     $versions = Get-Field $file "versions"
     if ($null -eq $versions -or $versions.sent -ne "smaller" -or $file.width -ne 320 -or $file.height -ne 568 -or -not (Get-Field $file "thumb")) {
         Fail "the DM video went as $($file | ConvertTo-Json -Compress -Depth 4)"
     }
-    Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) } | Out-Null
+    $sent = (Invoke-Api $member POST "/api/dens/$denID/channels/$dm/messages" @{ nonce = New-Nonce; text = ""; attachments = @($file.id) }).id
     Get-History $owner $denID $dm | Out-Null
     $got = Join-Path $Work "dm-video-copy.mp4"
-    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)" -WebSession $owner.Session `
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)$(Get-Under $dm $sent)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile $got -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "video/mp4" -or -not $latin1.GetString([IO.File]::ReadAllBytes($got)).Contains("av01")) {
         Fail "the DM video's copy came as $($resp.Headers['Content-Type']), without AV1"
     }
     Test-Clean $got "the DM video's copy"
-    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)/thumb" -WebSession $owner.Session `
+    $resp = Invoke-WebRequest -Uri "$($owner.Origin)/api/dens/$denID/files/$($file.id)/thumb$(Get-Under $dm $sent)" -WebSession $owner.Session `
         -UseBasicParsing -OutFile (Join-Path $Work "dm-video-copy.jpg") -PassThru -TimeoutSec 60
     if ("$($resp.Headers['Content-Type'])" -ne "image/jpeg") { Fail "the DM video's copy has a preview of $($resp.Headers['Content-Type'])" }
     # The -shm file holds only the write-ahead log's index, where a write in

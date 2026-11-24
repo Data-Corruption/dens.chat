@@ -8,7 +8,7 @@ general=$(channel general)
 photo=$(upload alice photo.jpg photo.jpg)
 echo "PHOTO_MESSAGE=$(send alice "$general" "a photo" "$photo")"
 clip=$(upload alice clip.mp4 clip.mp4)
-send alice "$general" "a clip" "$clip" >/dev/null
+echo "CLIP_MESSAGE=$(send alice "$general" "a clip" "$clip")"
 echo "DEN=$DEN"
 echo "GENERAL=$general"
 echo "PHOTO=$photo"

@@ -2,8 +2,9 @@
 // bob in the browser named; carol, on v1.15.0's Dens, and dave
 // through their pages' API. Alice makes a group of bob, carol and herself
 // from the DM tab's +, naming it, and each change shows in it as a line:
-// bob writes and sends a photo, which alice reads, and carol, through her
-// Dens; bob renames it, which reaches the den only sealed; bob adds dave
+// bob writes and sends a photo and a video, which alice reads, opens and
+// seeks to its end, each under its message, and carol, through her older
+// Dens, which reads past their digests; bob renames it, which reaches the den only sealed; bob adds dave
 // from the group's members, who reads from his joining on, and the name
 // bob's key carries; alice lets bob edit a list, whose tick on his page and
 // edit dave reads; carol ticks a list alice let her edit, as her older Dens
@@ -115,6 +116,41 @@ try {
     api('bob', 'POST', `/api/dens/${den}/channels/${g}/messages`, { nonce: nonce(), text: '', attachments: [photo] });
     report(await waitFor(() => A.b.eval(`[...document.querySelectorAll('img')].some((i) => i.naturalWidth > 0 && i.src.includes('/files/${photo}/'))`),
         "bob's photo on alice's page").then(() => true, () => false), "alice's page shows the photo bob sent, its preview opened for the group");
+    const clip = execFileSync('bash', ['-c', `source "$0" && DEN=${den} upload bob "$HOME/videos/grain-60fps.mp4" grain.mp4 ${g}`,
+        new URL('./lib.sh', import.meta.url).pathname]).toString().trim();
+    const clipMessage = JSON.parse(api('bob', 'POST', `/api/dens/${den}/channels/${g}/messages`, { nonce: nonce(), text: '', attachments: [clip] })).id;
+    await A.b.eval(`document.querySelector('button[aria-label="Open photo.jpg"]').click(), true`);
+    const full = `[...document.querySelectorAll('[role=dialog] img')].find((i) => new URL(i.src).pathname.endsWith('/files/${photo}'))`;
+    report(await waitFor(() => A.b.eval(`(() => { const i = ${full}; return !!i && i.complete && i.naturalWidth > 0 && /[?&]message=[0-9]+/.test(i.src); })()`),
+        "bob's photo full size").then(() => true, () => false), "alice's page opens bob's photo full size in the viewer, under its message");
+    await A.b.eval(`window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })), true`);
+    const video = `document.querySelector('video[src*="/files/${clip}?channel=${g}&message=${clipMessage}"]')`;
+    await waitFor(() => A.b.eval(`!!${video}`), "bob's video on alice's page");
+    const sought = await A.b.eval(`(async () => {
+        const v = ${video};
+        v.muted = true;
+        const within = (p, what) => Promise.race([p, new Promise((_, j) => setTimeout(() => j(new Error('no ' + what)), 15000))]);
+        if (v.readyState < 1) {
+            await within(v.play(), 'play');
+            v.pause();
+        }
+        const at = v.duration - 0.05;
+        await new Promise((resolve, reject) => {
+            v.addEventListener('seeked', resolve, { once: true });
+            v.addEventListener('error', () => reject(new Error('the video failed: ' + (v.error && v.error.code))), { once: true });
+            setTimeout(() => reject(new Error('no seek to ' + at)), 15000);
+            v.currentTime = at;
+        });
+        await within(new Promise((r) => (v.readyState >= 2 ? r() : v.addEventListener('loadeddata', r, { once: true }))), 'data');
+        return v.readyState + ' at ' + v.currentTime.toFixed(2) + ' of ' + v.duration.toFixed(2);
+    })()`).catch((e) => String(e));
+    const clipSize = history('alice', g).find((m) => m.id === clipMessage)?.attachments?.[0]?.size || 0;
+    report(/^[234] at /.test(sought) && clipSize > 1 << 20, `alice's page plays bob's video, past its first run at ${clipSize} bytes, and seeks it to its end: ${sought}`);
+    await waitFor(() => history('carol', g).some((m) => m.id === clipMessage), "bob's video in carol's Dens").catch(() => {});
+    const older = execFileSync('bash', ['-c', `source "$0" && for f in ${photo} ${clip}; do
+        curl -sS -b "$HOME/jar-\${INSTANCE[carol]}" -o /dev/null -w '%{http_code} %{content_type} ' "http://127.0.0.1:\${PORT[carol]}/api/dens/${den}/files/$f"; done`,
+    new URL('./lib.sh', import.meta.url).pathname]).toString().trim();
+    report(older === '200 image/jpeg 200 video/mp4', `carol's v1.15.0 Dens opens bob's photo and video, reading past their digests: ${older}`);
 
     step('bob renames the group');
     await openPanel(B);
