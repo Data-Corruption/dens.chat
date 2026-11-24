@@ -104,7 +104,7 @@ func TestDMVideo(t *testing.T) {
 	if seen.ID != up.ID || seen.Duration != up.Duration || seen.Thumb == nil || seen.Type != "video/mp4" {
 		t.Fatalf("bob sees %+v", seen)
 	}
-	f, err := member.OpenFile(ctx, denID, up.ID, denclient.FileAt{Channel: dm, Message: sent}, false)
+	f, err := member.OpenFile(ctx, denID, up.ID, shownAt(member, denID, dm, sent, up.ID), false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +230,7 @@ func TestLargeFilesReadByRanges(t *testing.T) {
 	}
 	check := func(m *denclient.Manager, channel, message, id string) {
 		t.Helper()
-		f, err := m.OpenFile(ctx, denID, id, denclient.FileAt{Channel: channel, Message: message}, false)
+		f, err := m.OpenFile(ctx, denID, id, shownAt(m, denID, channel, message, id), false)
 		if err != nil {
 			t.Fatal(err)
 		}

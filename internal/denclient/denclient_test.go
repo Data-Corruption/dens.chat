@@ -125,6 +125,10 @@ type denHost struct {
 	// answered, each its path and the range it asked for.
 	swaps map[string]string
 	gets  []fileGet
+	// relabels answers a page of history around a message with the page
+	// around another, that one under the first's ID, as a den that
+	// chooses which sealed message it lists under an ID would.
+	relabels map[string]string
 }
 
 // fileGet is a GET of a file a den answered: its path and its range.
@@ -144,6 +148,18 @@ func (h *denHost) restore() {
 	h.upgradeMu.Lock()
 	defer h.upgradeMu.Unlock()
 	clear(h.swaps)
+	clear(h.relabels)
+}
+
+// relabel has the den answer a page of history around message with the
+// page around other, other under message's ID, until restore.
+func (h *denHost) relabel(message, other string) {
+	h.upgradeMu.Lock()
+	defer h.upgradeMu.Unlock()
+	if h.relabels == nil {
+		h.relabels = map[string]string{}
+	}
+	h.relabels[message] = other
 }
 
 // fileGets returns the GETs of a file's blob the den answered from the
@@ -198,6 +214,23 @@ func (h *denHost) open(lifetime time.Duration, tlsConfig *tls.Config, publicAddr
 			h.upgradeMu.Unlock()
 		case r.Method == http.MethodGet && strings.HasPrefix(p, "/api/channels/") && strings.HasSuffix(p, "/messages"):
 			h.history.Add(1)
+			q := r.URL.Query()
+			asked := q.Get("around")
+			h.upgradeMu.Lock()
+			other := h.relabels[asked]
+			h.upgradeMu.Unlock()
+			if other != "" {
+				q.Set("around", other)
+				r.URL.RawQuery = q.Encode()
+				r.Header.Del("Accept-Encoding")
+				rec := httptest.NewRecorder()
+				routes.ServeHTTP(rec, r)
+				body := bytes.ReplaceAll(rec.Body.Bytes(), []byte(`"id":"`+other+`"`), []byte(`"id":"`+asked+`"`))
+				w.Header().Set("Content-Type", rec.Header().Get("Content-Type"))
+				w.WriteHeader(rec.Code)
+				w.Write(body)
+				return
+			}
 		case p == "/api/changes":
 			h.changes.Add(1)
 		case r.Method == http.MethodPost && strings.HasPrefix(p, "/api/uploads"):

@@ -191,6 +191,10 @@ type File struct {
 	// clients show covered until it's clicked. A DM's carries it
 	// inside the seal instead.
 	Spoiler bool `json:"spoiler,omitempty"`
+	// SealedAs is a client's own, for its page, which a den never sends:
+	// a tag of a DM's file as the message it's on seals it, which the
+	// page names when it asks for the file.
+	SealedAs string `json:"sealed_as,omitempty"`
 }
 
 // Thumb is the size of a file's preview.
@@ -281,6 +285,9 @@ func CheckMediaType(t string) error {
 func CheckFile(f File) error {
 	if _, err := ParseID(f.ID); err != nil {
 		return errors.New("file has an invalid ID")
+	}
+	if f.SealedAs != "" {
+		return errors.New("file has a tag only a client gives")
 	}
 	if f.Sealed {
 		if f.Name != "" || f.Type != SealedType || f.Size < 0 || f.Size > MaxFileSize || f.Width != 0 || f.Height != 0 || f.Animated ||

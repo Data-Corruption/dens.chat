@@ -5,21 +5,46 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"image"
+	"image/png"
 	"io"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/den"
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
+	"github.com/Data-Corruption/dens.chat/internal/media"
 	"github.com/Data-Corruption/dens.chat/internal/vault"
 
 	"golang.org/x/crypto/chacha20poly1305"
 )
 
+// shownAt is where the page shows a message's file, with the tag the
+// member's Dens gave of it as it last opened the message; a page that
+// shows the message as it was opened before names that tag instead
+// (openAs).
+func shownAt(m *denclient.Manager, denID, channel, message, id string) denclient.FileAt {
+	if message == "" {
+		return denclient.FileAt{}
+	}
+	return denclient.FileAt{Channel: channel, Message: message, As: denclient.ShownAs(m, denID, message, id)}
+}
+
 // openIn opens a file as the page shows it, under the message it's on, in
 // its channel.
 func openIn(m *denclient.Manager, denID, channel, message, id string, thumb bool) (*denclient.OpenedFile, error) {
-	return m.OpenFile(context.Background(), denID, id, denclient.FileAt{Channel: channel, Message: message}, thumb)
+	return m.OpenFile(context.Background(), denID, id, shownAt(m, denID, channel, message, id), thumb)
+}
+
+// openAs opens a file as a page shows it that got the tag as with its
+// message, and reads it whole.
+func openAs(m *denclient.Manager, denID, channel, message, id, as string, thumb bool) ([]byte, error) {
+	f, err := m.OpenFile(context.Background(), denID, id, denclient.FileAt{Channel: channel, Message: message, As: as}, thumb)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(f)
 }
 
 // readFile reads a file as the page shows it, under the message it's on:
@@ -525,5 +550,160 @@ func TestGroupFileWithNoKeyHeld(t *testing.T) {
 	gf.h.stop()
 	if got, err := readFile(gf.erin, gf.denID, gf.g, gf.msg.ID, gf.data.ID, false, 0, 0); err != nil || !bytes.Equal(got, gf.dataPlain) {
 		t.Errorf("erin's copy of alice's file, with the den away: %v", err)
+	}
+}
+
+// A later revision of alice's message seals other bytes under her photo's
+// blob, as a member she let edit seals one with the den, or one whose
+// change she keeps. What carol's Dens and erin's cache kept of the photo
+// as the revision before sealed it is no answer now: a page that shows
+// the revision opens what it seals, so nobody reads a change as no
+// change, and a page still showing the one before opens nothing.
+func TestGroupFileSealedAgain(t *testing.T) {
+	gf := newGroupFiles(t)
+	readers := map[string]*denclient.Manager{"carol": gf.carol, "erin": gf.erin}
+	before := map[string]string{}
+	for name, m := range readers {
+		for _, thumb := range []bool{false, true} {
+			if _, err := readFile(m, gf.denID, gf.g, gf.msg.ID, gf.photo.ID, thumb, 0, 0); err != nil {
+				t.Fatalf("%s's first read of the photo, preview %v: %v", name, thumb, err)
+			}
+		}
+		before[name] = denclient.ShownAs(m, gf.denID, gf.msg.ID, gf.photo.ID)
+	}
+	p, err := denclient.PayloadOf(gf.bob, gf.denID, gf.g, gf.msg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := p.Files[0]
+	fileAD, _ := denclient.FileAD(gf.bob, gf.denID, gf.g, false)
+	thumbAD, _ := denclient.FileAD(gf.bob, gf.denID, gf.g, true)
+	pic, small := photo(t, 320, 240, 80), photo(t, 64, 48, 70)
+	picBlob, smallBlob := sealBlob(t, theirs.Key, fileAD, pic), sealBlob(t, theirs.Key, thumbAD, small)
+	bob := gf.ids[1]
+	blobs := []string{uploadSealedAs(t, gf.h, bob, picBlob), uploadSealedAs(t, gf.h, bob, smallBlob)}
+	sendSealedAs(t, gf.h, gf.bob, gf.denID, gf.g, bob, denproto.DMPayload{Text: "mine"}, blobs)
+	gf.h.swap(theirs.ID, blobs[0])
+	gf.h.swap(theirs.Thumb.ID, blobs[1])
+	if err := denclient.EditPayloadAs(gf.alice, gf.denID, gf.g, gf.msg.ID, func(p *denproto.DMPayload) {
+		p.Text = "sealed again"
+		f := &p.Files[0]
+		f.Size, f.Width, f.Height, f.Sums = int64(len(pic)), 320, 240, sumsOf(t, picBlob)
+		f.Thumb = &denproto.DMThumb{ID: theirs.Thumb.ID, Width: 64, Height: 48, Size: int64(len(small)), Sums: sumsOf(t, smallBlob)}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	for name, m := range readers {
+		messageOn(t, m, gf.denID, gf.g, gf.msg.ID, "the revision", func(pm denclient.PageMessage) bool { return pm.Text == "sealed again" })
+		if as := denclient.ShownAs(m, gf.denID, gf.msg.ID, theirs.ID); as == "" || as == before[name] {
+			t.Fatalf("%s: the photo's tag under the revision is %q, and %q before", name, as, before[name])
+		}
+		for _, thumb := range []bool{false, true} {
+			if got, err := openAs(m, gf.denID, gf.g, gf.msg.ID, theirs.ID, before[name], thumb); err == nil {
+				t.Errorf("%s: the photo, preview %v, opened as the revision before sealed it: what was kept %v", name, thumb, !bytes.Equal(got, pic) && !bytes.Equal(got, small))
+			}
+		}
+		if got, err := readFile(m, gf.denID, gf.g, gf.msg.ID, theirs.ID, false, 0, 0); err != nil || !bytes.Equal(got, pic) {
+			t.Errorf("%s: the photo as the message seals it now: %v, the one kept from before %v", name, err, err == nil)
+		}
+		if got, err := readFile(m, gf.denID, gf.g, gf.msg.ID, theirs.ID, true, 0, 0); err != nil || !bytes.Equal(got, small) {
+			t.Errorf("%s: its preview as the message seals it now: %v, the one kept from before %v", name, err, err == nil)
+		}
+	}
+}
+
+// The den chooses which sealed message it lists under an ID, which no
+// seal binds. Carol's page shows alice's message; the den then answers
+// her Dens's fetch of it, as an edit, a tick or a forward makes one, with
+// a message of bob's own under its ID, which names alice's photo's blob
+// with digests of the bytes he put there. The photo her page still shows
+// under alice's message doesn't open as bob's. A page that loads the
+// message again from the den shows bob's, with his photo; and once the
+// den lists alice's there again, her photo opens as she sent it.
+func TestGroupFileUnderAMessageListedInItsPlace(t *testing.T) {
+	gf := newGroupFiles(t)
+	ctx := context.Background()
+	wantPhoto, err := readFile(gf.alice, gf.denID, gf.g, gf.msg.ID, gf.photo.ID, false, 0, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p, err := denclient.PayloadOf(gf.bob, gf.denID, gf.g, gf.msg.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := p.Files[0]
+	fileAD, _ := denclient.FileAD(gf.bob, gf.denID, gf.g, false)
+	pic := photo(t, 320, 240, 80)
+	picBlob := sealBlob(t, theirs.Key, fileAD, pic)
+	bob := gf.ids[1]
+	blob := uploadSealedAs(t, gf.h, bob, picBlob)
+	mine := sendSealedAs(t, gf.h, gf.bob, gf.denID, gf.g, bob, denproto.DMPayload{Files: []denproto.DMFile{{
+		ID: theirs.ID, Key: theirs.Key, Name: "mine.jpg", Type: "image/jpeg", Size: int64(len(pic)), Width: 320, Height: 240, Sums: sumsOf(t, picBlob),
+	}}}, []string{blob})
+	readers := map[string]*denclient.Manager{"carol": gf.carol, "erin": gf.erin}
+	gf.h.swap(theirs.ID, blob)
+	gf.h.relabel(gf.msg.ID, mine.ID)
+	for name, m := range readers {
+		shown := denclient.ShownAs(m, gf.denID, gf.msg.ID, theirs.ID)
+		if _, err := m.Edit(ctx, gf.denID, gf.g, gf.msg.ID, denproto.EditRequest{Text: "a tick"}); err == nil {
+			t.Fatalf("%s edited a message of bob's", name)
+		}
+		if got, err := openAs(m, gf.denID, gf.g, gf.msg.ID, theirs.ID, shown, false); err == nil {
+			t.Errorf("%s: the photo her page shows under alice's message opened: bob's %v", name, bytes.Equal(got, pic))
+		}
+	}
+	// Carol's page loads the message again, from the den; erin's would
+	// from her cache, which holds alice's.
+	page, err := gf.carol.History(ctx, gf.denID, gf.g, denclient.HistoryQuery{Around: gf.msg.ID, Limit: 1})
+	if err != nil || len(page.Messages) != 1 || page.Messages[0].AuthorID != bob {
+		t.Fatalf("carol's page of the message the den lists there: %+v %v", page, err)
+	}
+	if got, err := readFile(gf.carol, gf.denID, gf.g, gf.msg.ID, theirs.ID, false, 0, 0); err != nil || !bytes.Equal(got, pic) {
+		t.Errorf("carol: bob's photo under the message shown as his: %v", err)
+	}
+	gf.h.restore()
+	for name, m := range readers {
+		page, err := m.History(ctx, gf.denID, gf.g, denclient.HistoryQuery{Around: gf.msg.ID, Limit: 1})
+		if err != nil || len(page.Messages) != 1 || page.Messages[0].AuthorID != gf.ids[0] {
+			t.Fatalf("%s's page of alice's message again: %+v %v", name, page, err)
+		}
+		if got, err := readFile(m, gf.denID, gf.g, gf.msg.ID, theirs.ID, false, 0, 0); err != nil || !bytes.Equal(got, wantPhoto) {
+			t.Errorf("%s: alice's photo once the den lists her message again: %v, bob's %v", name, err, bytes.Equal(got, pic))
+		}
+	}
+}
+
+// A sealed message names its files by ID, and can name any. One of bob's
+// that names alice's picture as a file of its own leaves her picture
+// opening as the page asks for it, under no message, for carol and for
+// erin through her cache.
+func TestGroupMessageNamingAPicture(t *testing.T) {
+	gf := newGroupFiles(t)
+	var b bytes.Buffer
+	if err := png.Encode(&b, image.NewNRGBA(image.Rect(0, 0, 256, 256))); err != nil {
+		t.Fatal(err)
+	}
+	up := upload(t, gf.alice, gf.denID, "avatar.png", b.Bytes())
+	if _, err := gf.alice.UpdateProfile(context.Background(), gf.denID, denproto.ProfileRequest{Avatar: &up.ID}); err != nil {
+		t.Fatal(err)
+	}
+	readers := map[string]*denclient.Manager{"carol": gf.carol, "erin": gf.erin}
+	for name, m := range readers {
+		viewOf(t, m, gf.denID, "alice's picture", func(v denclient.View) bool {
+			alice, ok := memberIn(v, gf.ids[0])
+			return ok && alice.Avatar.ID == up.ID
+		})
+		if _, kind, err := fetch(t, m, gf.denID, up.ID, false); err != nil || kind != media.PNG {
+			t.Fatalf("%s's first fetch of alice's picture: %v %s", name, err, kind)
+		}
+	}
+	mine := sendSealedAs(t, gf.h, gf.bob, gf.denID, gf.g, gf.ids[1], denproto.DMPayload{Text: "mine", Files: []denproto.DMFile{{
+		ID: up.ID, Key: denproto.Random(32), Name: "mine.png", Type: "image/png", Size: 100,
+	}}}, nil)
+	for name, m := range readers {
+		messageOn(t, m, gf.denID, gf.g, mine.ID, "bob's message", func(pm denclient.PageMessage) bool { return len(pm.Attachments) == 1 })
+		if _, kind, err := fetch(t, m, gf.denID, up.ID, false); err != nil || kind != media.PNG {
+			t.Errorf("%s: alice's picture, once a message of bob's names it: %v %s", name, err, kind)
+		}
 	}
 }

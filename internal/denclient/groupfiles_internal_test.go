@@ -79,3 +79,17 @@ func EditPayloadAs(m *Manager, denID, channel, messageID string, edit func(*denp
 	_, err = change(ctx, c, http.MethodPatch, "/api/messages/"+messageID, denproto.EditRequest{Revision: current.Revision, Sealed: sealed, KeyID: keyID})
 	return err
 }
+
+// ShownAs is the tag this member's Dens gave the page with a message's
+// file as it last opened that message, or "" if it holds none, for the
+// tests of package denclient_test.
+func ShownAs(m *Manager, denID, messageID, fileID string) string {
+	c, err := m.find(denID)
+	if err != nil {
+		return ""
+	}
+	message, _ := denproto.ParseID(messageID)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.dmFiles[fileID][message].as
+}

@@ -67,7 +67,7 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 	// waits open on the den while the others upload.
 	sizes := make([]int64, len(msg.Attachments))
 	for i, a := range msg.Attachments {
-		f, err := m.OpenFile(ctx, denID, a.ID, FileAt{Channel: channelID, Message: messageID}, false)
+		f, err := m.OpenFile(ctx, denID, a.ID, FileAt{Channel: channelID, Message: messageID, As: a.SealedAs}, false)
 		if err != nil {
 			return PageMessage{}, err
 		}
@@ -95,7 +95,7 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 		}
 	}()
 	for _, a := range msg.Attachments {
-		up, err := m.forwardFile(ctx, denID, FileAt{Channel: channelID, Message: messageID}, a, dst, to.Channel)
+		up, err := m.forwardFile(ctx, denID, FileAt{Channel: channelID, Message: messageID, As: a.SealedAs}, a, dst, to.Channel)
 		if err != nil {
 			return PageMessage{}, err
 		}
@@ -104,7 +104,7 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 			req.Spoilers = append(req.Spoilers, up.ID)
 		}
 		if strings.HasPrefix(up.Type, "video/") && up.Width > 0 && up.Thumb == nil && a.Thumb != nil {
-			m.carryPreview(ctx, denID, FileAt{Channel: channelID, Message: messageID}, a.ID, dst, up.ID)
+			m.carryPreview(ctx, denID, FileAt{Channel: channelID, Message: messageID, As: a.SealedAs}, a.ID, dst, up.ID)
 		}
 	}
 	out, err := dst.sendMessage(ctx, to.Channel, req)

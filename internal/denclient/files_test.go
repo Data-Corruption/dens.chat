@@ -84,7 +84,7 @@ func fetch(t *testing.T, m *denclient.Manager, denID, id string, thumb bool) ([]
 // its channel.
 func fetchIn(t *testing.T, m *denclient.Manager, denID, channel, message, id string, thumb bool) ([]byte, media.Kind, error) {
 	t.Helper()
-	at := denclient.FileAt{Channel: channel, Message: message}
+	at := shownAt(m, denID, channel, message, id)
 	f, err := m.OpenFile(context.Background(), denID, id, at, thumb)
 	if err != nil {
 		return nil, 0, err

@@ -321,15 +321,17 @@ func inMemory(data []byte, kind media.Kind) *OpenedFile {
 }
 
 // FileAt is where the page shows a file: the message it's on, in its
-// channel, or neither, for a picture or an upload waiting to be sent.
-type FileAt struct{ Channel, Message string }
+// channel, with the tag it got of the file there (File.SealedAs), which a
+// channel's has none of; or none of them, for a picture or an upload
+// waiting to be sent.
+type FileAt struct{ Channel, Message, As string }
 
 // OpenFile opens a file, or its preview, from a den, or from the cache,
 // as the page shows it at at. A file in a DM, a group or notes opens with
-// the key and digests the message it's on sealed, chunk by chunk as it's
-// read, and an upload waiting to be sent at no message. Another den's
-// files come through the cache on disk; the install's own den, on the
-// same disk, keeps a small one in memory.
+// the key and digests the message it's on sealed, as the page was shown
+// it, chunk by chunk as it's read, and an upload waiting to be sent at no
+// message. Another den's files come through the cache on disk; the
+// install's own den, on the same disk, keeps a small one in memory.
 func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, at FileAt, thumb bool) (*OpenedFile, error) {
 	c, err := m.find(denID)
 	if err != nil {
@@ -342,10 +344,10 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, at FileAt,
 	if at != (FileAt{}) {
 		message, err1 := denproto.ParseID(at.Message)
 		channel, err2 := denproto.ParseID(at.Channel)
-		if err1 != nil || err2 != nil {
+		if err1 != nil || err2 != nil || len(at.As) > 64 {
 			return nil, inputError(errors.New("a message's file names its message and channel"))
 		}
-		where = place{channel: channel, message: message}
+		where = place{channel: channel, message: message, as: at.As}
 	}
 	ref, err := c.fileRef(fileID, where, thumb)
 	if err != nil {
@@ -354,8 +356,9 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, at FileAt,
 	if m.Cache != nil && !c.own {
 		return c.openCached(ctx, ref)
 	}
-	// What a file opened to under one message is no answer under another.
-	key := cacheKey{den: denID, file: fileID, at: where, thumb: thumb}
+	// What a file opened to under one message, as it sealed it, is no
+	// answer under another, or as it's sealed since.
+	key := cacheKey{den: denID, file: fileID, at: ref.at, thumb: thumb}
 	if data, kind, ok := m.files.get(key); ok {
 		return inMemory(data, kind), nil
 	}
@@ -371,9 +374,7 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, at FileAt,
 			return nil, err
 		}
 		kind := media.Sniff(data[:min(len(data), media.SniffLen)])
-		if ref.owner.Known() {
-			m.files.put(key, data, kind)
-		}
+		m.files.put(key, data, kind)
 		return inMemory(data, kind), nil
 	}
 	head := make([]byte, media.SniffLen)
@@ -386,9 +387,10 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, at FileAt,
 
 // fileRef is a file, or its preview, the page asks for under a message or
 // none, resolved once: whether a message this service opened seals it, with
-// its key and digests, and what it's on, which says whether a cache may
-// keep it. The fetch goes by it, so a ready that clears the keys meanwhile
-// can't have a cache keep the den's sealed bytes as the file.
+// its key and digests, and what it's on, which says whether the cache on
+// disk may keep it. The fetch goes by it, so a ready that clears the keys
+// meanwhile can't have a cache keep the den's sealed bytes as the file. A
+// file that isn't sealed has no tag, whatever the page named.
 type fileRef struct {
 	id     string
 	at     place
@@ -407,6 +409,9 @@ func (c *conn) fileRef(fileID string, at place, thumb bool) (fileRef, error) {
 	df, sealed, err := c.sealedLocked(fileID, at)
 	if err != nil {
 		return fileRef{}, err
+	}
+	if !sealed || at.message == 0 {
+		at.as = ""
 	}
 	return fileRef{id: fileID, at: at, thumb: thumb, sealed: sealed, df: df, owner: c.ownerLocked(fileID, at)}, nil
 }

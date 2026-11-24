@@ -27,11 +27,12 @@ import (
 )
 
 // Format is the cache's format, kept as its database's user_version. A
-// cache of another format starts again from empty: it holds nothing that
-// can't be fetched again. Format 3 keeps the files of the den's named
-// files, as its emoji's images, and format 4 when a disappearing
-// message goes.
-const Format = 4
+// cache of another format starts again from empty. Format 3 keeps the
+// files of the den's named files, as its emoji's images, format 4 when a
+// disappearing message goes, and format 5 what a message seals each of
+// its files as, which a cache of format 4 gains where it stands: emptied,
+// it would lose what a den's state holds for good.
+const Format = 5
 
 // The cache's size, which the member chooses in the settings.
 const (
@@ -145,6 +146,12 @@ func (s *Store) check(db *sql.DB) (string, error) {
 		}
 		return "", s.create(ctx, db)
 	}
+	if format == 4 {
+		if err := sealedAsColumn(ctx, db); err != nil {
+			return "", err
+		}
+		format = Format
+	}
 	if format != Format {
 		return fmt.Sprintf("its format is %d, and this version of Dens keeps %d", format, Format), nil
 	}
@@ -156,6 +163,23 @@ func (s *Store) check(db *sql.DB) (string, error) {
 		return "it's sealed under another key", nil
 	}
 	return "", nil
+}
+
+// sealedAsColumn takes a cache of format 4 to format 5. Its files have no
+// tag, so a DM's, which is asked for under one, is fetched again.
+func sealedAsColumn(ctx context.Context, db *sql.DB) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `ALTER TABLE files ADD COLUMN sealed_as TEXT`); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 5`); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (s *Store) create(ctx context.Context, db *sql.DB) error {
@@ -233,19 +257,22 @@ func (s *Store) create(ctx context.Context, db *sql.DB) error {
 		-- Files and their previews (thumb), each held in the file name
 		-- names, of which held bytes are on disk, as slots of sealed chunks.
 		-- A file is on a message, in its channel, is a member's picture, or
-		-- is one of the den's named files, as an emoji's image (M15.2).
+		-- is one of the den's named files, as an emoji's image (M15.2). A
+		-- sealed message's is kept as that message seals it, by a tag
+		-- (M24.4); sealed_as comes last, where format 4's cache gained it.
 		CREATE TABLE files (
-			den     INTEGER NOT NULL,
-			id      INTEGER NOT NULL,
-			thumb   INTEGER NOT NULL,
-			name    TEXT NOT NULL UNIQUE,
-			size    INTEGER NOT NULL,
-			held    INTEGER NOT NULL DEFAULT 0,
-			message INTEGER,
-			channel INTEGER,
-			member  INTEGER,
-			named   INTEGER,
-			used_at INTEGER NOT NULL,
+			den       INTEGER NOT NULL,
+			id        INTEGER NOT NULL,
+			thumb     INTEGER NOT NULL,
+			name      TEXT NOT NULL UNIQUE,
+			size      INTEGER NOT NULL,
+			held      INTEGER NOT NULL DEFAULT 0,
+			message   INTEGER,
+			channel   INTEGER,
+			member    INTEGER,
+			named     INTEGER,
+			used_at   INTEGER NOT NULL,
+			sealed_as TEXT,
 			PRIMARY KEY (den, id, thumb)
 		) STRICT;
 		CREATE INDEX files_used ON files (used_at);

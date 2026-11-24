@@ -91,25 +91,22 @@ func (c *conn) noteOwnFiles(files []denproto.OwnFile) {
 }
 
 // ownerLocked says what a file the page asks for where it shows it is on,
-// as far as this service knows: that message, in a channel or a DM, a
-// member's picture, or one of the den's emoji. A DM's file is known only
-// as a message this service opened names it, and an upload waiting to be
-// sent isn't kept. The caller holds c.mu.
+// as far as this service knows: that message, in a channel or a DM, or,
+// asked for under none, a member's picture or one of the den's emoji. A
+// DM's file is known only as a message this service opened seals it, as
+// the page was shown, and an upload waiting to be sent isn't kept. A
+// file asked for under no message is never kept as a message's, whatever
+// the den said it's on: the den's bytes for it would answer under that
+// message after. The caller holds c.mu.
 func (c *conn) ownerLocked(fileID string, at place) cache.Owner {
 	if at.message != 0 {
-		if df, ok := c.dmFiles[fileID][at.message]; ok && df.channel == at.channel {
-			return cache.Owner{Message: at.message, Channel: at.channel}
+		if df, ok := c.dmFiles[fileID][at.message]; ok && df.channel == at.channel && df.as == at.as {
+			return cache.Owner{Message: at.message, Channel: at.channel, As: df.as}
 		}
-		if o, ok := c.owners[fileID]; ok && o.message == at.message && o.channel == at.channel {
+		if o, ok := c.owners[fileID]; ok && at.as == "" && o.message == at.message && o.channel == at.channel {
 			return cache.Owner{Message: o.message, Channel: o.channel}
 		}
 		return cache.Owner{}
-	}
-	if _, ok := c.dmFiles[fileID]; ok {
-		return cache.Owner{}
-	}
-	if o, ok := c.owners[fileID]; ok {
-		return cache.Owner{Message: o.message, Channel: o.channel}
 	}
 	if c.den != nil {
 		for _, m := range c.den.members {
@@ -150,7 +147,8 @@ func (c *conn) openCached(ctx context.Context, ref fileRef) (*OpenedFile, error)
 			}
 		}
 	}
-	h, err := c.m.Cache.File(c.j.denID, id, thumb, cache.Owner{Message: ref.at.message, Channel: ref.at.channel}, ref.owner, func() (cache.Source, error) {
+	under := cache.Owner{Message: ref.at.message, Channel: ref.at.channel, As: ref.at.as}
+	h, err := c.m.Cache.File(c.j.denID, id, thumb, under, ref.owner, func() (cache.Source, error) {
 		return c.fileSource(ctx, ref)
 	})
 	if err != nil {

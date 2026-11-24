@@ -383,6 +383,9 @@ func TestFileChecks(t *testing.T) {
 		// A sealed file's spoiler goes inside the seal, where the den
 		// can't set it.
 		{ID: "1", Type: SealedType, Sealed: true, Spoiler: true},
+		// The tag of a DM's file is a client's own, for its page.
+		{ID: "1", Name: "a", Type: "text/plain", SealedAs: "tag"},
+		{ID: "1", Type: SealedType, Sealed: true, SealedAs: "tag"},
 	} {
 		if CheckFile(bad) == nil {
 			t.Errorf("CheckFile accepted %+v", bad)

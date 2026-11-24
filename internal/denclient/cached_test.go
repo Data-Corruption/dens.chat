@@ -139,7 +139,7 @@ func TestCachedFilesOutlastRestarts(t *testing.T) {
 		if err != nil || !bytes.Equal(full, wantPhoto) || !bytes.Equal(thumb, wantThumb) {
 			t.Fatalf("%s: the photo came back changed: %v", when, err)
 		}
-		f, err := member.OpenFile(context.Background(), denID, clip.ID, denclient.FileAt{Channel: channelID, Message: clipMsg.ID}, false)
+		f, err := member.OpenFile(context.Background(), denID, clip.ID, shownAt(member, denID, channelID, clipMsg.ID, clip.ID), false)
 		if err != nil {
 			t.Fatalf("%s: %v", when, err)
 		}
@@ -313,5 +313,24 @@ func TestTheOwnDenIsntCached(t *testing.T) {
 	look(t, owner, denID, v.Channels[0].ID, a)
 	if used := owner.CacheUsage().Used; used != 0 {
 		t.Fatalf("the cache holds %d bytes of the install's own den", used)
+	}
+}
+
+// A channel's file fetched under no message, as nothing of the page's
+// asks for one, isn't kept as its message's, whatever the den said it's
+// on: what the den answered then is no part of what the page shows under
+// that message, which the den, away, no longer gives.
+func TestAFileAskedForUnderNoMessageIsNotItsMessages(t *testing.T) {
+	h, owner, _, denID, channelID := chatDen(t)
+	member, _ := cachedMember(t, h, owner, denID, newCachedStore(t))
+	clip, clipMsg := postFile(t, owner, denID, channelID, "clip.bin", randomBytes(100<<10))
+	messageOn(t, member, denID, channelID, clipMsg.ID, "the file's message", func(pm denclient.PageMessage) bool { return len(pm.Attachments) == 1 })
+	if _, _, err := fetch(t, member, denID, clip.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	h.stop()
+	waitFor(t, member, "the den away", func(s denclient.Status) bool { return !connected(s) })
+	if _, _, err := fetchIn(t, member, denID, channelID, clipMsg.ID, clip.ID, false); err == nil {
+		t.Error("the file opened under its message from what a fetch under none kept")
 	}
 }

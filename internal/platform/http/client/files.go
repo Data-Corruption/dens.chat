@@ -123,8 +123,8 @@ func (rt *router) handleSetThumb(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleFile serves a file, or its preview, to the page, where the page
-// shows it: under a message, in its channel, which a DM's file opens as
-// that message seals it.
+// shows it: under a message, in its channel, with the tag it got of a
+// DM's file there, which opens only as that message sealed it.
 // Only a file that turned out to be an image of a kind Dens reads, or
 // video or audio in a container the media module writes, shows inline, as
 // that type; anything else downloads, and never as a type the browser
@@ -134,7 +134,7 @@ func (rt *router) handleSetThumb(w http.ResponseWriter, r *http.Request) {
 func (rt *router) handleFile(thumb bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
-		at := denclient.FileAt{Channel: q.Get("channel"), Message: q.Get("message")}
+		at := denclient.FileAt{Channel: q.Get("channel"), Message: q.Get("message"), As: q.Get("as")}
 		f, err := rt.a.Dens.OpenFile(r.Context(), chi.URLParam(r, "den"), chi.URLParam(r, "file"), at, thumb)
 		if err != nil {
 			if r.Context().Err() != nil {

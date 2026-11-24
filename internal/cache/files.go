@@ -46,11 +46,14 @@ type Source interface {
 // Owner is what a cached file is on: a message, in its channel, a member's
 // picture, or one of the den's named files, as an emoji, by its ID.
 // It says which files go when the message changes or goes, the channel
-// goes, the picture is replaced or the emoji is deleted.
+// goes, the picture is replaced or the emoji is deleted. As is a tag of a
+// sealed message's file as that message seals it, which the client makes,
+// and empty for any other file.
 type Owner struct {
 	Message, Channel int64
 	Member           int64
 	Named            int64
+	As               string
 }
 
 // Known reports whether the owner says what the file is on.
@@ -61,6 +64,13 @@ func nullable(n int64) any {
 		return nil
 	}
 	return n
+}
+
+func nullableText(s string) any {
+	if s == "" {
+		return nil
+	}
+	return s
 }
 
 type key struct {
@@ -81,11 +91,12 @@ type entry struct {
 	// Guarded by Store.mu: the handles reading it, whether its row went
 	// while they did, in which case its file goes as the last one closes,
 	// the bytes it holds on disk, and the message it's on, if any, in
-	// its channel.
+	// its channel, as that message seals it.
 	refs             int
 	doomed           bool
 	held             int64
 	message, channel int64
+	as               string
 
 	// fill lets one handle at a time fetch the chunks it lacks.
 	fill sync.Mutex
@@ -192,10 +203,13 @@ func (h *File) Size() int64 { return h.size }
 // den only for the chunks it lacks; but it holds a file for a request
 // only if it kept it under the same message and channel, or under none
 // for a request naming none, since a DM's file opens as its message seals
-// it, and the den's bytes for it fetched another way are no part of it. A
-// file it doesn't hold yet comes from the den, and is kept as it's read if
-// it's on something the cache can follow, owner, and fits a quarter of
-// the cache.
+// it, and the den's bytes for it fetched another way are no part of it.
+// One it kept under that message as the message sealed it another way,
+// by under's tag, goes, and is fetched again: the den chooses which
+// sealed message a client opens under an ID, and a message's revisions
+// seal what they like. A file it doesn't hold yet comes from the den, and
+// is kept as it's read if it's on something the cache can follow, owner,
+// and fits a quarter of the cache.
 func (s *Store) File(denID []byte, id int64, thumb bool, under Owner, owner Owner, open func() (Source, error)) (*File, error) {
 	s.mu.Lock()
 	den, err := s.denLocked(denID)
@@ -264,21 +278,29 @@ func keptUnder(message, channel int64, under Owner) bool {
 
 // takeLocked returns the cached file k, with a handle counted on it, or
 // nil if the cache doesn't hold it; errElsewhere if it holds it under
-// another message than under names. The caller holds s.mu.
+// another message than under names. One it holds under that message,
+// sealed another way than under's tag says, it drops, and holds no more.
+// The caller holds s.mu.
 func (s *Store) takeLocked(k key, denID []byte, under Owner, owner Owner) (*entry, error) {
 	if s.closed {
 		return nil, nil
 	}
 	e := s.entries[k]
-	if e != nil && !keptUnder(e.message, e.channel, under) {
-		return nil, errElsewhere
+	if e != nil {
+		if !keptUnder(e.message, e.channel, under) {
+			return nil, errElsewhere
+		}
+		if e.as != under.As {
+			return nil, s.dropEntriesLocked([]droppedFile{{key: k, name: e.name, held: e.held}})
+		}
 	}
 	if e == nil {
 		var name string
 		var size, held int64
 		var message, channel, member, named sql.NullInt64
-		err := s.db.QueryRow(`SELECT name, size, held, message, channel, member, named FROM files WHERE den = ? AND id = ? AND thumb = ?`,
-			k.den, k.id, k.thumb).Scan(&name, &size, &held, &message, &channel, &member, &named)
+		var as sql.NullString
+		err := s.db.QueryRow(`SELECT name, size, held, message, channel, member, named, sealed_as FROM files WHERE den = ? AND id = ? AND thumb = ?`,
+			k.den, k.id, k.thumb).Scan(&name, &size, &held, &message, &channel, &member, &named, &as)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
@@ -288,8 +310,11 @@ func (s *Store) takeLocked(k key, denID []byte, under Owner, owner Owner) (*entr
 		if !keptUnder(message.Int64, channel.Int64, under) {
 			return nil, errElsewhere
 		}
+		if as.String != under.As {
+			return nil, s.removeLocked(name, held)
+		}
 		e = newEntry(k, denID, name, size)
-		e.message, e.channel = message.Int64, channel.Int64
+		e.message, e.channel, e.as = message.Int64, channel.Int64, as.String
 		got, err := e.load(s.path(name))
 		if err != nil {
 			s.log.Warnf("read a cached file: %v", err)
@@ -330,13 +355,14 @@ func (s *Store) takeLocked(k key, denID []byte, under Owner, owner Owner) (*entr
 }
 
 func (s *Store) setOwnerLocked(k key, owner Owner) {
-	if _, err := s.db.Exec(`UPDATE files SET message = ?, channel = ?, member = ?, named = ? WHERE den = ? AND id = ? AND thumb = ?`,
-		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), nullable(owner.Named), k.den, k.id, k.thumb); err != nil {
+	if _, err := s.db.Exec(`UPDATE files SET message = ?, channel = ?, member = ?, named = ?, sealed_as = ? WHERE den = ? AND id = ? AND thumb = ?`,
+		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), nullable(owner.Named), nullableText(owner.As),
+		k.den, k.id, k.thumb); err != nil {
 		s.log.Warnf("note what a cached file is on: %v", err)
 		return
 	}
 	if e := s.entries[k]; e != nil {
-		e.message, e.channel = owner.Message, owner.Channel
+		e.message, e.channel, e.as = owner.Message, owner.Channel, owner.As
 	}
 }
 
@@ -352,16 +378,17 @@ func (s *Store) addLocked(k key, denID []byte, size int64, owner Owner) (*entry,
 	if err != nil {
 		return nil, err
 	}
-	_, err = s.db.Exec(`INSERT INTO files (den, id, thumb, name, size, message, channel, member, named, used_at)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, k.den, k.id, k.thumb, name, size,
-		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), nullable(owner.Named), s.now().UnixMilli())
+	_, err = s.db.Exec(`INSERT INTO files (den, id, thumb, name, size, message, channel, member, named, sealed_as, used_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, k.den, k.id, k.thumb, name, size,
+		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), nullable(owner.Named), nullableText(owner.As),
+		s.now().UnixMilli())
 	if err != nil {
 		f.Close()
 		os.Remove(s.path(name))
 		return nil, err
 	}
 	e := newEntry(k, denID, name, size)
-	e.f, e.refs, e.message, e.channel = f, 1, owner.Message, owner.Channel
+	e.f, e.refs, e.message, e.channel, e.as = f, 1, owner.Message, owner.Channel, owner.As
 	s.entries[k] = e
 	return e, nil
 }

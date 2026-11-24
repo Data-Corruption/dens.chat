@@ -3,6 +3,7 @@ package denclient
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -98,11 +99,38 @@ type PageHistory struct {
 
 // dmFile is a DM's file as a message this service opened seals it, for
 // the page: its key, size and digests, its preview's, and the DM it's in.
-// mine is a message of this member's.
+// mine is a message of this member's, and as the tag the page got with
+// it (sealedAs).
 type dmFile struct {
 	channel int64
 	file    denproto.DMFile
 	mine    bool
+	as      string
+}
+
+// sealedAs tags a file as a message seals it: its blob, key, size and
+// digests, and its preview's. A message's ID is the den's word, which no
+// seal binds, so the den chooses which sealed message this service opens
+// under one, and when; the page names the tag it got with the message it
+// shows, and a file opens, and a cache answers, only as that message
+// sealed it.
+func sealedAs(f denproto.DMFile) string {
+	h := sha256.New()
+	put := func(b []byte) {
+		h.Write(binary.BigEndian.AppendUint64(nil, uint64(len(b))))
+		h.Write(b)
+	}
+	put([]byte("dens-file-sealed-as-v1"))
+	put([]byte(f.ID))
+	put(f.Key)
+	put(binary.BigEndian.AppendUint64(nil, uint64(f.Size)))
+	put(f.Sums)
+	if t := f.Thumb; t != nil {
+		put([]byte(t.ID))
+		put(binary.BigEndian.AppendUint64(nil, uint64(t.Size)))
+		put(t.Sums)
+	}
+	return base64.RawURLEncoding.EncodeToString(h.Sum(nil)[:16])
 }
 
 // maxDMFiles bounds the DM files a den connection remembers keys for, by
@@ -111,15 +139,20 @@ type dmFile struct {
 const maxDMFiles = 20_000
 
 // errNotOpened is a file asked for in a DM, a group or notes under a
-// message this service hasn't opened, or that doesn't name it, or in a
-// channel it never held: a sealed file's key and digests are its
-// message's, so it opens under no other, and never as the den's bytes.
+// message this service hasn't opened, or that doesn't name it, or seals
+// it another way than the page was shown, or in a channel it never held:
+// a sealed file's key and digests are its message's, so it opens under no
+// other, and never as the den's bytes.
 var errNotOpened = &denproto.Error{Status: http.StatusNotFound, Code: denproto.CodeNotFound,
 	Message: "This file's message isn't open here; load it again."}
 
-// place is where the page shows a file: a message, in its channel, or
-// neither, for a picture or an upload waiting to be sent.
-type place struct{ channel, message int64 }
+// place is where the page shows a file: a message, in its channel, with
+// the tag it got of a sealed one's file there (sealedAs), or none of
+// them, for a picture or an upload waiting to be sent.
+type place struct {
+	channel, message int64
+	as               string
+}
 
 // keepDMFileLocked remembers a file a message names, by the message. The
 // caller holds c.mu.
@@ -150,18 +183,15 @@ func (c *conn) dropDMFilesLocked(ids ...string) {
 
 // sealedLocked finds the file the page asks for where it shows it: in a
 // DM, a group or notes, by the kind this service keeps for good, as the
-// message it's on seals it; under no message, as an upload of this
-// member's waiting to be sent. A file in a channel isn't sealed, nor one
-// under no message that no message this service opened names. The caller
-// holds c.mu.
+// message it's on seals it, which must be as the page was shown; under no
+// message, as an upload of this member's waiting to be sent. A file in a
+// channel isn't sealed, nor one under no message, a picture or an emoji,
+// whatever sealed message names its ID. The caller holds c.mu.
 func (c *conn) sealedLocked(id string, at place) (dmFile, bool, error) {
 	if at.message == 0 {
 		if u, ok := c.uploads[id]; ok {
 			ch, _ := denproto.ParseID(u.channel)
 			return dmFile{channel: ch, file: u.file, mine: true}, true, nil
-		}
-		if _, ok := c.dmFiles[id]; ok {
-			return dmFile{}, true, errNotOpened
 		}
 		return dmFile{}, false, nil
 	}
@@ -173,7 +203,7 @@ func (c *conn) sealedLocked(id string, at place) (dmFile, bool, error) {
 		return dmFile{}, false, nil
 	}
 	df, ok := c.dmFiles[id][at.message]
-	if !ok || df.channel != at.channel {
+	if !ok || df.channel != at.channel || df.as != at.as {
 		return dmFile{}, true, errNotOpened
 	}
 	return df, true, nil
@@ -377,8 +407,11 @@ func (c *conn) dmFilesLocked(m denproto.Message, p denproto.DMPayload) []denprot
 	mine := m.AuthorID == c.meLocked()
 	out := []denproto.File{}
 	for _, f := range p.Files {
-		out = append(out, dmUploaded(f).File)
-		c.keepDMFileLocked(f.ID, message, dmFile{channel: channel, file: f, mine: mine})
+		df := dmFile{channel: channel, file: f, mine: mine, as: sealedAs(f)}
+		file := dmUploaded(f).File
+		file.SealedAs = df.as
+		out = append(out, file)
+		c.keepDMFileLocked(f.ID, message, df)
 	}
 	return out
 }
