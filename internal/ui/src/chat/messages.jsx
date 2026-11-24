@@ -1009,26 +1009,31 @@ function clock(ms) {
 // Waiting shows its author a group's message changed by someone their
 // Dens can't confirm they let edit it, as it reads now, to keep as theirs
 // or delete. Keep gives back the digest of what this showed, so a
-// revision put in its place meanwhile isn't kept unseen; and where what
-// this shows changes under the member, it says so and holds Keep a moment,
-// so a second click doesn't keep what they haven't read.
+// revision put in its place meanwhile isn't kept unseen. It holds Keep a
+// moment from each time it shows a message, or a change to one, so a second
+// click keeps nothing the member hasn't had before them, and says where
+// the message changed since they first saw it.
 function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
     const act = useAction();
-    const seen = useRef(m.waiting.shown);
-    const [changed, setChanged] = useState(false);
-    const [held, setHeld] = useState(false);
-    // Read as it renders, so Keep is never live over a change before the
-    // effect below has run.
-    const fresh = m.waiting.shown !== seen.current;
+    const key = `${denID}/${m.id}`;
+    // settled is the digest the hold last began for, read as this renders,
+    // so Keep is never live over a message before the effect has run.
+    const settled = useRef(null);
+    const [held, setHeld] = useState(true);
+    const off = act.busy || held || m.waiting.shown !== settled.current;
+    const first = waitedAs.get(key);
+    const changed = first !== undefined && first !== m.waiting.shown;
     useEffect(() => {
-        if (m.waiting.shown === seen.current) return undefined;
-        seen.current = m.waiting.shown;
-        setChanged(true);
+        settled.current = m.waiting.shown;
+        if (!waitedAs.has(key)) {
+            if (waitedAs.size >= WAITED_MOST) waitedAs.clear();
+            waitedAs.set(key, m.waiting.shown);
+        }
         setHeld(true);
         const timer = setTimeout(() => setHeld(false), KEEP_HOLD_MS);
         return () => clearTimeout(timer);
-    }, [m.waiting.shown]);
-    const keep = () => act.run(async () => {
+    }, [key, m.waiting.shown]);
+    const keep = () => !off && act.run(async () => {
         try {
             onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/keep?channel=${channelID}`, { shown: m.waiting.shown }));
         } catch (e) {
@@ -1044,19 +1049,25 @@ function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
             </p>
             {m.waiting.text.trim() && <div class="wrap-break-word"><Markdown text={m.waiting.text} me={me} /></div>}
             {m.waiting.attachments?.length > 0 && <Attachments denID={denID} files={m.waiting.attachments} onOpen={onView} />}
-            {(changed || fresh) && <p class="cursor-default select-none text-sm text-warning" data-waiting-changed>This changed while you were looking. Read it again before you keep it.</p>}
+            {changed && <p class="cursor-default select-none text-sm text-warning" data-waiting-changed>This changed since you first saw it. Read it again before you keep it.</p>}
             <ErrorText message={act.error} />
             <Actions>
-                <Button kind="primary" disabled={act.busy || held || fresh} onClick={keep}>Keep</Button>
+                <Button kind="primary" disabled={off} onClick={keep}>Keep</Button>
                 <Button kind="danger" disabled={act.busy} onClick={onDelete}>Delete</Button>
             </Actions>
         </div>
     );
 }
 
-// KEEP_HOLD_MS is how long Keep waits once a waiting message changed
-// under the member: longer than a double click.
+// KEEP_HOLD_MS is how long Keep waits from when a waiting message shows:
+// longer than a double click.
 const KEEP_HOLD_MS = 1500;
+
+// waitedAs holds, by message, the digest its waiting block first showed on
+// this page, so one that stops waiting for a moment and comes back changed
+// still says so; WAITED_MOST bounds it.
+const waitedAs = new Map();
+const WAITED_MOST = 200;
 
 function Quoted({ text, locked, me }) {
     if (locked) return <span class="italic">A message this device can't open</span>;

@@ -122,7 +122,17 @@ test('a group takes messages unless something stands in its composer', () => {
     mount(null, root);
 });
 
-test("a group's message changed with no say of its author's waits: on its author's page to keep or delete, by what the page showed, and on another's unread", async () => {
+test("a group's message changed with no say of its author's waits: on its author's page to keep or delete, by what the page showed, and on another's unread", async (t) => {
+    // Preact runs every effect waiting from one timer, so those the tests
+    // before left go first, on the real clock.
+    await new Promise((r) => setTimeout(r, 150));
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    // settle runs what's due in ms, an effect or the hold's end, and what
+    // they render.
+    const settle = async (ms) => {
+        t.mock.timers.tick(ms);
+        for (let i = 0; i < 20; i++) await Promise.resolve();
+    };
     const root = document.createElement('div');
     const none = () => {};
     const asked = [];
@@ -145,31 +155,49 @@ test("a group's message changed with no say of its author's waits: on its author
     assert.equal(findAll(root, (n) => attr(n, 'data-waiting') !== undefined).length, 0);
 
     // Alice's: who changed it, what it says, Keep and Delete.
-    mount(h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text: '[x] drinks', attachments: [], shown: 'c2hvd24' } },
-        waitingBy: members.get('3') }), root);
+    const row = (shown, text) => h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text, attachments: [], shown } },
+        waitingBy: members.get('3') });
+    const keep = () => findAll(root, (n) => n.localName === 'button' && n.textContent.trim() === 'Keep')[0];
+    const click = async () => { keep().dispatch('click', { target: keep() }); await settle(0); };
+    mount(row('c2hvd24', '[x] drinks'), root);
     const waiting = findAll(root, (n) => attr(n, 'data-waiting') !== undefined)[0];
     assert.ok(waiting, 'the waiting message on its author\'s page');
     assert.match(waiting.textContent, /can't confirm you let @carol change this/);
     assert.match(waiting.textContent, /drinks/);
-    const buttons = findAll(waiting, (n) => n.localName === 'button').map((b) => b.textContent.trim());
-    assert.deepEqual(buttons, ['Keep', 'Delete']);
-    const keep = findAll(waiting, (n) => n.localName === 'button' && n.textContent.trim() === 'Keep')[0];
-    keep.dispatch('click', { target: keep });
-    for (let i = 0; i < 100 && !updated; i++) await new Promise((r) => setTimeout(r, 5));
+    assert.deepEqual(findAll(waiting, (n) => n.localName === 'button').map((b) => b.textContent.trim()), ['Keep', 'Delete']);
+
+    // Keep holds a moment from when the message shows, before its effect
+    // has run and after, and keeps nothing meanwhile.
+    assert.equal(attr(keep(), 'disabled'), 'true', 'Keep, as the message first shows');
+    await click();
+    await settle(150);
+    assert.equal(attr(keep(), 'disabled'), 'true', 'Keep, a moment in');
+    await click();
+    assert.deepEqual(asked, [], 'a click while Keep holds');
+    await settle(1500);
+    assert.equal(attr(keep(), 'disabled'), undefined, 'Keep, once the message has shown a moment');
+    assert.doesNotMatch(root.textContent, /changed since you first saw it/);
+    await click();
     assert.deepEqual(asked, [{ method: 'POST', path: '/api/dens/d/messages/10/keep?channel=2', body: { shown: 'c2hvd24' } }]);
     assert.equal(updated?.revision, 3, 'the message as Keep left it');
 
-    // What it shows changes under her: it says so, and holds Keep a moment.
-    const keepNow = () => findAll(root, (n) => n.localName === 'button' && n.textContent.trim() === 'Keep')[0];
-    for (let i = 0; i < 100 && attr(keepNow(), 'disabled'); i++) await new Promise((r) => setTimeout(r, 5));
-    assert.equal(attr(keepNow(), 'disabled'), undefined, 'Keep, before anything changed');
-    assert.doesNotMatch(root.textContent, /changed while you were looking/);
-    mount(h(MessageRow, { ...props, me: members.get('1'), m: { ...m, waiting: { by: '3', text: 'alice never wrote this', attachments: [], shown: 'b3RoZXI' } },
-        waitingBy: members.get('3') }), root);
-    assert.equal(attr(keepNow(), 'disabled'), 'true', 'Keep, held from the render that shows the change');
-    for (let i = 0; i < 100 && !/changed while you were looking/.test(root.textContent); i++) await new Promise((r) => setTimeout(r, 5));
-    assert.match(root.textContent, /changed while you were looking/);
+    // What it shows changes under her: it says so, and holds Keep again
+    // from that render.
+    mount(row('b3RoZXI', 'alice never wrote this'), root);
+    assert.equal(attr(keep(), 'disabled'), 'true', 'Keep, from the render that shows the change');
+    assert.match(root.textContent, /changed since you first saw it/);
     assert.match(root.textContent, /alice never wrote this/);
-    assert.equal(attr(keepNow(), 'disabled'), 'true', 'Keep, held once what it shows changed');
+    await settle(150);
+    assert.equal(attr(keep(), 'disabled'), 'true', 'Keep, a moment into the change');
+    await settle(1500);
+    assert.equal(attr(keep(), 'disabled'), undefined, 'Keep, once the change has shown a moment');
+
+    // One that stops waiting for a moment and waits again, changed, says
+    // so too, and holds.
+    mount(h(MessageRow, { ...props, me: members.get('1') }), root);
+    assert.equal(findAll(root, (n) => attr(n, 'data-waiting') !== undefined).length, 0);
+    mount(row('dGhpcmQ', 'nor this'), root);
+    assert.equal(attr(keep(), 'disabled'), 'true', 'Keep, as it waits again');
+    assert.match(root.textContent, /changed since you first saw it/);
     mount(null, root);
 });
