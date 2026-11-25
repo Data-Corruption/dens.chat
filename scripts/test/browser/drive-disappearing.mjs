@@ -1,12 +1,10 @@
 // The disappearing check: alice, who hosts the den, in
-// Chromium, and bob in the browser named; carol through her page's API.
+// Chromium, and bob in the browser named. Alice's DM tab offers no +.
 // Bob sets the DM's time from the profile beside it, which both pages show
 // as a line and in the header. Under a time of seconds, which a
 // development instance's den takes, a message alice writes shows its mark,
 // and goes from both pages, from bob's cache and from the den's database
-// as its time passes, into the den's change log. Alice sets a group's time
-// from its members, and bob's message there goes from both pages too. And
-// with the den stopped, a message goes from bob's page and his cache all
+// as its time passes, into the den's change log. And with the den stopped, a message goes from bob's page and his cache all
 // the same. Then alice writes either side of a change of the time, a
 // moment apart, and both messages show their clocks.
 //
@@ -16,7 +14,7 @@ import { setTimeout as sleep } from 'node:timers/promises';
 import { ALICE, BOB, HOME, checks, launch, lib, pair, waitFor } from './browsers.mjs';
 
 const [, , which] = process.argv;
-const { DEN: den, DM: dm, BOB_ID: bobID, CAROL_ID: carolID } = process.env;
+const { DEN: den, DM: dm } = process.env;
 const c = checks();
 const report = c.report;
 const step = (what) => console.error(`.. ${what}`);
@@ -96,10 +94,10 @@ try {
         await waitFor(() => s.b.eval(`!!${COMPOSER}`), `${s.name}'s DM`);
     }
 
-    // The DM tab's + makes a group, and the den tab's channels and groups
-    // aren't offered there, to its owner either.
+    // The DM tab has no +, and the den tab's channels and groups aren't
+    // offered there, to its owner either.
     const plus = await A.b.eval(`JSON.stringify([...document.querySelectorAll('[data-pane=list] [data-tab-add]')].map((b) => b.dataset.tabAdd + ':' + b.getAttribute('aria-label')))`);
-    report(plus === '["dms:New group"]', `alice's DM tab's + makes a group, alone: ${plus}`);
+    report(plus === '[]', `alice's DM tab offers no +: ${plus}`);
 
     step("bob sets the DM's time from the profile beside it");
     await beside(B, 'Profile');
@@ -143,26 +141,6 @@ try {
     report(count(denDB, 'SELECT count(*) FROM den_messages WHERE id = ?', sent.id) === 0 &&
         count(denDB, `SELECT count(*) FROM den_changes WHERE kind = 'message' AND ref = ?`, sent.id) === 1,
     "the den's database no longer holds it, and its change log says it went");
-
-    step("alice sets a group's time from its members");
-    const g = JSON.parse(api('alice', 'POST', `/api/dens/${den}/group-dms`, { members: [bobID, carolID] })).id;
-    for (const s of [A, B]) {
-        await waitFor(() => s.b.eval(`!!document.querySelector('[data-group-row=${q(g)}]')`), `the group on ${s.name}'s page`);
-        await s.b.go(`http://localhost:${s.port}/den/${den}/${g}`);
-        await waitFor(() => s.b.eval(`!!${COMPOSER}`), `the group's composer on ${s.name}'s page`);
-    }
-    await beside(A, "The group's members");
-    await choose(A, 86400, 'Turn on');
-    report(await lineShown(B, "Alice set messages to disappear 1 day after they're sent."), "bob's page shows the line where alice set the group's time");
-    report(await waitFor(async () => (await badge(B)) === '1d', "the time in bob's header").then(() => true, () => false),
-        "bob's header says the group's messages go after a day");
-    await A.b.shot(`${HOME}/shot-disappearing-group-alice.png`);
-    api('alice', 'PUT', `/api/dens/${den}/dms/${g}/expiry`, { expires_after: SECONDS });
-    await lineShown(B, `Alice set messages to disappear ${SECONDS} seconds after they're sent.`);
-    await sends(B, 'the group forgets this');
-    report((await Promise.all([A, B].map((s) => waitFor(() => marked(s, 'the group forgets this'), `the group's message on ${s.name}'s page`)
-        .then(() => true, () => false)))).every(Boolean), "both pages show bob's message in the group, marked");
-    report((await Promise.all([A, B].map((s) => gone(s, 'the group forgets this')))).every(Boolean), "the group's message leaves both pages as its time passes");
 
     step('with the den stopped, a message goes from bob\'s page and cache all the same');
     await B.b.go(`http://localhost:${B.port}/den/${den}/${dm}`);

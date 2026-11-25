@@ -42,9 +42,29 @@ var releasedSchema = []struct {
 	{"v1.15.0", 18, nil},
 }
 
-// m16Tables are the tables v1.9.0's steps add: identities and records,
-// and group DMs.
-var m16Tables = []string{"den_identities", "den_records", "den_group_dms", "den_group_members", "den_group_changes"}
+// m16Tables are the tables v1.9.0's steps add that stay: identities and
+// records.
+var m16Tables = []string{"den_identities", "den_records"}
+
+// groupTables are the tables of group DMs, which v1.9.0's steps add and No
+// group DMs drops.
+var groupTables = []string{"den_group_dms", "den_group_members", "den_group_changes"}
+
+// kept dumps the rows of a table that a migration from a release keeps:
+// all but a group DM's, which No group DMs deletes, its channel and its
+// tables, whose counter goes with them.
+func kept(t *testing.T, db *sql.DB, table, columns string) string {
+	t.Helper()
+	switch {
+	case slices.Contains(groupTables, table):
+		return ""
+	case table == "den_channels":
+		return dumpQuery(t, db, `SELECT `+columns+` FROM den_channels WHERE kind != 'group_dm'`)
+	case table == "sqlite_sequence":
+		return dumpQuery(t, db, `SELECT `+columns+` FROM sqlite_sequence WHERE name NOT IN ('den_group_changes')`)
+	}
+	return dumpColumns(t, db, table, columns)
+}
 
 // m17Tables are the tables v1.10.0's steps add: events and who's
 // interested in them, and badges and their awards.
@@ -94,8 +114,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // database v1.14.0 left, with a record, keeps it. Audit log adds staff's
 // lines, which start empty, each by and about members alone; a database
 // v1.15.0 left, with a line, keeps it. Group name signatures adds the
-// signature beside a group's name, which none has, and Forwards a
-// message's forwarded mark, which none has.
+// signature beside a group's name, Forwards a message's forwarded mark,
+// which none has, and No group DMs deletes the group DM and drops its
+// tables, the signatures' column among them, keeping every other row.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -127,9 +148,10 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 			before := map[string]string{}
 			for _, table := range tables {
 				columns[table] = columnsOf(t, old, table)
-				if before[table] = dumpColumns(t, old, table, columns[table]); before[table] == "" {
+				if dumpColumns(t, old, table, columns[table]) == "" {
 					t.Errorf("%s's %s holds no row to keep", released.release, table)
 				}
+				before[table] = kept(t, old, table, columns[table])
 			}
 			// A backup holds a copy of the database, made as a backup is.
 			if err := Snapshot(ctx, old, filepath.Join(backedUp, FileName)); err != nil {
@@ -149,7 +171,7 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					t.Fatalf("%s migrated to schema %d, %v; want %d", what, v, err, SchemaVersion(bi))
 				}
 				for _, table := range tables {
-					if released.version < 7 && slices.Contains(retiredKeys, table) {
+					if released.version < 7 && slices.Contains(retiredKeys, table) || slices.Contains(groupTables, table) {
 						continue
 					}
 					if after := dumpColumns(t, db, table, columns[table]); after != before[table] {
@@ -166,6 +188,11 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				for _, table := range released.added {
 					if !slices.Contains(now, table) || dumpTable(t, db, table) != "" {
 						t.Errorf("after the migration %s's tables are %v, %s holding %q", what, now, table, dumpTable(t, db, table))
+					}
+				}
+				for _, table := range groupTables {
+					if slices.Contains(now, table) {
+						t.Errorf("after the migration %s still has %s", what, table)
 					}
 				}
 				var sounds, longest, wait int
@@ -191,7 +218,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 					(released.version < 7 && identities+statements+kept != 0) {
 					t.Errorf("%s holds %d identities, %d signed keys and %d kept records after the migration, %v", what, identities, statements, kept, err)
 				}
-				// den_channels was made again, with group DMs among its kinds.
+				// den_channels was made again, with group DMs among its kinds,
+				// which it keeps.
 				if _, err := db.Exec(`INSERT INTO den_channels (name, kind, position, created_at) VALUES ('', 'group_dm', 0, 9)`); err != nil {
 					t.Errorf("%s takes no group DM after the migration: %v", what, err)
 				}
@@ -341,20 +369,6 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				} {
 					if _, err := db.Exec(q); err == nil {
 						t.Errorf("%s took %s", what, q)
-					}
-				}
-				// A group's name keeps no signature until a key carries one,
-				// and only a name takes one.
-				var signed int
-				if err := db.QueryRow(`SELECT count(*) FROM den_group_dms WHERE name_sig IS NOT NULL`).Scan(&signed); err != nil || signed != 0 {
-					t.Errorf("%s holds %d signed group names after the migration, %v", what, signed, err)
-				}
-				if released.version >= 9 {
-					if _, err := db.Exec(`UPDATE den_group_dms SET name_sig = x'7a' WHERE channel_id = 5`); err != nil {
-						t.Errorf("%s takes no name's signature after the migration: %v", what, err)
-					}
-					if _, err := db.Exec(`UPDATE den_group_dms SET name = NULL, name_kid = NULL WHERE channel_id = 5`); err == nil {
-						t.Errorf("%s keeps a signature with no name", what)
 					}
 				}
 				// No message is forwarded until a member forwards one,

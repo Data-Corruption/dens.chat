@@ -22,7 +22,7 @@ const cut = args.indexOf('--');
 const passes = (cut < 0 ? args : args.slice(0, cut)).filter(Boolean);
 const parts = cut < 0 ? [] : args.slice(cut + 1);
 const want = (p) => parts.length === 0 || parts.includes(p);
-const { DEN: den, DEN_URL: denURL, GENERAL: general, RANDOM_ID: random, LOUNGE: lounge, DM: dm, GROUP: group } = process.env;
+const { DEN: den, DEN_URL: denURL, GENERAL: general, RANDOM_ID: random, LOUNGE: lounge, DM: dm } = process.env;
 const { report, fail, finish } = checks();
 const LAPTOP = { name: 'laptop', instance: 'm2e', port: 18490 };
 
@@ -55,7 +55,7 @@ for (const pass of passes.length ? passes : ['desk-dark', 'desk-light', 'phone-d
     if (!parts.length) fs.rmSync(out, { recursive: true, force: true });
     fs.mkdirSync(out, { recursive: true });
     const log = [];
-    const ctx = { den, general, random, dm, group, lounge, photo: `${HOME}/photos/pixel-2.jpg`, eventCard: true };
+    const ctx = { den, general, random, dm, lounge, photo: `${HOME}/photos/pixel-2.jpg`, eventCard: true };
     const pointer = (b, h) => {
         if (phone) return {};
         const center = (x) => h.ev(`(() => { const e = ${x}; e.scrollIntoView({ block: 'nearest' }); const r = e.getBoundingClientRect(); return [r.left + Math.min(r.width / 2, 60), r.top + r.height / 2]; })()`);

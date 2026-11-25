@@ -26,7 +26,7 @@ const byPosition = (a, b) => a.position - b.position;
 const listedKind = (c) => c.kind === 'text' || c.kind === 'voice';
 
 // siblings is a channel list in order: a group's, or with '' the channels
-// in none. DMs and group DMs are in neither.
+// in none. DMs are in neither.
 function siblings(view, group) {
     return view.channels.filter((c) => listedKind(c) && (c.group_id || '') === group).sort(byPosition);
 }

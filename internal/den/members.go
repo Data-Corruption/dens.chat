@@ -274,14 +274,12 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 // any invites they made, the pictures on their profile, the uploads they
 // hadn't sent, and their identity and record, which they publish
 // again if they come back. The sounds and emoji they added are the den's, and
-// stay.
-// They leave their group DMs too, each by a change of the den's own,
-// their notes go, with their files, and their events to
-// come, with their banners, and their marks on the rest; their
-// live events go on to their end, banners and all.
+// stay. Their notes go, with their files, and their events to come, with
+// their banners, and their marks on the rest; their live events go on to
+// their end, banners and all.
 // It returns what's to be told once tx commits: those files' blobs, to
-// remove, the groups' changes, to tell their members of, and the events.
-func (d *Den) depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int64) (departure, error) {
+// remove, and the events.
+func (d *Den) depart(ctx context.Context, tx *sql.Tx, id, now int64) (departure, error) {
 	var out departure
 	for _, stmt := range []string{
 		`UPDATE den_members SET left_at = ?1, role = 'member', identity = NULL WHERE id = ?2`,
@@ -300,10 +298,6 @@ func (d *Den) depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int6
 	if err := logMember(ctx, tx, id, time.UnixMilli(now)); err != nil {
 		return out, err
 	}
-	var err error
-	if out.groups, err = departGroups(ctx, tx, denID, id, time.UnixMilli(now)); err != nil {
-		return out, err
-	}
 	notes, err := deleteNotes(ctx, tx, id)
 	if err != nil {
 		return out, err
@@ -320,20 +314,13 @@ func (d *Den) depart(ctx context.Context, tx *sql.Tx, denID []byte, id, now int6
 // departure is what a member's leaving takes, to tell once it commits.
 type departure struct {
 	blobs  [][]byte
-	groups []groupDone
 	events eventsGone
 }
 
-// publishDeparted tells the members of a member's groups that the den
-// took them out, as they left the den, and everyone who saw them of the
-// events their leaving canceled and the counts it changed.
+// publishDeparted tells everyone who saw a member who left of the events
+// their leaving canceled and the counts it changed.
 func (d *Den) publishDeparted(ctx context.Context, gone departure) error {
-	var errs []error
-	for _, g := range gone.groups {
-		errs = append(errs, d.publishGroup(ctx, g))
-	}
-	errs = append(errs, d.publishGone(ctx, gone.events))
-	return errors.Join(errs...)
+	return d.publishGone(ctx, gone.events)
 }
 
 // Remove takes a member out of the den, and with Ban keeps their username
@@ -355,7 +342,6 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		return invalid("to leave the den, use /api/me/leave")
 	}
 	now := d.now().UnixMilli()
-	info, _ := d.Info()
 	var left bool
 	var deleted []deletedMessage
 	var readers []reader
@@ -368,10 +354,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 		d.changes.Lock()
 		defer d.changes.Unlock()
 	}
-	// Their groups' keys retire with their leaving them, and their
-	// events to come go.
-	d.keys.Lock()
-	defer d.keys.Unlock()
+	// Their events to come go.
 	d.calendar.Lock()
 	defer d.calendar.Unlock()
 	err = d.tx(ctx, func(tx *sql.Tx) error {
@@ -427,7 +410,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 			return nil
 		}
 		left = true
-		gone, err = d.depart(ctx, tx, info.ID, mid, now)
+		gone, err = d.depart(ctx, tx, mid, now)
 		blobs = append(blobs, gone.blobs...)
 		return err
 	})
@@ -546,14 +529,11 @@ func (d *Den) Leave(ctx context.Context, s *Session) error {
 		return forbidden("the owner can't leave the den")
 	}
 	now := d.now().UnixMilli()
-	info, _ := d.Info()
 	var gone departure
-	d.keys.Lock()
-	defer d.keys.Unlock()
 	d.calendar.Lock()
 	defer d.calendar.Unlock()
 	err := d.tx(ctx, func(tx *sql.Tx) (err error) {
-		gone, err = d.depart(ctx, tx, info.ID, s.MemberID, now)
+		gone, err = d.depart(ctx, tx, s.MemberID, now)
 		return err
 	})
 	if err != nil {

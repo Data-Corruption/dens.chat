@@ -7,9 +7,9 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"maps"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"time"
 
@@ -276,21 +276,26 @@ func (c *conn) cacheReady(r denproto.Ready) {
 		c.cacheErr(cs.SetSynced(den, cache.Synced{Epoch: s.Epoch, Version: s.Version}))
 		p.fresh = true
 	}
+	// An older den's group DMs, which the state dropped, go from the
+	// cache too.
+	groups := map[string]bool{}
+	for _, ch := range r.Channels {
+		if ch.Kind == denproto.KindGroupDM {
+			groups[ch.ID] = true
+		} else if id, err := denproto.ParseID(ch.ID); err == nil {
+			p.channels = append(p.channels, id)
+		}
+	}
 	newest := map[int64]int64{}
 	for _, rs := range r.ReadStates {
 		channel, err := denproto.ParseID(rs.ChannelID)
-		if err != nil {
+		if err != nil || groups[rs.ChannelID] {
 			continue
 		}
 		last, _ := denproto.ParseID(rs.LastMessage)
 		newest[channel] = last
 	}
 	c.cacheErr(cs.Reach(den, newest, c.gen.Load()))
-	for _, ch := range r.Channels {
-		if id, err := denproto.ParseID(ch.ID); err == nil {
-			p.channels = append(p.channels, id)
-		}
-	}
 	for _, m := range r.Members {
 		for _, pic := range []denproto.Image{m.Avatar, m.Banner} {
 			if id, err := denproto.ParseID(pic.ID); err == nil {
@@ -483,6 +488,14 @@ func (c *conn) applyChanges(ctx context.Context, synced cache.Synced) error {
 			len(page.Messages)+len(page.Deleted) > denproto.ChangesPage {
 			return errMalformed
 		}
+		// An older den's group DMs, which the state dropped, are passed
+		// over.
+		c.mu.Lock()
+		if c.den != nil {
+			page.Messages = slices.DeleteFunc(page.Messages, func(m denproto.Message) bool { return c.den.dropped(m.ChannelID) })
+			page.Deleted = slices.DeleteFunc(page.Deleted, func(d denproto.MessageDeleted) bool { return c.den.dropped(d.ChannelID) })
+		}
+		c.mu.Unlock()
 		var events []denproto.Event
 		for _, m := range page.Messages {
 			if denproto.CheckMessage(m) != nil {
@@ -574,11 +587,6 @@ func (c *conn) saveKept() {
 		return
 	}
 	k, members := c.den.kept()
-	k.GroupStates = map[string]*groupState{}
-	for id, g := range c.groups {
-		k.GroupStates[id] = g.clone()
-	}
-	k.GroupMarks = maps.Clone(c.marks)
 	cursor, withMembers := c.members, c.membersDirty
 	c.stateDirty, c.membersDirty = false, false
 	c.mu.Unlock()
@@ -597,20 +605,19 @@ func (c *conn) saveKept() {
 
 // keepForGood gives the connection what a kept state holds for good, the
 // kinds of the den's channels, which its first snapshot loads over, and
-// its groups' marks, and returns them.
-func (c *conn) keepForGood(k keptState) (map[string]string, map[string]groupMark) {
-	kinds, marks := k.forGood()
+// returns them.
+func (c *conn) keepForGood(k keptState) map[string]string {
+	kinds := k.forGood()
 	c.mu.Lock()
-	c.keptKinds, c.marks = kinds, marks
+	c.keptKinds = kinds
 	c.mu.Unlock()
-	return kinds, marks
+	return kinds
 }
 
 // keepAgain keeps the den's state in a cache that just dropped it, at
 // once. The state holds what this Dens keeps for good, the kinds of its
-// channels and the latest change it checked of each group, and the den can
-// have the cache dropped when it likes, so they don't wait in memory for
-// the state's next change.
+// channels, and the den can have the cache dropped when it likes, so they
+// don't wait in memory for the state's next change.
 func (c *conn) keepAgain() {
 	c.mu.Lock()
 	c.stateDirty, c.membersDirty = true, true
@@ -654,17 +661,14 @@ func (c *conn) restoreKept() {
 	if err == nil {
 		s, err = restore(c.j.denID, k, members)
 	}
-	if err == nil && !cleanGroups(s.channels, k.GroupStates, k.GroupMarks) {
-		err = errMalformed
-	}
 	if err != nil {
 		c.m.log.Warnf("A den's state in the cache doesn't read, so its cache starts again: %v", err)
 		c.cacheErr(cs.DropDen(den))
 		// What this Dens keeps for good outlasts the rest, which the den may
 		// have had a hand in, and goes back in alone at once, since the den
 		// also chooses when it next answers.
-		if kinds, marks := c.keepForGood(k); len(kinds)+len(marks) > 0 {
-			bare, err := json.Marshal(keptState{Kinds: kinds, GroupMarks: marks, Bare: true})
+		if kinds := c.keepForGood(k); len(kinds) > 0 {
+			bare, err := json.Marshal(keptState{Kinds: kinds, Bare: true})
 			if err == nil {
 				err = cs.SaveState(den, bare)
 			}
@@ -676,13 +680,6 @@ func (c *conn) restoreKept() {
 	// it, so its marks need no telling.
 	c.mu.Lock()
 	c.den = s
-	if k.GroupStates != nil {
-		c.groups = k.GroupStates
-	}
-	if k.GroupMarks != nil {
-		c.marks = k.GroupMarks
-	}
-	c.markKeptLocked()
 	c.remarkLocked()
 	if withMembers {
 		c.members = &membersCursor{epoch: kept.Epoch, version: kept.Version}

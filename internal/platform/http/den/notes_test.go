@@ -10,8 +10,7 @@ import (
 )
 
 // The den speaks versions 1 to 3 of the protocol, and makes a member's
-// notes only at 3: at 2 they're no route of its, as group DMs
-// are none at 1.
+// notes only at 3: at 2 they're no route of its.
 func TestNotesNeedVersion3(t *testing.T) {
 	f := newFixture(t)
 	token, _ := f.owner()

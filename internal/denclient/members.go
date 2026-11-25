@@ -327,9 +327,9 @@ func (m *Manager) CloseDM(ctx context.Context, denID, channelID string) error {
 	return c.call(ctx, http.MethodPost, "/api/dms/"+channelID+"/close", nil, nil)
 }
 
-// SetExpiry sets how long a DM's or a group's messages stay after they're
-// sent, for those sent from now on, or with 0 keeps them. The den
-// says which times it takes.
+// SetExpiry sets how long a DM's messages stay after they're sent, for
+// those sent from now on, or with 0 keeps them. The den says which times
+// it takes.
 func (m *Manager) SetExpiry(ctx context.Context, denID, channelID string, after int) error {
 	c, err := m.find(denID)
 	if err != nil {

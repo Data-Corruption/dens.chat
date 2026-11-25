@@ -1,7 +1,7 @@
-// Disappearing messages: what the page shows of a DM's or a
-// group's time, beside it and in it. Any of its members sets how long its
-// messages stay after they're sent, for those sent from then on; the den
-// deletes each as its time comes, and every member's Dens what it holds.
+// Disappearing messages: what the page shows of a DM's time, beside it and
+// in it. Either of its members sets how long its messages stay after
+// they're sent, for those sent from then on; the den deletes each as its
+// time comes, and each member's Dens what it holds.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../core/api.js';
@@ -10,15 +10,15 @@ import { TimerIcon } from '../ui/icons.jsx';
 import { Dialog } from '../manage.jsx';
 import { EXPIRY_TIMES, afterText, expiryText, shortAfter } from '../private/private.js';
 
-// ExpirySetting sets a DM's or a group's time, beside it, where its other
-// member's profile or its members show; a pick waits on the member's word,
-// since it applies to everyone in it. A time the list lacks, as a
+// ExpirySetting sets a DM's time, beside it, where its other member's
+// profile shows; a pick waits on the member's word, since it applies to
+// both of them. A time the list lacks, as a
 // development instance's den takes for the browser checks, shows as it is.
 export function ExpirySetting({ denID, channel }) {
     const after = channel.expires_after || 0;
     // asking is the time picked, while the member says whether to set it;
-    // set, the one set, until the den's word on it comes as the DM's or
-    // group's next state.
+    // set, the one set, until the den's word on it comes as the DM's next
+    // state.
     const [asking, setAsking] = useState(null);
     const [set, setSet] = useState(null);
     useEffect(() => setSet(null), [after, channel.expires_set?.at]);
@@ -48,8 +48,8 @@ export function ExpirySetting({ denID, channel }) {
     );
 }
 
-// ExpiryConfirm asks before a DM's or a group's time changes, saying what
-// the new one does, with the way to the guide.
+// ExpiryConfirm asks before a DM's time changes, saying what the new one
+// does, with the way to the guide.
 export function ExpiryConfirm({ denID, channel, from, to, onDone, onClose }) {
     const act = useAction();
     const confirm = useRef(null);
@@ -78,8 +78,8 @@ export function ExpiryConfirm({ denID, channel, from, to, onDone, onClose }) {
     );
 }
 
-// ExpiryLine says who last set a DM's or a group's time, as a line among
-// its messages, at the time they set it.
+// ExpiryLine says who last set a DM's time, as a line among its messages,
+// at the time they set it.
 export function ExpiryLine({ channel, nameOf, me }) {
     return (
         <div class="divider my-1 h-auto cursor-default select-none text-xs text-base-content/60" data-expiry-line>
@@ -91,8 +91,7 @@ export function ExpiryLine({ channel, nameOf, me }) {
     );
 }
 
-// ExpiryBadge says in a DM's or a group's header that its messages
-// disappear, and after how long, and opens what's beside it, where the
+// ExpiryBadge says in a DM's header that its messages disappear, and after how long, and opens what's beside it, where the
 // time is set.
 export function ExpiryBadge({ after, onClick }) {
     const said = `Messages disappear ${afterText(after)} after they're sent`;

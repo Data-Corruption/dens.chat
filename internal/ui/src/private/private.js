@@ -13,7 +13,6 @@ export const LOCKED = {
     lost: "This was sealed before you started over, so it can't be opened any more.",
     broken: "This message doesn't open: it was changed after it was sent.",
     keys: "This was sealed with keys your Dens doesn't keep for this DM's members, so it isn't shown. Someone may be in the middle.",
-    author: "Its author hasn't confirmed a change to this, so it waits for them.",
 };
 
 // keyChanges finds where a DM's messages move from one key to the next,
@@ -122,10 +121,10 @@ export function partnerOf(channel, me) {
 }
 
 // isPrivate reports whether a channel's messages are sealed by its
-// members' Dens: a DM's, a group DM's, or the member's notes,
-// all of which the Direct messages tab lists.
+// members' Dens: a DM's or the member's notes, both of which the Direct
+// messages tab lists.
 export function isPrivate(channel) {
-    return channel?.kind === 'dm' || channel?.kind === 'group_dm' || channel?.kind === 'notes';
+    return channel?.kind === 'dm' || channel?.kind === 'notes';
 }
 
 // isNotes reports whether a channel is the member's notes.
@@ -146,67 +145,6 @@ export function notesGate(view) {
     return view.seal ? '' : 'no_seal';
 }
 
-// groupTitle is what a group DM is called: its name, or its other
-// members' names as its changes make them, the first two and how many more
-// past three.
-export function groupTitle(group, members, me) {
-    if (group?.name) return group.name;
-    const names = (group?.members || []).filter((id) => id !== me).map((id) => members.get(id)?.display_name || 'Unknown member');
-    if (names.length === 0) return 'Just you';
-    if (names.length <= 3) return names.join(', ');
-    return `${names.slice(0, 2).join(', ')} and ${names.length - 2} others`;
-}
-
-// groupGate says what stands in a group's composer's place, or '' when it
-// takes messages: no_seal, on a device without the member's DM
-// recovery key; checking, while the den holds changes this Dens hasn't
-// checked yet; broken, once one doesn't check; alone, with nobody else
-// left in it; update, while a member's Dens publishes no identity, being
-// older; and held, once a member's keys changed since this member
-// verified them. member is whom update and held name.
-export function groupGate(view, channel) {
-    const g = view.group_dms?.[channel.id];
-    const me = view.me?.id;
-    if (!view.seal) return { gate: 'no_seal' };
-    if (g?.broken) return { gate: 'broken' };
-    if (!g || g.syncing || !g.members.includes(me)) return { gate: 'checking' };
-    const others = g.members.filter((id) => id !== me);
-    if (others.length === 0) return { gate: 'alone' };
-    const byID = new Map((view.members || []).map((m) => [m.id, m]));
-    const old = others.find((id) => !byID.get(id)?.identity);
-    if (old) return { gate: 'update', member: old };
-    const held = others.find((id) => view.identities?.[id]?.held);
-    if (held) return { gate: 'held', member: held };
-    return { gate: '' };
-}
-
-// changeText says what a change to a group did, as its line in the group
-// shows it: who made it, You for this member, whom it took in or
-// out, and a name where the change carries one this Dens could open.
-export function changeText(change, nameOf, me) {
-    const who = (id, start) => (id === me ? (start ? 'You' : 'you') : nameOf(id));
-    const by = change.by ? who(change.by, true) : '';
-    const them = (change.subjects || []).map((id) => who(id, false));
-    const list = them.length <= 1 ? them.join('') : `${them.slice(0, -1).join(', ')} and ${them[them.length - 1]}`;
-    const named = typeof change.name === 'string';
-    switch (change.kind) {
-        case 'made':
-            return named && change.name ? `${by} made the group “${change.name}”.` : `${by} made the group.`;
-        case 'added':
-            return `${by} added ${list}.`;
-        case 'removed':
-            return `${by} removed ${list}.`;
-        case 'left':
-            return `${by} left the group.`;
-        case 'departed':
-            return `${them.length ? list[0].toUpperCase() + list.slice(1) : 'Someone'} left the den.`;
-        case 'named':
-            if (!named) return `${by} renamed the group.`;
-            return change.name ? `${by} named the group “${change.name}”.` : `${by} took the group's name away.`;
-    }
-    return '';
-}
-
 // sameDigits reports whether two strings of digits match once spaces and
 // dashes are gone, for telling a member they typed their own code.
 export function sameDigits(a, b) {
@@ -214,9 +152,9 @@ export function sameDigits(a, b) {
     return clean(a) !== '' && clean(a) === clean(b);
 }
 
-// EXPIRY_TIMES are the times a DM's or a group's messages disappear after
-// they're sent, in seconds, Off first: an hour, a day, a week and
-// four weeks, as the den takes them.
+// EXPIRY_TIMES are the times a DM's messages disappear after they're sent,
+// in seconds, Off first: an hour, a day, a week and four weeks, as the den
+// takes them.
 export const EXPIRY_TIMES = [0, 3600, 86400, 604800, 2419200];
 
 const UNITS = [[604800, 'week', 'w'], [86400, 'day', 'd'], [3600, 'hour', 'h'], [60, 'minute', 'm'], [1, 'second', 's']];
@@ -236,9 +174,8 @@ export function shortAfter(seconds) {
     return `${seconds / size}${letter}`;
 }
 
-// expiryText says who last set a DM's or a group's time, when, and to
-// what, as its line in the conversation shows it: you for this
-// member. The day stays said once the messages around the line are gone.
+// expiryText says who last set a DM's time, when, and to what, as its line
+// in the conversation shows it: you for this member. The day stays said once the messages around the line are gone.
 export function expiryText(after, set, nameOf, me) {
     const lead = `On ${when(set.at)}, ${set.by === me ? 'you' : nameOf(set.by)}`;
     if (!after) return `${lead} turned off disappearing messages.`;

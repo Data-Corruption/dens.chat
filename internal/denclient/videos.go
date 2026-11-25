@@ -263,7 +263,6 @@ func forDM(c *conn, channelID string) bool {
 	if channelID == "" {
 		return false
 	}
-	// A DM's or a group's.
 	return c.private(channelID)
 }
 

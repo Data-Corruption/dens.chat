@@ -848,6 +848,28 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// Group DMs go, with all a den kept of them: deleting their channels
+	// takes their messages, with their files' rows, editors, mentions and
+	// reactions, their keys with each member's copy, and everyone's read
+	// state there; the change log names a channel without a reference, so
+	// its rows go first. Their members' and changes' tables go, and Group
+	// name signatures' column with them. den_channels keeps group_dm among
+	// its kinds, since making it again for a kind nothing writes would risk
+	// every row that refers to it. The files' blobs go as the den opens,
+	// which removes every blob no row names.
+	m.Add("No group DMs", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			DELETE FROM den_changes WHERE channel_id IN (SELECT id FROM den_channels WHERE kind = 'group_dm');
+			DELETE FROM den_channels WHERE kind = 'group_dm';
+			DROP TABLE den_group_changes;
+			DROP TABLE den_group_members;
+			DROP TABLE den_group_dms;
+		`); err != nil {
+			return fmt.Errorf("delete group DMs: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

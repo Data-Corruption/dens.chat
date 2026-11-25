@@ -9,31 +9,31 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Disappearing messages. Any member of a DM or a group sets how
-// long its messages stay after they're sent, which applies to those sent
-// after: each keeps when it goes (expires_at), which an edit leaves as it
-// was. The den's timer deletes each as its time comes, as its author's
-// delete would: its row, with its files and reactions, secure_delete
-// overwriting them, message.deleted to its members, and the change log,
-// so an install that was away drops it as it comes back. Retention takes
-// what passes its period first.
+// Disappearing messages. Either member of a DM sets how long its messages
+// stay after they're sent, which applies to those sent after: each keeps
+// when it goes (expires_at), which an edit leaves as it was. The den's
+// timer deletes each as its time comes, as its author's delete would: its
+// row, with its files and reactions, secure_delete overwriting them,
+// message.deleted to its members, and the change log, so an install that
+// was away drops it as it comes back. Retention takes what passes its
+// period first.
 //
 // The den can't read a DM, but it must know the time to delete by it, so
 // it keeps it in the clear, with who set it and when, for the line in the
-// conversation that says so: its word on that can't be checked, as a
-// group's changes are, but it deletes the messages either way.
+// conversation that says so: its word on that can't be checked, but it
+// deletes the messages either way.
 
-// SetExpiry sets how long a DM's or a group's messages stay after they're
-// sent, for those sent from now on, or with 0 keeps them. Any of its
-// members sets it, while there's someone to write to; the same again
-// changes nothing and tells nobody.
+// SetExpiry sets how long a DM's messages stay after they're sent, for
+// those sent from now on, or with 0 keeps them. Either of its members sets
+// it, while there's someone to write to; the same again changes nothing
+// and tells nobody.
 func (d *Den) SetExpiry(ctx context.Context, s *Session, channelID string, req denproto.ExpiryRequest) (denproto.Channel, error) {
 	c, cid, err := d.visibleChannel(ctx, s, channelID)
 	if err != nil {
 		return c, err
 	}
 	if !isPrivate(c) || isNotes(c) {
-		return c, invalid("only a DM's or a group's messages disappear")
+		return c, invalid("only a DM's messages disappear")
 	}
 	if err := denproto.CheckExpiresAfter(req.ExpiresAfter, d.ShortTimes); err != nil {
 		return c, invalid("%v", err)

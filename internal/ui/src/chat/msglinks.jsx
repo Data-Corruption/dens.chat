@@ -106,7 +106,6 @@ export function chipLabel(link, { den, view, channel }, hereID) {
     if (view === null) where = '…';
     else if (view && !channel) where = '#unknown';
     else if (channel?.kind === 'dm') where = `@${partner(view, channel)?.username || 'unknown'}`;
-    else if (channel?.kind === 'group_dm') where = 'a group DM';
     else if (channel?.kind === 'notes') where = 'your notes';
     else if (channel) where = `#${channel.name}`;
     if (den.den_id === hereID) return where;

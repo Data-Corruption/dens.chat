@@ -373,8 +373,7 @@ func TestMeetingIdentities(t *testing.T) {
 // A record past the most it holds drops the oldest of what it kept before
 // and the oldest changes, then members kept longest ago who aren't
 // verified or held, never one who is, and keeps the member's own
-// identities from before they started over, which signed their groups'
-// changes.
+// identities from before they started over.
 func TestRecordFits(t *testing.T) {
 	r := identityRecord{Members: map[string]*keptIdentity{}, Own: []denproto.Bytes{denproto.Random(32), denproto.Random(32)}}
 	for i := range 4000 {
@@ -565,22 +564,13 @@ func TestAnAnswersKindHolds(t *testing.T) {
 	}
 }
 
-// What a kept state holds for good is picked out entry by entry: a mark
-// or a kind that doesn't check, as a mark past a group's most changes,
-// which a member with the den can have a Dens keep, takes none of the
-// others with it.
+// What a kept state holds for good is picked out entry by entry: a kind
+// that doesn't check, which a member with the den can have a Dens keep,
+// takes none of the others with it.
 func TestKeptForGoodByEntry(t *testing.T) {
-	hash := denproto.Bytes(make([]byte, 32))
-	k := keptState{
-		Kinds:      map[string]string{"7": denproto.KindDM, "x": denproto.KindText},
-		GroupMarks: map[string]groupMark{"8": {N: 3, Hash: hash}, "9": {N: denproto.MaxGroupChanges + 1, Hash: hash}, "10": {N: 2}},
-	}
-	kinds, marks := k.forGood()
-	if len(kinds) != 1 || kinds["7"] != denproto.KindDM {
+	k := keptState{Kinds: map[string]string{"7": denproto.KindDM, "x": denproto.KindText}}
+	if kinds := k.forGood(); len(kinds) != 1 || kinds["7"] != denproto.KindDM {
 		t.Errorf("kinds kept: %v", kinds)
-	}
-	if len(marks) != 1 || marks["8"].N != 3 {
-		t.Errorf("marks kept: %v", marks)
 	}
 }
 
@@ -593,52 +583,4 @@ func WriteRecord(m *Manager, denID string) error {
 		return err
 	}
 	return c.writeRecord(context.Background())
-}
-
-// Two groups' states as v1.15.0 kept them in the cache: 77, made and named
-// at 1 and 2, and 78, broken at 4 by a signer it couldn't place.
-const groupStatesV1150 = `{"77":{"n":2,"hash":"aGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGhoaGg","members":["1","2","3"],"changes":[` +
-	`{"n":1,"id":"501","at":1700000000000,"kind":"made","by":"1","subjects":["2","3"],"sealed":{"kid":"a2tra2tra2tra2tra2traw","sealed":"` + sealedNameV1150 + `"}},` +
-	`{"n":2,"id":"502","at":1700000000100,"kind":"named","by":"2","sealed":{"kid":"a2tra2tra2tra2tra2traw","sealed":"` + sealedNameV1150 + `"}}]},` +
-	`"78":{"n":3,"hash":"aWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaWk","members":["1","2","3"],"changes":null,` +
-	`"broken":"a change to the group isn't signed by the member it names","retry":true}}`
-
-const sealedNameV1150 = "c3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3M"
-
-// A group's state as v1.15.0 kept it reads, with no name until its changes
-// are checked again, which a broken one waits for the record to call for;
-// and each is marked at its latest checked change, which that check must
-// reach.
-func TestGroupStatesAsV1150KeptThem(t *testing.T) {
-	var groups map[string]*groupState
-	if err := json.Unmarshal([]byte(groupStatesV1150), &groups); err != nil {
-		t.Fatal(err)
-	}
-	channels := map[string]denproto.Channel{"77": {ID: "77", Kind: denproto.KindGroupDM}, "78": {ID: "78", Kind: denproto.KindGroupDM}}
-	if !cleanGroups(channels, groups, nil) {
-		t.Fatal("v1.15.0's group states don't check")
-	}
-	named, broken := groups["77"], groups["78"]
-	if named.N != 2 || len(named.Changes) != 2 || named.Names || !named.recheck() || named.Name != nil {
-		t.Errorf("the named group as v1.15.0 kept it: %+v", named)
-	}
-	if broken.Broken == "" || !broken.Retry || broken.recheck() {
-		t.Errorf("the broken group as v1.15.0 kept it: %+v", broken)
-	}
-	c, _, _ := testConn(t)
-	c.groups, c.marks = groups, map[string]groupMark{}
-	c.den.channels = channels
-	c.markKeptLocked()
-	if m := c.marks["77"]; m.N != 2 || !bytes.Equal(m.Hash, named.Hash) {
-		t.Errorf("the named group's mark: %+v", m)
-	}
-	if m := c.marks["78"]; m.N != 3 {
-		t.Errorf("the broken group's mark: %+v", m)
-	}
-	if name := c.groupNameLocked("77"); name != "" {
-		t.Errorf("the group is named %q before its changes are checked again", name)
-	}
-	if !c.retryGroupsLocked() || !broken.recheck() {
-		t.Error("the record calls for no check of the broken group")
-	}
 }

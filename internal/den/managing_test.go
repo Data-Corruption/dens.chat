@@ -315,47 +315,26 @@ func TestDMEditChangesFiles(t *testing.T) {
 }
 
 // A member's own files, as each version lists them: a session that gets
-// nothing of groups or notes lists none of their files, nor their
-// messages; and a banner names its event only while its uploader sees it.
+// nothing of notes lists none of their files, nor their messages; and a
+// banner names its event only while its uploader sees it.
 func TestOwnFilesAcrossVersions(t *testing.T) {
-	f, owner, others := groupFixture(t, "carol")
-	bob, carol := others[0], others[1]
+	f, owner, bob := chatFixture(t)
 	ctx := context.Background()
-	g, err := f.makeGroup(bob, owner, carol)
-	if err != nil {
-		t.Fatal(err)
-	}
-	sealedBlob := func(data string) denproto.File {
-		u, err := f.d.Upload(ctx, bob, "", int64(len(data)), bytes.NewReader([]byte(data)), true, "")
-		if err != nil {
-			t.Fatal(err)
-		}
-		return u
-	}
-	inGroup := sealedBlob("in the group")
-	info, _ := f.d.Info()
-	nonce := denproto.Random(denproto.NonceBytes)
-	kid, _ := denproto.ParseID(g.key.id)
-	sealed, err := denproto.SealGroupMessage(g.key.key, denproto.MessageAD{DenID: info.ID, Channel: g.cid, Author: bob.MemberID,
-		Nonce: nonce, KeyID: kid, Revision: 1}, f.identityOf(bob.MemberID), bob.MemberID, denproto.DMPayload{Text: "a file"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	groupMsg, err := f.d.Send(ctx, bob, g.id, denproto.SendRequest{Nonce: nonce, Sealed: sealed, KeyID: g.key.id, Attachments: []string{inGroup.ID}})
-	if err != nil {
-		t.Fatal(err)
-	}
 	bob.Version = denproto.NotesVersion
 	notes, err := f.d.OpenNotes(ctx, bob)
 	if err != nil {
 		t.Fatal(err)
 	}
-	inNotes := sealedBlob("in the notes")
+	data := "in the notes"
+	inNotes, err := f.d.Upload(ctx, bob, "", int64(len(data)), bytes.NewReader([]byte(data)), true, "")
+	if err != nil {
+		t.Fatal(err)
+	}
 	noteMsg, err := f.note(bob, notes, "a note", "", inNotes.ID)
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, v := range []int{1, denproto.GroupsVersion, denproto.NotesVersion} {
+	for _, v := range []int{1, denproto.NotesVersion} {
 		s := *bob
 		s.Version = v
 		page, err := f.d.OwnFiles(ctx, &s, "")
@@ -368,9 +347,6 @@ func TestOwnFilesAcrossVersions(t *testing.T) {
 		}
 		for _, m := range page.Messages {
 			messages[m.ID] = true
-		}
-		if files[inGroup.ID] != (v >= denproto.GroupsVersion) || messages[groupMsg.ID] != (v >= denproto.GroupsVersion) {
-			t.Errorf("at version %d the group's file listed %v, its message %v", v, files[inGroup.ID], messages[groupMsg.ID])
 		}
 		if files[inNotes.ID] != (v >= denproto.NotesVersion) || messages[noteMsg.ID] != (v >= denproto.NotesVersion) {
 			t.Errorf("at version %d the note's file listed %v, its message %v", v, files[inNotes.ID], messages[noteMsg.ID])

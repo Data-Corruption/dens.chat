@@ -147,22 +147,12 @@ type conn struct {
 	verdicts map[string]string
 	copies   map[string]denproto.Bytes
 	idDue    chan struct{}
-	// Group DMs, guarded by mu: each group as its changes, checked
-	// here, make it, and the latest change checked of every group it ever
-	// held; groupDue wakes idWork to fetch those it's behind on.
 	// speaking is the protocol's version the socket was opened at, which
 	// only the run goroutine touches.
-	groups   map[string]*groupState
-	marks    map[string]groupMark
-	groupDue chan struct{}
 	speaking int
 	// keptKinds are the kinds of channels a kept state that didn't read
 	// held, for the first snapshot, where no state stands to carry them.
 	keptKinds map[string]string
-	// pulled says the member's record was read since the latest snapshot,
-	// which a group's changes are checked against: it holds the member's
-	// own identities before they started over.
-	pulled bool
 
 	// Only the run goroutine touches these, and sentMembers, the cursor
 	// this socket's upgrade named.
@@ -491,8 +481,8 @@ func (c *conn) call(ctx context.Context, method, path string, req, resp any) err
 // Where the den's answer shows they share another, as a den that updated
 // since the client last heard from it, or an older one that refuses this
 // build's, it dials again, once, at that one: a socket keeps the version it
-// opened at, so one left at an older version would go without group DMs
-// until it next reconnected.
+// opened at, so one left at an older version would go without notes until
+// it next reconnected.
 func dialSocket(ctx context.Context, a *api, u string, token denproto.Bytes, opts websocket.DialOptions) (*websocket.Conn, *http.Response, int, error) {
 	for attempt := 0; ; attempt++ {
 		opts.HTTPHeader = http.Header{}
@@ -559,8 +549,7 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 		return time.Time{}, -1, unreached(err), err
 	}
 	defer ws.CloseNow()
-	// Group DMs come only on a socket speaking a version with them,
-	// and notes on one speaking a version with those.
+	// Notes come only on a socket speaking a version with them.
 	c.speaking = speaking
 	ws.SetReadLimit(denproto.MaxBody)
 	c.mu.Lock()
@@ -691,7 +680,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		if err := state.load(c.j.denID, r, prev, kinds, starts, c.m.wall()); err != nil {
 			return e, false, err
 		}
-		state.groupDMs, state.notes = c.speaking >= denproto.GroupsVersion, c.speaking >= denproto.NotesVersion
+		state.notes = c.speaking >= denproto.NotesVersion
 		c.gen.Store(time.Now().UnixNano())
 		c.epoch, c.seq = r.Epoch, r.Seq
 		if err := c.updateProfile(ctx, r.Den, &r.Me); err != nil {
@@ -704,20 +693,13 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.stateDirty, c.membersDirty = true, true
 		clear(c.dmFiles)
 		clear(c.verdicts)
-		c.pulled = false
 		// The identities the den gives now, against those kept.
 		met := c.meetLocked()
-		// The groups whose changes this Dens is behind on, which it fetches,
-		// and those it's no longer in, which it forgets.
-		stale := len(c.staleGroupsLocked()) > 0
 		c.mu.Unlock()
 		if met {
 			c.identitiesChanged(ctx)
 		}
 		c.wakeIdentities()
-		if stale {
-			c.wakeGroups()
-		}
 		c.m.keysDue(c.j.denID.String())
 		c.m.notify()
 		// What the member can see may have changed, so files cached in
@@ -779,33 +761,6 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		c.deviceConnected(d.KeyID)
 		return e, false, nil
-	case denproto.EventGroupChange:
-		// A change to a group, checked against the group as this Dens knew
-		// it, the pages hearing of the group as it now stands.
-		c.mu.Lock()
-		if c.den == nil {
-			c.mu.Unlock()
-			return e, false, nil
-		}
-		if _, _, err := c.den.applyEvent(c.j.denID, e, c.profile.Member, c.m.wall()); err != nil {
-			c.mu.Unlock()
-			return e, false, err
-		}
-		var g denproto.GroupChanged
-		_ = json.Unmarshal(e.D, &g)
-		changed, kept := false, false
-		if c.den.channels[g.ChannelID].Kind == denproto.KindGroupDM {
-			changed, kept = c.applyChangeLocked(g.ChannelID, g.Change)
-		}
-		stale := len(c.staleGroupsLocked()) > 0
-		c.mu.Unlock()
-		if changed {
-			c.groupsChanged(ctx, kept)
-		}
-		if stale {
-			c.wakeGroups()
-		}
-		return e, false, nil
 	case denproto.EventRecordUpdated:
 		// Another device of this member's wrote their record.
 		var u denproto.RecordUpdated
@@ -855,18 +810,6 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	// The message whose tallies an event changes, its reactions or
 	// its poll's, for the cache.
 	var tallied string
-	// A group's key, with which its name may open.
-	groupKey := false
-	// Typing in a group from someone its checked changes don't hold shows
-	// nowhere, as they don't.
-	if err == nil && ok && e.T == denproto.EventTyping {
-		var t denproto.Typing
-		if json.Unmarshal(out.D, &t) == nil && c.den.channels[t.ChannelID].Kind == denproto.KindGroupDM {
-			if g := c.groups[t.ChannelID]; g == nil || g.Broken != "" || !slices.Contains(g.Members, t.MemberID) {
-				ok = false
-			}
-		}
-	}
 	if err == nil && ok && e.Seq != 0 {
 		c.stateDirty = true
 		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft {
@@ -875,7 +818,8 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	}
 	switch {
 	case err != nil:
-	case e.T == denproto.EventMessageCreated || e.T == denproto.EventMessageUpdated:
+	// One the state dropped, as an older den's group DM's, goes nowhere.
+	case ok && (e.T == denproto.EventMessageCreated || e.T == denproto.EventMessageUpdated):
 		// A DM's message reaches the page opened, or saying why it can't be.
 		var m denproto.Message
 		if json.Unmarshal(out.D, &m) == nil {
@@ -899,8 +843,6 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		var k denproto.SignedKey
 		if json.Unmarshal(e.D, &k) == nil {
 			delete(c.verdicts, k.ID)
-			// A group's name, and its namings, open with its keys.
-			groupKey = c.den.channels[k.ChannelID].Kind == denproto.KindGroupDM
 		}
 	case !ok:
 	case e.T == denproto.EventDMReactions:
@@ -947,16 +889,6 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			met = c.meetLocked()
 		}
 	}
-	// A group created or changed whose changes this Dens is behind on, or
-	// one it left, which it forgets.
-	groups := false
-	if err == nil && ok && (e.T == denproto.EventChannelCreated || e.T == denproto.EventChannelUpdated || e.T == denproto.EventChannelDeleted) {
-		before := len(c.groups)
-		groups = len(c.staleGroupsLocked()) > 0
-		if len(c.groups) != before {
-			clear(c.verdicts)
-		}
-	}
 	requests := e.T == denproto.EventDeviceRequest || e.T == denproto.EventDeviceRequestEnded
 	c.mu.Unlock()
 	// The den tells only the members interested in an event that it
@@ -979,12 +911,6 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	if republish {
 		c.wakeIdentities()
 	}
-	if groups {
-		c.wakeGroups()
-	}
-	if groupKey && err == nil {
-		c.groupsChanged(ctx, false)
-	}
 	if err == nil && tallied != "" {
 		c.tallies.add(e)
 		c.cacheTally(e, tallied)
@@ -999,7 +925,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	if err == nil && ok {
 		c.tellNotices(e, out, notice, own, start)
 	}
-	if err == nil {
+	if err == nil && ok {
 		c.cacheMessageEvent(e, kept)
 	}
 	if len(gone) > 0 {

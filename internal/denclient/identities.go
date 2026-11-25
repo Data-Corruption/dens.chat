@@ -67,8 +67,8 @@ type keptIdentity struct {
 
 // identityRecord is the member's record at a den: what their Dens kept for
 // each member, by ID; and the member's own identities there before their
-// current one, oldest first, which signed the changes to their groups they
-// made before they started over.
+// current one, oldest first, which an older Dens of theirs on a den with
+// group DMs checks the changes they made before they started over against.
 type identityRecord struct {
 	Members map[string]*keptIdentity `json:"members"`
 	Own     []denproto.Bytes         `json:"own,omitempty"`
@@ -230,7 +230,7 @@ func (r *identityRecord) meet(member string, hash []byte, now int64, keep bool) 
 // before and the last two changes, then the members kept longest ago go,
 // those neither verified nor held first, since a device that never held
 // learns a hold only from the record. The member's own identities from
-// before stay, since their groups' older changes are signed by them.
+// before stay, for an older Dens of theirs.
 func (r *identityRecord) encode() ([]byte, error) {
 	out, err := json.Marshal(r)
 	if err != nil || len(out) <= denproto.MaxRecord {
@@ -362,15 +362,6 @@ func (c *conn) meetLocked(members ...string) bool {
 			}
 		}
 	}
-	// And the members of the groups this member is in, as their changes make
-	// them.
-	for _, g := range c.groups {
-		for _, id := range g.Members {
-			if id != me {
-				needed[id] = true
-			}
-		}
-	}
 	if members == nil {
 		members = slices.Collect(maps.Keys(c.den.members))
 	}
@@ -459,7 +450,6 @@ func (c *conn) pullRecord(ctx context.Context) (denproto.Record, error) {
 	c.mu.Lock()
 	revision := c.ids.Revision
 	me, _ := denproto.ParseID(c.meLocked())
-	c.pulled = true
 	c.mu.Unlock()
 	if rec.Revision <= revision || rec.Sealed == nil {
 		if rec.Revision != revision {
@@ -499,17 +489,11 @@ func (c *conn) pullRecord(ctx context.Context) (denproto.Record, error) {
 	if c.meetLocked() {
 		changed = true
 	}
-	// Groups whose changes were signed by identities this Dens couldn't
-	// place are checked again with what the other devices kept.
-	retry := changed && c.retryGroupsLocked()
 	c.mu.Unlock()
 	if changed {
 		c.identitiesChanged(ctx)
 	} else {
 		c.keepRevision(ctx)
-	}
-	if retry {
-		c.wakeGroups()
 	}
 	return rec, nil
 }
@@ -591,22 +575,6 @@ func (c *conn) idWork(ctx context.Context) {
 					c.m.log.Warnf("read this member's record at a den: %v", logged(err))
 				}
 			}
-		case <-c.groupDue:
-			// Group DMs whose changes this Dens is behind on, checked
-			// once the member's record was read, which holds their own
-			// identities before they started over.
-			if !c.connectedWithIdentities() {
-				continue
-			}
-			c.mu.Lock()
-			pulled := c.pulled
-			c.mu.Unlock()
-			if !pulled && c.hasSeal() {
-				if _, err := c.pullRecord(ctx); err != nil && ctx.Err() == nil {
-					c.m.log.Warnf("read this member's record at a den: %v", logged(err))
-				}
-			}
-			c.syncGroups(ctx)
 		case <-timer.C:
 			timer.Reset(every)
 			if !c.connectedWithIdentities() || !c.hasSeal() {

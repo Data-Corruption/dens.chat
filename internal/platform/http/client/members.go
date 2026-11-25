@@ -195,8 +195,7 @@ func (rt *router) handleCloseDM(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// handleSetExpiry sets how long a DM's or a group's messages stay after
-// they're sent.
+// handleSetExpiry sets how long a DM's messages stay after they're sent.
 func (rt *router) handleSetExpiry(w http.ResponseWriter, r *http.Request) {
 	var req denproto.ExpiryRequest
 	if !decodeJSON(w, r, &req) {

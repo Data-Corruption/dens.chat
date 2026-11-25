@@ -154,12 +154,9 @@ func (d *Den) Changes(ctx context.Context, s *Session, since, upto int64) (denpr
 	}
 
 	// Only changes in channels the member can see now count; a channel
-	// that's gone is missing from their ready, which drops it whole.
-	// A group's member sees its messages from their joining, and a session
-	// speaking a version before group DMs sees none of them, nor
-	// one before notes any of those.
+	// that's gone is missing from their ready, which drops it whole. A
+	// session speaking a version before notes sees none of them.
 	seen := map[int64]bool{}
-	from := map[int64]int64{}
 	var wanted []int64
 	kept := changes[:0]
 	for _, c := range changes {
@@ -169,17 +166,12 @@ func (d *Den) Changes(ctx context.Context, s *Session, since, upto int64) (denpr
 			switch {
 			case err == nil:
 				see = visible(ch, s.MemberID, staff) && s.Version >= kindVersion(ch.Kind)
-				if see {
-					if from[c.channel], err = groupSince(ctx, d.db, ch, c.channel, s.MemberID); err != nil {
-						return out, err
-					}
-				}
 			case !errors.Is(err, errChannelNotFound):
 				return out, err
 			}
 			seen[c.channel] = see
 		}
-		if see && c.ref > from[c.channel] && (upto == 0 || c.ref <= upto) {
+		if see && (upto == 0 || c.ref <= upto) {
 			kept = append(kept, c)
 			wanted = append(wanted, c.ref)
 		}

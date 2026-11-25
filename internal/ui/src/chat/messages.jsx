@@ -49,7 +49,6 @@ import { POLLS, draftProblem, newDraft, pollRequest, withPoll } from './polls.js
 import { Poll, PollEditor } from './polls.jsx';
 import { LOCKED, dueBy, isPrivate, keyChanges, nextDue, placeAt } from '../private/private.js';
 import { DMGate, KeyDivider, KeysChanged } from '../private/private.jsx';
-import { GroupGate, GroupLine } from '../private/groups.jsx';
 import { ExpiryLine } from './disappearing.jsx';
 import { Sheet, SheetRow } from '../ui/sheet.jsx';
 import { createPress, useCoarse } from '../core/touch.js';
@@ -141,7 +140,7 @@ export function dividerAt(readPosition, lastMessage) {
 // retention the days it keeps a message, 0 for ever. lastMessage is
 // the channel's newest, as its read state has it, and denURL the den's
 // address, which links to its messages start with.
-export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, group, groupTitle, keys, gate = '', changes, identities,
+export function MessagePane({ denID, denURL, channel, me, members, readPosition, lastMessage, role, dm, keys, gate = '', changes,
     typing, closed, limits, retention, offline, spoilers, channels = null, onProfile, onCompare, onTyping }) {
     const [list, setList] = useState({ messages: [], hasOlder: false, hasNewer: false, loaded: false });
     const [pending, setPending] = useState([]);
@@ -173,8 +172,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     const notes = channel.kind === 'notes';
     const reactions = !!emoji?.known && !notes;
     const polls = reactions && channel.kind === 'text';
-    // A DM's, a group's and the notes' messages are sealed by their
-    // members.
+    // A DM's and the notes' messages are sealed by their members.
     const sealed = isPrivate(channel);
     // Compact shows each message as a line.
     const line = useDensity() === DENSITY_COMPACT;
@@ -231,7 +229,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // candidates could edit a message here with its author: the members
     // who can see the channel, besides this one.
     const candidates = notes ? [] : [...members.values()]
-        .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : group ? group.members.includes(x.id) : !channel.staff_only || isStaff(x.role)))
+        .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : !channel.staff_only || isStaff(x.role)))
         .sort((a, b) => name(a).localeCompare(name(b)));
 
     // captureAnchor remembers where the topmost visible message sits, so
@@ -743,32 +741,22 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     }
 
     // A DM takes messages unless something stands in its composer's
-    // place, and a group as well, whose gate names whom it
-    // waits on.
-    const gated = group ? gate.gate : gate;
-    const canSend = !sealed || gated === '';
+    // place.
+    const canSend = !sealed || gate === '';
     const byId = new Map(list.messages.map((m) => [m.id, m]));
     const rows = [];
     let prev = null;
     // In a DM, dividers mark where its keys changed before v1.9.0, and
     // lines where the other member's keys changed since.
     const dividers = sealed && keys ? keyChanges(list.messages, keys, (id) => (id === me.id ? 'You' : name(members.get(id))), me.id) : new Map();
-    // In a group, lines where its members changed, and where each one's
-    // keys did since this member joined it.
-    const joinedAt = group?.changes?.[0]?.at || 0;
-    const keyLines = group
-        ? group.members.filter((id) => id !== me.id)
-            .flatMap((id) => (identities?.[id]?.changes || []).filter((at) => at >= joinedAt).map((at) => ({ at, member: id })))
-        : (dm ? changes || [] : []).map((at) => ({ at, member: dm?.id }));
+    // Where the other member's keys changed.
+    const keyLines = (dm ? changes || [] : []).map((at) => ({ at, member: dm?.id }));
     const changed = sealed ? placeAt(list.messages, keyLines, (x) => x.at, list) : { before: new Map(), after: [] };
     const changeLine = ({ at, member }) => {
         const who = members.get(member);
         return <KeysChanged key={`changed-${member}-${at}`} name={who ? who.display_name : 'The other member'} at={at} onCompare={() => who && onCompare?.(who)} />;
     };
-    const groupLines = group ? placeAt(list.messages, group.changes || [], (c) => c.at, list) : { before: new Map(), after: [] };
-    const groupLine = (c) => <GroupLine key={`group-${c.n}`} change={c} me={me.id} nameOf={(id) => name(members.get(id))} />;
-    // In a DM or a group, the line that says who last set its time, and
-    // when.
+    // In a DM, the line that says who last set its time, and when.
     const expiry = sealed && channel.expires_set ? placeAt(list.messages, [channel.expires_set], (x) => x.at, list) : { before: new Map(), after: [] };
     const expiryLine = (x) => <ExpiryLine key={`expiry-${x.at}`} channel={channel} me={me.id} nameOf={(id) => name(members.get(id))} />;
     for (const m of list.messages) {
@@ -779,7 +767,6 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         const rowsBefore = rows.length;
         if (dividers.has(m.id)) rows.push(<KeyDivider key={`keys-${m.id}`} text={dividers.get(m.id)} />);
         for (const x of changed.before.get(m.id) || []) rows.push(changeLine(x));
-        for (const c of groupLines.before.get(m.id) || []) rows.push(groupLine(c));
         for (const x of expiry.before.get(m.id) || []) rows.push(expiryLine(x));
         const between = rows.length > rowsBefore;
         if (divider && compareIds(m.id, divider) > 0 && (!prev || compareIds(prev.id, divider) <= 0) && m.author_id !== me.id) {
@@ -813,7 +800,6 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 narrow={narrow}
                 touch={touch}
                 editorNames={(m.editors || []).map((id) => name(members.get(id)))}
-                waitingBy={m.waiting ? members.get(m.waiting.by) : null}
                 candidates={candidates}
                 canReact={reactions && !m.locked && !closed && canSend}
                 canRemoveReactions={!sealed && isStaff(role) &&
@@ -845,7 +831,6 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         prev = m;
     }
     rows.push(...changed.after.map(changeLine));
-    rows.push(...groupLines.after.map(groupLine));
     rows.push(...expiry.after.map(expiryLine));
 
     // Files dragged over the pane attach to the message being written.
@@ -886,11 +871,6 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                                 <>
                                     <p>{retention ? `Your notes are deleted after ${keptFor(retention)}.` : 'This is the start of your notes.'}</p>
                                     <p class="text-xs">End-to-end encrypted: only your devices can read them.</p>
-                                </>
-                            ) : group ? (
-                                <>
-                                    <p>{retention ? `Messages in ${groupTitle} are deleted after ${keptFor(retention)}.` : `This is the start of ${groupTitle}, as you can read it.`}</p>
-                                    <p class="text-xs">End-to-end encrypted: only the group's members can read it, each from when they joined.</p>
                                 </>
                             ) : dm ? (
                                 <>
@@ -937,16 +917,13 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 {!closed && (channel.kind === 'dm' || notes) && gate !== '' && (
                     <DMGate denID={denID} gate={gate} dm={dm} notes={notes} onCompare={() => dm && onCompare?.(dm)} />
                 )}
-                {!closed && group && gated !== '' && (
-                    <GroupGate denID={denID} gate={gated} member={members.get(gate.member)} onCompare={(m) => onCompare?.(m)} />
-                )}
                 {closed ? (
                     <div class="cursor-default select-none border-t border-base-300 px-4 py-3 text-sm text-base-content/60">{closed}</div>
                 ) : !canSend ? null : (
                     <Composer
                         denID={denID}
                         limits={limits}
-                        placeholder={notes ? 'Write a note' : dm ? `Message @${dm.username}` : group ? `Message ${groupTitle}` : `Message #${channel.name}`}
+                        placeholder={notes ? 'Write a note' : dm ? `Message @${dm.username}` : `Message #${channel.name}`}
                         replyTo={replyTo}
                         replyAuthor={replyTo ? members.get(replyTo.author_id) : null}
                         typing={typing}
@@ -1032,69 +1009,6 @@ function clock(ms) {
 
 // Quoted shows the first line of a message a reply quotes, that it has
 // only files, or that it can't be opened.
-// Waiting shows its author a group's message changed by someone their
-// Dens can't confirm they let edit it, as it reads now, to keep as theirs
-// or delete. Keep gives back the digest of what this showed, so a
-// revision put in its place meanwhile isn't kept unseen. It holds Keep a
-// moment from each time it shows a message, or a change to one, so a second
-// click keeps nothing the member hasn't had before them, and says where
-// the message changed since they first saw it.
-function Waiting({ m, by, me, denID, channelID, onUpdated, onDelete, onView }) {
-    const act = useAction();
-    const key = `${denID}/${m.id}`;
-    // settled is the digest the hold last began for, read as this renders,
-    // so Keep is never live over a message before the effect has run.
-    const settled = useRef(null);
-    const [held, setHeld] = useState(true);
-    const off = act.busy || held || m.waiting.shown !== settled.current;
-    const first = waitedAs.get(key);
-    const changed = first !== undefined && first !== m.waiting.shown;
-    useEffect(() => {
-        settled.current = m.waiting.shown;
-        if (!waitedAs.has(key)) {
-            if (waitedAs.size >= WAITED_MOST) waitedAs.clear();
-            waitedAs.set(key, m.waiting.shown);
-        }
-        setHeld(true);
-        const timer = setTimeout(() => setHeld(false), KEEP_HOLD_MS);
-        return () => clearTimeout(timer);
-    }, [key, m.waiting.shown]);
-    const keep = () => !off && act.run(async () => {
-        try {
-            onUpdated(await api.post(`/api/dens/${denID}/messages/${m.id}/keep?channel=${channelID}`, { shown: m.waiting.shown }));
-        } catch (e) {
-            // Changed again meanwhile: it shows as it is now.
-            if (e.status === 409 && e.data?.message) onUpdated(e.data.message);
-            else throw e;
-        }
-    });
-    return (
-        <div class="mt-1 flex flex-col gap-2 border-l-2 border-warning pl-3" data-waiting>
-            <p class="cursor-default select-none text-sm text-base-content/70">
-                Your Dens can't confirm you let @{by?.username || 'someone'} change this. <DocsLink page="usage/#group-dms" label="Why it waits" />
-            </p>
-            {m.waiting.text.trim() && <div class="wrap-break-word"><Markdown text={m.waiting.text} me={me} /></div>}
-            {m.waiting.attachments?.length > 0 && <Attachments denID={denID} files={m.waiting.attachments} onOpen={onView} />}
-            {changed && <p class="cursor-default select-none text-sm text-warning" data-waiting-changed>This changed since you first saw it. Read it again before you keep it.</p>}
-            <ErrorText message={act.error} />
-            <Actions>
-                <Button kind="primary" disabled={off} onClick={keep}>Keep</Button>
-                <Button kind="danger" disabled={act.busy} onClick={onDelete}>Delete</Button>
-            </Actions>
-        </div>
-    );
-}
-
-// KEEP_HOLD_MS is how long Keep waits from when a waiting message shows:
-// longer than a double click.
-const KEEP_HOLD_MS = 1500;
-
-// waitedAs holds, by message, the digest its waiting block first showed on
-// this page, so one that stops waiting for a moment and comes back changed
-// still says so; WAITED_MOST bounds it.
-const waitedAs = new Map();
-const WAITED_MOST = 200;
-
 function Quoted({ text, locked, me }) {
     if (locked) return <span class="italic">A message this device can't open</span>;
     return text.trim() ? <Preview text={text} me={me} /> : <span class="italic">Attachment</span>;
@@ -1109,7 +1023,7 @@ function Quoted({ text, locked, me }) {
 // is a run's later message, under its first's name; line is Compact's row,
 // each a line of its own. children go under its files, as
 // Appearance's preview puts its photo.
-export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canForward = false, canDelete, link, note = '', menuOpen, menuAt, narrow, touch, editorNames, waitingBy, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onForward, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
+export function MessageRow({ m, compact, line, marks = false, author, replied, repliedAuthor, me, highlighted, editing, canReply, canEdit, canShare = false, canForward = false, canDelete, link, note = '', menuOpen, menuAt, narrow, touch, editorNames, canReact, canRemoveReactions, nameOf, onReact, onReactPick, onRemoveReactions, onUpdated, onPolled, onMenu, onReply, onEdit, onEditors, onForward, onEditDone, onDelete, onJump, onView, onProfile, onToggle, denID, channelID, children }) {
     const [error, setError] = useState('');
     // copied says for a moment what the member just copied.
     const [copied, setCopied] = useState('');
@@ -1193,9 +1107,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
         </span>
     ) : null;
     let body = lead;
-    if (m.waiting) {
-        body = <div>{lead}<Waiting m={m} by={waitingBy} me={me} denID={denID} channelID={channelID} onUpdated={onUpdated} onDelete={onDelete} onView={onView} /></div>;
-    } else if (m.locked) {
+    if (m.locked) {
         body = <div>{lead}<p class="cursor-default select-none text-sm italic text-base-content/60">{LOCKED[m.locked] || LOCKED.broken}</p></div>;
     } else if (editing) {
         body = (

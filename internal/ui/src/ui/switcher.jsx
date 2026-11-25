@@ -41,7 +41,6 @@ function EntryIcon({ e }) {
     if (e.kind === 'text') return <HashIcon />;
     if (e.kind === 'voice') return <SpeakerIcon size="h-4 w-4" />;
     if (e.kind === 'dm') return <MenuIcon name="profile" />;
-    if (e.kind === 'group') return <MenuIcon name="people" />;
     if (e.kind === 'notes') return <MenuIcon name="notes" />;
     return <span class="flex h-4 w-4 items-center justify-center rounded bg-base-300 text-[10px] font-semibold uppercase">{[...e.name][0] || '?'}</span>;
 }

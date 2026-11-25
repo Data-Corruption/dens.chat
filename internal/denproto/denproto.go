@@ -9,12 +9,10 @@
 // DMs and device approval; members' identities, their codes, the DM keys
 // sealed to them and the record of those kept (identity.go); a sealed
 // call's keys, their copies, commitments and statements (callkeys.go);
-// group DMs' changes and their rules, their names, and the messages and
-// sets signed inside the seal (groups.go); the times after which a DM's or
-// a group's messages disappear (disappearing.go); the key a member's notes
-// are sealed under, made from their seal (notes.go); the boxes between a
-// member's devices for Relay, their key and their seal (relay.go); what of
-// a poll each member sees; events' limits, wire types and checks, and
+// the times after which a DM's messages disappear (disappearing.go); the
+// key a member's notes are sealed under, made from their seal (notes.go);
+// the boxes between a member's devices for Relay, their key and their seal
+// (relay.go); what of a poll each member sees; events' limits, wire types and checks, and
 // badges (events.go); a name's style, its fonts and its checks
 // (namestyle.go); and sign-in codes, Add device's and the digits', made and
 // read by one grammar (signincode.go). emojilist.go, the list of Unicode's
@@ -32,13 +30,14 @@ import (
 	"strings"
 )
 
-// Protocol versions this build speaks. Version 2 brings group
-// DMs, which a den sends nothing of to a client speaking 1, and version 3
-// notes to self, which it sends nothing of to one speaking 1 or 2.
+// Protocol versions this build speaks. Version 2 brought group DMs, which
+// are gone, so a den serves 1 and 2 alike, and version 3 notes to self,
+// which it sends nothing of to a client speaking 1 or 2.
 const (
 	Version    = 3
 	MinVersion = 1
-	// GroupsVersion is the first version with group DMs.
+	// GroupsVersion is the version that brought group DMs, which nothing
+	// asks of any more.
 	GroupsVersion = 2
 	// NotesVersion is the first version with notes to self.
 	NotesVersion = 3
@@ -309,8 +308,8 @@ type Den struct {
 	// SealedCalls says the den seals every call end to end, and
 	// takes no join that doesn't; a den older than it doesn't say so.
 	SealedCalls bool `json:"sealed_calls,omitempty"`
-	// Disappearing says the den deletes a DM's and a group's messages at
-	// the time their members set; a den older than it doesn't.
+	// Disappearing says the den deletes a DM's messages at the time its
+	// members set; a den older than it doesn't.
 	Disappearing bool `json:"disappearing,omitempty"`
 	// Spoilers says the den keeps which of a channel's files went as
 	// spoilers, and MoveMembers that staff move members from one call to

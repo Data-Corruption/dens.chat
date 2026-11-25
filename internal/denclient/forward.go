@@ -173,7 +173,7 @@ func (c *conn) takesForward(ctx context.Context, channel string) (bool, error) {
 		clear(key)
 		return true, err
 	case kind != denproto.KindText:
-		return false, inputError(errors.New("messages go in text channels, DMs, groups and notes"))
+		return false, inputError(errors.New("messages go in text channels, DMs and notes"))
 	case !forwards:
 		return false, inputError(errors.New("That den is too old to mark a forward in its channels."))
 	}

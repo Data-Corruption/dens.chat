@@ -359,14 +359,13 @@ func TestMentionsAndReadState(t *testing.T) {
 }
 
 // Mark all as read moves bob's position to the newest message in every
-// channel, DM, group and note he sees, and in none he doesn't: a
-// staff-only channel, another pair's DM, a group he isn't in. He hears a
-// read state for each that moved, once, and nothing for what was read
-// already.
+// channel, DM and note he sees, and in none he doesn't: a staff-only
+// channel, another pair's DM. He hears a read state for each that moved,
+// once, and nothing for what was read already.
 func TestMarkAllRead(t *testing.T) {
-	f, owner, others := groupFixture(t, "carol", "dave")
+	f, owner, bob := chatFixture(t)
 	ctx := context.Background()
-	bob, carol, dave := others[0], others[1], others[2]
+	carol := f.member(owner, "carol")
 	bob.Version = denproto.Version
 	general := f.newChannel(owner, "general", denproto.ChannelRequest{})
 	staff := f.newChannel(owner, "staff", denproto.ChannelRequest{StaffOnly: ptr(true)})
@@ -386,20 +385,6 @@ func TestMarkAllRead(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.send(owner, theirs.ID, "to carol")
-	group, err := f.makeGroup(owner, bob, carol)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := group.send(carol, "to the group"); err != nil {
-		t.Fatal(err)
-	}
-	without, err := f.makeGroup(owner, carol, dave)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := without.send(carol, "not bob's"); err != nil {
-		t.Fatal(err)
-	}
 	notes, err := f.d.OpenNotes(ctx, bob)
 	if err != nil {
 		t.Fatal(err)
@@ -418,7 +403,7 @@ func TestMarkAllRead(t *testing.T) {
 			want[st.ChannelID] = st.LastMessage
 		}
 	}
-	for _, id := range []string{general.ID, dm.ID, group.id} {
+	for _, id := range []string{general.ID, dm.ID} {
 		if want[id] == "" {
 			t.Fatalf("channel %s isn't unread for bob before: %v", id, want)
 		}
@@ -460,7 +445,7 @@ func TestMarkAllRead(t *testing.T) {
 	}
 	// The snapshot leaves out what bob can't see, so the rows are read
 	// for it.
-	for _, id := range []string{staff.ID, theirs.ID, without.id} {
+	for _, id := range []string{staff.ID, theirs.ID} {
 		cid, _ := denproto.ParseID(id)
 		var n int
 		if err := f.db.QueryRow(`SELECT count(*) FROM den_read_states WHERE member_id = ? AND channel_id = ?`, bob.MemberID, cid).Scan(&n); err != nil {

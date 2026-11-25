@@ -17,9 +17,7 @@
 # page as shown, and lets the page and the microphone go once the call ends.
 #
 # The phone's DM with the den's owner opens at once, and the two compare
-# codes; the phone reads the owner's message in a group of three, its
-# changes, keys and signature checked; and the member's notes open at
-# version 3 of the protocol, and a note written there reads back, sealed on
+# codes; and the member's notes open at version 3 of the protocol, and a note written there reads back, sealed on
 # the den. A DM from the owner while the app is behind the others
 # posts its notification, whose tap opens the page at the message,
 # in place on the page that shows, and another, read on the den, has
@@ -474,18 +472,6 @@ done
 den api POST "/api/dens/$den_id/members/$member_id/compare" "{\"digits\":\"$phone_code\"}" | grep -q '"verified":true' || fail "desk's comparison of codes"
 phone drive api POST "/api/dens/$den_id/members/$desk_id/compare" "{\"digits\":\"$desk_code\"}" | grep -q '^200' || fail "the phone's comparison of codes"
 ok "the phone's DM with desk opened at once, and the two compared codes"
-# A group DM: desk makes one of itself, the phone's member and
-# third, a member on another instance beside desk's, and writes in it; the
-# phone's Dens checks the group's changes and keys, and opens desk's
-# message, checking desk's signature inside it.
-third_id=$(den third)
-group=$(den group "$member_id" "$third_id")
-grouped() { [[ $(pagejson "/api/dens/$den_id/state" "((v.group_dms || {})['$group'] || {}).members?.length === 3 && !v.group_dms['$group'].syncing") == true ]]; }
-waitfor 30 "the group on the phone" grouped
-den say "$group" "a group message for the phone" >/dev/null
-reads() { [[ $(pagejson "/api/dens/$den_id/channels/$group/messages" "v.messages.some((m) => m.text === 'a group message for the phone' && !m.locked)") == true ]]; }
-waitfor 30 "desk's message in the group, on the phone" reads
-ok "the phone reads desk's message in a group of three, its changes, keys and desk's signature checked"
 # The member's notes, at version 3 of the protocol, which the
 # phone's Dens and desk's den both speak: the phone opens them, which the
 # den makes, writes one, and reads it back opened under the key its seal

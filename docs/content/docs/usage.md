@@ -107,7 +107,7 @@ did. The check shows on your other devices too, within the hour.
 Calls are end-to-end encrypted too, with the same codes: the lock behind the
 arrow beside a call's buttons shows yours, and everyone in the call, to
 compare with right there. A comparison holds wherever you meet them after, in
-DMs, groups and calls.
+DMs and calls.
 Whether the check shows beside people in lists is yours to choose, under
 **Settings** → **Appearance** → **Messages** → **Verified mark**.
 
@@ -120,25 +120,15 @@ them, the DM waits on all your devices until you compare again, or choose
 
 ### Group DMs
 
-A group DM is a DM of three to ten people, end-to-end encrypted as a DM is.
-Start one from the **+** at the end of the **Direct messages** tab, or from
-**Add people** on the profile beside a DM. Someone added reads it from when they joined, not before,
-and someone removed, or who left, reads nothing written after. Anyone in it can
-add people, rename it or leave; whoever made it can remove people. Each change
-is signed by the member who made it, so the den can't add anyone on its own.
-Groups have no calls.
-
-Only the people you let edit a message can change it. A change your Dens
-can't confirm you allowed shows only to you until you choose: **Keep** makes
-it yours as it reads now, or delete it. That includes every change from
-someone on an older Dens, even someone you let edit. Someone an older Dens
-added to a group may see it unnamed until it's renamed.
+Dens has no group DMs. A den deletes the ones it had, with their messages
+and files, as it updates to v1.16.0, and an up-to-date Dens shows none on
+any den.
 
 ### Disappearing messages
 
-Anyone in a DM or a group DM can have its messages disappear 1 hour, 1 day, 1
-week or 4 weeks after they're sent: pick a time under **Disappearing
-messages**, on the profile beside a DM or below a group's members. When its
+Either of you in a DM can have its messages disappear 1 hour, 1 day, 1 week
+or 4 weeks after they're sent: pick a time under **Disappearing messages**,
+on the profile beside the DM. When its
 time comes, a message is gone from the den and from everyone's devices, even
 ones that were offline, with its photos and files. Anyone in the conversation
 can still copy or screenshot it before then.
@@ -184,7 +174,7 @@ soundboard work as you'd expect. What's different:
   den itself still knows, since it counts each vote once. With **After
   voting**, each person sees the totals once they vote, and their vote is
   then final.
-- **Reactions** in a DM or a group are sealed like its messages: the den
+- **Reactions** in a DM are sealed like its messages: the den
   sees that yours changed, not what they are.
 - **Spoilers**: choose **Spoiler** on a photo or video before you send it, or
   write `||text||`.
@@ -260,7 +250,7 @@ and the keys. What's different:
   your message with you, but not delete it. Change who from the message's
   **⋯**.
 - **Forward**, in a message's **⋯**, sends its text and files to a channel,
-  DM, group or your notes, in this den or another you're in. It goes as your
+  DM or your notes, in this den or another you're in. It goes as your
   message, marked **Forwarded**, with nothing of who wrote it or where, and
   its mentions count where it goes. Its files count toward your space there.
   Nobody edits a forward, and polls don't forward.

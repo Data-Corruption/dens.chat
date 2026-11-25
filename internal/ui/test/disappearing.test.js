@@ -138,7 +138,7 @@ test("a DM's time is set beside it, once the member confirms it, and the header 
     assert.equal(dialog(), undefined);
 
     // Off, from a time, and a change from one time to another, say so.
-    mount(h(ExpirySetting, { denID: 'd', channel: { id: '7', kind: 'group_dm', expires_after: 10, expires_set: { by: '2', at: 5 } } }), root);
+    mount(h(ExpirySetting, { denID: 'd', channel: { id: '7', kind: 'dm', expires_after: 10, expires_set: { by: '2', at: 5 } } }), root);
     assert.deepEqual(options(), ['Off', '10 seconds', '1 hour', '1 day', '1 week', '4 weeks']);
     pick(0);
     await settle();

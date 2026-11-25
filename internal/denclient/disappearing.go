@@ -5,13 +5,13 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// Disappearing messages: the den deletes a DM's or a group's
-// message at the time its members set, and tells those connected, as it
-// tells them of any delete. The cache lets its copy go at that time too,
-// by this computer's clock, whether the den can be reached or not, so a
-// den offline shows none of it; this takes it off the pages and out of the
-// notifications, with the keys of the files on it, as a delete would. A
-// message whose time passed doesn't notify, and history leaves it out.
+// Disappearing messages: the den deletes a DM's message at the time its
+// members set, and tells those connected, as it tells them of any delete.
+// The cache lets its copy go at that time too, by this computer's clock,
+// whether the den can be reached or not, so a den offline shows none of it;
+// this takes it off the pages and out of the notifications, with the keys
+// of the files on it, as a delete would. A message whose time passed
+// doesn't notify, and history leaves it out.
 
 // disappeared hears of the messages the cache let go of as their time
 // came.

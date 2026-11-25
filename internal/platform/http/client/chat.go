@@ -22,7 +22,6 @@ func (rt *router) mountChat(r chi.Router) {
 	r.Post("/api/dens/{den}/read", rt.handleMarkAllRead)
 	r.Patch("/api/dens/{den}/messages/{message}", rt.handleEdit)
 	r.Post("/api/dens/{den}/messages/{message}/tasks/{n}", rt.handleTask)
-	r.Post("/api/dens/{den}/messages/{message}/keep", rt.handleKeep)
 	r.Post("/api/dens/{den}/messages/{message}/forward", rt.handleForward)
 	r.Delete("/api/dens/{den}/messages/{message}", rt.handleDeleteMessage)
 	r.Post("/api/dens/{den}/messages/{message}/reactions", rt.handleReact)
@@ -102,19 +101,6 @@ func (rt *router) handleTask(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := rt.a.Dens.SetTask(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), n, req)
-	rt.changed(w, r, m, err)
-}
-
-// handleKeep keeps a group's message that waits for its author as theirs:
-// the revision their page showed, by its digest.
-func (rt *router) handleKeep(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Shown denproto.Bytes `json:"shown"`
-	}
-	if !decodeJSON(w, r, &req) {
-		return
-	}
-	m, err := rt.a.Dens.Keep(r.Context(), chi.URLParam(r, "den"), r.URL.Query().Get("channel"), chi.URLParam(r, "message"), req.Shown)
 	rt.changed(w, r, m, err)
 }
 

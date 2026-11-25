@@ -2,12 +2,8 @@ package denclient
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/binary"
 	"errors"
 	"fmt"
-	"slices"
-	"strconv"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -30,9 +26,6 @@ const (
 	lockedLost      = "lost"      // the member started over since; their copy of the key is gone
 	lockedBroken    = "broken"    // it doesn't open: someone changed it
 	lockedKeys      = "keys"      // its key names identities other than those this Dens kept
-	// lockedAuthor is a group's message changed by someone its author
-	// didn't sign for, which waits for its author to keep or delete it.
-	lockedAuthor = "author"
 )
 
 var (
@@ -52,33 +45,6 @@ type PageMessage struct {
 	// DMReactions are a DM message's sets of reactions, opened, in place
 	// of the den's sealed ones.
 	DMReactions []PageReactionSet `json:"dm_reactions,omitempty"`
-	// Waiting is, on its author's devices alone, a group's message that
-	// waits for them (lockedAuthor): what it says, and who changed it.
-	Waiting *PageWaiting `json:"waiting,omitempty"`
-}
-
-// PageWaiting is a group's message changed by someone its author didn't
-// sign for, as its author's page shows it, for them to keep or delete.
-type PageWaiting struct {
-	By          string          `json:"by"`
-	Text        string          `json:"text"`
-	Attachments []denproto.File `json:"attachments"`
-	// Shown is the digest of the revision this shows, which Keep gives
-	// back.
-	Shown denproto.Bytes `json:"shown"`
-}
-
-// shownSum is a digest of a message's revision as the den gave it: the
-// key, nonce and revision it opens under, and what's sealed. Keep signs
-// only the revision its author's page showed, and the den's word for
-// which that is, its number, is no check: a member can seal two at one.
-func shownSum(m denproto.Message) denproto.Bytes {
-	h := sha256.New()
-	for _, part := range [][]byte{[]byte(m.KeyID), m.Nonce, []byte(strconv.Itoa(m.Revision)), m.Sealed} {
-		h.Write(binary.BigEndian.AppendUint64(nil, uint64(len(part))))
-		h.Write(part)
-	}
-	return h.Sum(nil)
 }
 
 // PageReply previews the message another replies to, for the page.
@@ -163,87 +129,28 @@ func (c *conn) dmKeyLocked(channel, keyID string) ([]byte, string) {
 }
 
 // openPayloadLocked opens a DM message's sealed text and files with the
-// key it names, and says who sealed it: in a DM its author, in a group
-// whoever its signature says, which must be a member its key names: its
-// author at its first revision, and after it, its author or a member they
-// signed for. The payload's grant is one that checks, in a group alone.
-// One another member changed with no grant waits for its author
-// (lockedAuthor), whose devices alone get what it says. The caller holds
-// c.mu.
-func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, revision int, sealed []byte) (denproto.DMPayload, string, string) {
+// key it names, or says why it can't. The caller holds c.mu.
+func (c *conn) openPayloadLocked(channel, author, keyID string, nonce []byte, revision int, sealed []byte) (denproto.DMPayload, string) {
 	key, locked := c.dmKeyLocked(channel, keyID)
 	if locked != "" {
-		return denproto.DMPayload{}, "", locked
+		return denproto.DMPayload{}, locked
 	}
 	defer clear(key)
 	ch, _ := denproto.ParseID(channel)
 	id, _ := denproto.ParseID(keyID)
 	who, _ := denproto.ParseID(author)
 	ad := denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}
-	if kind := c.den.channels[channel].Kind; kind != denproto.KindGroupDM {
-		p, err := denproto.OpenDMMessage(key, ad, sealed)
-		switch {
-		case err != nil && kind == denproto.KindNotes:
-			// A note that doesn't open under the key the seal makes was
-			// sealed under the seal before the member started over, as far
-			// as anyone can tell, and is gone for good either way.
-			return denproto.DMPayload{}, "", lockedLost
-		case err != nil:
-			return denproto.DMPayload{}, "", lockedBroken
-		}
-		p.Grant = nil
-		return p, author, ""
-	}
-	k, ok := c.den.signed[keyID]
-	if !ok {
-		return denproto.DMPayload{}, "", lockedBroken
-	}
-	stmt, err := k.Statement(c.j.denID)
-	if err != nil {
-		return denproto.DMPayload{}, "", lockedBroken
-	}
-	p, signer, err := denproto.OpenGroupMessage(key, ad, stmt.Named, sealed)
-	if err != nil || revision == 1 && signer != who {
-		return denproto.DMPayload{}, "", lockedBroken
-	}
-	if p.Grant != nil && !denproto.VerifyGrant(c.j.denID, ch, who, nonce, revision, *p.Grant, c.keptHashesLocked(author)) {
-		if signer != who {
-			return denproto.DMPayload{}, "", lockedBroken
-		}
-		p.Grant = nil
-	}
-	by := denproto.FormatID(signer)
+	p, err := denproto.OpenDMMessage(key, ad, sealed)
 	switch {
-	case signer == who:
-	case p.Grant == nil:
-		// It can't be told from one whose grant was left out, so it opens as
-		// nobody's, but for its author to keep or delete.
-		if author != c.meLocked() {
-			return denproto.DMPayload{}, by, lockedAuthor
-		}
-		return p, by, lockedAuthor
-	case !slices.Contains(p.Grant.Editors, by):
-		return denproto.DMPayload{}, "", lockedBroken
+	case err != nil && c.den.channels[channel].Kind == denproto.KindNotes:
+		// A note that doesn't open under the key the seal makes was
+		// sealed under the seal before the member started over, as far
+		// as anyone can tell, and is gone for good either way.
+		return denproto.DMPayload{}, lockedLost
+	case err != nil:
+		return denproto.DMPayload{}, lockedBroken
 	}
-	return p, by, ""
-}
-
-// keptHashesLocked lists the identities this Dens kept for a member, by
-// their hashes, the current one and those before: for this member, their
-// own. The caller holds c.mu.
-func (c *conn) keptHashesLocked(member string) []denproto.Bytes {
-	if member == c.meLocked() {
-		own := c.ownHashLocked()
-		if own == nil {
-			return slices.Clone(c.ids.Record.Own)
-		}
-		return append([]denproto.Bytes{own}, c.ids.Record.Own...)
-	}
-	k := c.ids.Record.Members[member]
-	if k == nil {
-		return nil
-	}
-	return append([]denproto.Bytes{k.Hash}, k.Past...)
+	return p, ""
 }
 
 // openLocked opens a DM message for the page; other messages pass as they
@@ -253,7 +160,7 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	if r := m.Reply; r != nil {
 		reply = &PageReply{AuthorID: r.AuthorID, Text: r.Text}
 		if r.Sealed != nil {
-			p, _, locked := c.openPayloadLocked(m.ChannelID, r.AuthorID, r.KeyID, r.Nonce, r.Revision, r.Sealed)
+			p, locked := c.openPayloadLocked(m.ChannelID, r.AuthorID, r.KeyID, r.Nonce, r.Revision, r.Sealed)
 			reply.Text, reply.Locked = "", locked != ""
 			if locked == "" {
 				reply.Text = denproto.Excerpt(p.Text)
@@ -263,7 +170,7 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	out := m
 	out.Reply = nil
 	if m.Sealed == nil {
-		// Every message of a DM, a group or notes is sealed by its author's
+		// Every message of a DM or notes is sealed by its author's
 		// Dens, so one there in the clear is the den's own, and keeps
 		// nothing the den wrote.
 		if c.privateLocked(m.ChannelID) {
@@ -277,24 +184,9 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 	// may be newer than the message's. Its mark is its seal's alone.
 	sets := c.openSetsLocked(m)
 	out.Sealed, out.DMReactions, out.Forwarded = nil, nil, false
-	p, signer, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
-	// In a group, who may edit and who did are what its author signed for
-	// and who signed, never the den's word.
-	if c.den.channels[m.ChannelID].Kind == denproto.KindGroupDM {
-		out.Editors, out.EditedBy = nil, ""
-		if p.Grant != nil && locked == "" {
-			out.Editors = slices.Clone(p.Grant.Editors)
-		}
-		if signer != m.AuthorID {
-			out.EditedBy = signer
-		}
-	}
+	p, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
 	if locked != "" {
-		pm := PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
-		if locked == lockedAuthor && m.AuthorID == c.meLocked() {
-			pm.Waiting = &PageWaiting{By: signer, Text: p.Text, Attachments: c.dmFilesLocked(m, p), Shown: shownSum(m)}
-		}
-		return pm
+		return PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
 	}
 	out.Text, out.Forwarded = p.Text, p.Forwarded
 	out.Attachments = append(out.Attachments, c.dmFilesLocked(m, p)...)
@@ -397,16 +289,11 @@ func (c *conn) sendKey(ctx context.Context, channel string) (string, []byte, err
 			return k.ID, key, nil
 		}
 		err := c.canMakeKeyLocked(channel)
-		group := c.den.channels[channel].Kind == denproto.KindGroupDM
 		c.mu.Unlock()
 		if err != nil {
 			return "", nil, err
 		}
-		makeKey := c.makeKey
-		if group {
-			makeKey = c.makeGroupKey
-		}
-		if err := makeKey(ctx, channel); err != nil {
+		if err := c.makeKey(ctx, channel); err != nil {
 			return "", nil, err
 		}
 	}
@@ -425,21 +312,7 @@ func (c *conn) sealMessage(ctx context.Context, channel, author string, nonce []
 	id, _ := denproto.ParseID(keyID)
 	who, _ := denproto.ParseID(author)
 	ad := denproto.MessageAD{DenID: c.j.denID, Channel: ch, Author: who, Nonce: nonce, KeyID: id, Revision: revision}
-	var sealed denproto.Bytes
-	if c.isGroup(channel) {
-		// A group's is signed inside by whoever wrote or changed it.
-		me, _ := denproto.ParseID(c.memberID())
-		err = c.ownIdentity(func(ik *denproto.IdentityKeys) error {
-			var err error
-			sealed, err = denproto.SealGroupMessage(key, ad, ik, me, p)
-			return err
-		})
-		if errors.Is(err, errNoSeal) {
-			return "", nil, err
-		}
-	} else {
-		sealed, err = denproto.SealDMMessage(key, ad, p)
-	}
+	sealed, err := denproto.SealDMMessage(key, ad, p)
 	if err != nil {
 		return "", nil, inputError(errors.New("this message is too long to send"))
 	}
@@ -448,6 +321,37 @@ func (c *conn) sealMessage(ctx context.Context, channel, author string, nonce []
 
 // ErrUnknownChannel is a channel this member can't see, or not a DM.
 var ErrUnknownChannel = inputError(errors.New("no such DM"))
+
+// private reports whether a channel is one of this member's DMs or their
+// notes, whose messages and files are sealed here, or was: what's sent to
+// one the den deleted fails for want of a key, where it would otherwise go
+// unsealed.
+func (c *conn) private(channel string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.privateLocked(channel)
+}
+
+// privateLocked is private, for a caller that holds c.mu.
+func (c *conn) privateLocked(channel string) bool {
+	return c.den != nil && (isSealed(c.den.channels[channel]) || isSealed(denproto.Channel{Kind: c.den.kinds[channel]}))
+}
+
+// holdKind keeps the kind of a channel the den just answered with, a DM
+// opened or the notes, ahead of its event, and refuses one this Dens held
+// as another kind (see keepsKind).
+func (c *conn) holdKind(id, kind string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil {
+		return ErrNotStarted
+	}
+	if !c.den.keepsKind(denproto.Channel{ID: id, Kind: kind}) {
+		return errMalformed
+	}
+	c.stateDirty = true
+	return nil
+}
 
 // useSeal calls fn with this member's DM seal here.
 func (c *conn) useSeal(fn func(seal []byte) error) error {

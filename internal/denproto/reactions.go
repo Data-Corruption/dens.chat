@@ -37,6 +37,9 @@ const (
 	// so it stays well within a frame, and a history page holds a few of
 	// the most reacted to: at a member ID's longest, about 200 KiB.
 	MaxReactions = 10_000
+	// MaxReactionSets bounds the members' sets of reactions a sealed
+	// message carries, as many as an older den's group DM's held.
+	MaxReactionSets = 20
 	// reactionsPlain is a DM's set before it's sealed, padded to one
 	// length, so its size doesn't say how many it holds: room for
 	// MaxReactionEmoji of the longest emoji, 37 bytes as JSON, or names,
@@ -276,8 +279,8 @@ func readSet(plain []byte) (ReactionSet, error) {
 
 // checkReactions checks a message's reactions as a den sends them: a
 // channel's, each emoji once, at most MaxReactionEmoji and MaxReactions in
-// all, each member once an emoji; and a DM's or a group's sealed sets, one
-// a member, at most MaxReactionSets.
+// all, each member once an emoji; and a DM's sealed sets, one a member, at
+// most MaxReactionSets.
 func checkReactions(m Message) error {
 	if m.Sealed != nil {
 		if len(m.Reactions) > 0 || len(m.DMReactions) > MaxReactionSets {

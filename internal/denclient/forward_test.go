@@ -129,15 +129,14 @@ func sameFile(t *testing.T, what string, from *denclient.Manager, fromDen string
 	}
 }
 
-// A message's text and files forward from a channel to a DM, a group and
-// the member's notes, and from the DM back to a channel, each as its
+// A message's text and files forward from a channel to a DM and the
+// member's notes, and from the DM back to a channel, each as its
 // sender's own, marked, with its spoiler, and nothing of where it came
 // from, its reply, its author, its channel, to the den or in the seal.
 // What reads it opens its photo; nobody edits or ticks it after. A DM's
 // mark is its seal's, never the den's, and a page's send marks nothing.
 func TestForwardWithItsFiles(t *testing.T) {
-	h, ms, ids, denID := groupDen(t)
-	alice, bob, carol := ms[0], ms[1], ms[2]
+	h, alice, bob, denID, _ := chatDen(t)
 	ctx := context.Background()
 	general := channelIn(t, alice, denID, "general")
 	photo := upload(t, alice, denID, "IMG_1234.jpg", gpsJPEG(t))
@@ -151,20 +150,13 @@ func TestForwardWithItsFiles(t *testing.T) {
 
 	dm := openDM(t, bob, alice, denID)
 	readyDM(t, bob, alice, denID, dm)
-	g, err := bob.MakeGroup(ctx, denID, []string{ids[2], ids[3]}, "")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, m := range ms[1:] {
-		groupOf(t, m, denID, g, ids[1:])
-	}
 	notes := openNotes(t, bob, denID)
 
 	bobID := me(t, bob, denID).ID
 	for _, place := range []struct {
 		name, id string
 		reader   *denclient.Manager
-	}{{"the DM", dm, alice}, {"the group", g, carol}, {"bob's notes", notes.ID, bob}} {
+	}{{"the DM", dm, alice}, {"bob's notes", notes.ID, bob}} {
 		fwd := forward(t, bob, denID, general, src.ID, denID, place.id)
 		if !fwd.Forwarded || fwd.AuthorID != bobID || fwd.Text != src.Text || fwd.ReplyTo != "" || len(fwd.Attachments) != 2 {
 			t.Fatalf("forwarded to %s: %+v", place.name, fwd)
@@ -173,7 +165,7 @@ func TestForwardWithItsFiles(t *testing.T) {
 			t.Errorf("forwarded to %s, the den was sent %v", place.name, keysOf(body))
 		}
 		p, err := denclient.PayloadOf(place.reader, denID, place.id, fwd.ID)
-		if err != nil || !p.Forwarded || p.Grant != nil || p.Text != src.Text || len(p.Files) != 2 {
+		if err != nil || !p.Forwarded || p.Text != src.Text || len(p.Files) != 2 {
 			t.Errorf("forwarded to %s, its seal holds %+v, %v", place.name, p, err)
 		}
 		got := newest(t, place.reader, denID, place.id)
@@ -217,7 +209,7 @@ func TestForwardWithItsFiles(t *testing.T) {
 		if _, err := bob.Edit(ctx, denID, m.ChannelID, m.ID, denproto.EditRequest{Revision: m.Revision, Text: "mine now"}); err == nil {
 			t.Errorf("bob edited a forward in %s", m.ChannelID)
 		}
-		others := []string{ids[0]}
+		others := []string{me(t, alice, denID).ID}
 		if _, err := bob.Edit(ctx, denID, m.ChannelID, m.ID, denproto.EditRequest{Revision: m.Revision, Text: m.Text, Editors: &others}); err == nil {
 			t.Errorf("bob shared a forward in %s", m.ChannelID)
 		}
@@ -418,8 +410,8 @@ func TestForwardWithinThePlacesLimits(t *testing.T) {
 // a place this Dens doesn't hold; and a DM that holds since the other
 // member's keys changed. None of its files goes up first.
 func TestForwardRefusals(t *testing.T) {
-	h, ms, ids, denID := groupDen(t)
-	alice, bob := ms[0], ms[1]
+	h, alice, bob, denID, _ := chatDen(t)
+	ids := []string{me(t, alice, denID).ID, me(t, bob, denID).ID}
 	ctx := context.Background()
 	general := channelIn(t, alice, denID, "general")
 	poll, err := alice.Send(ctx, denID, general, denproto.SendRequest{Nonce: denproto.Random(16), Text: "Lunch?",

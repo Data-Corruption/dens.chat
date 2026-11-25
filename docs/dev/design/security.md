@@ -101,8 +101,8 @@ Before the first release an audit checked every item here against the code (2026
 
 ### Getting around
 
-- [x] The switcher draws every den's names, its channels', members' and groups', as text, from that den's state on this install, which holds only what the member sees; opening it asks no den anything.
-- [x] A channel's link names its den by ID and the channel by ID; its chip's words are the member's own Dens's, and a click opens only a text channel, DM, group or notes the member sees, never a call, one out of sight reading `#unknown`, as one gone does.
+- [x] The switcher draws every den's names, its channels' and members', as text, from that den's state on this install, which holds only what the member sees; opening it asks no den anything.
+- [x] A channel's link names its den by ID and the channel by ID; its chip's words are the member's own Dens's, and a click opens only a text channel, DM or notes the member sees, never a call, one out of sight reading `#unknown`, as one gone does.
 - [x] `POST /api/read` moves the member's position only where they see the channel, by the snapshot's own rule, never backward, in one write that counts toward their writes, and tells their sessions alone.
 - [x] A voice key bound over a page key takes its press, so the page acts on no key the member gave a voice action.
 
@@ -164,7 +164,7 @@ Before the first release an audit checked every item here against the code (2026
 - [x] A forward carries nothing of where it came from, to the den or in the seal: its sender's Dens sends the text and uploads each file again as the member's own, stripped again, and sealed anew under a key of its own where the place is sealed, with no author, channel, den, reply or link.
 - [x] A sealed place's mark goes inside the seal, so the den isn't told a message was forwarded: the den refuses one outside the seal there, and a client takes none the den set on a sealed message. What's sealed isn't padded, so a file's sealed size and the text's, and when they came, can still match a message the den holds.
 - [x] The place's limits hold before anything goes: a place the sender's Dens doesn't hold as a text channel or a sealed place, whose files would go up unsealed, a sealed one with no key to send under, as a DM that holds, a file over its den's size, sealed where the place is, or past the member's space or the den's, sends nothing, and an upload made before a later failure is dropped.
-- [x] A forward is its sender's to delete, not to edit, tick or share, at the den and in the sender's Dens, and carries no grant, so in a group it opens as its sender's. Its sender takes a file off it, and puts none on it or in another's place. An older Dens of the sender's can still edit a sealed one, which drops the mark.
+- [x] A forward is its sender's to delete, not to edit, tick or share, at the den and in the sender's Dens. Its sender takes a file off it, and puts none on it or in another's place. An older Dens of the sender's can still edit a sealed one, which drops the mark.
 
 ## Sync
 
@@ -174,7 +174,7 @@ Before the first release an audit checked every item here against the code (2026
 - [x] Deleted messages and files leave every client's cache: at once while it's connected, and from the changes since its version when it comes back. The den's change log holds IDs and channels only, for 30 days.
 - [x] The den sends a member only changes in channels they can see now, and a client drops a channel's cache when it can no longer see it, and a den's when the member leaves, is removed or banned, or the device is signed out.
 - [x] A restored den starts a new sync epoch, and a client never keeps a cache across epochs or from below the floor.
-- [x] What a client keeps for good, the kinds of its channels and the latest change it checked of each group, is kept in the cache again at once as the cache drops, since the den chooses when that is, by a new epoch or by saying its changes are gone, and a client that stopped before the state's next change would otherwise start with neither. They outlast a kept state that doesn't check at a start too, which the den can have kept, as with a group it drops while its changes are fetched: the rest goes, and they go back in alone.
+- [x] What a client keeps for good, the kinds of its channels, is kept in the cache again at once as the cache drops, since the den chooses when that is, by a new epoch or by saying its changes are gone, and a client that stopped before the state's next change would otherwise start without them. They outlast a kept state that doesn't check at a start too, which the den can have had a hand in: the rest goes, and they go back in alone.
 - [x] A den never gives an ID out twice, even after a restore, which moves its counters on past every ID it gave out, so a link names one message for good.
 - [x] Compressed frames are held to the same limits as plain ones, as they inflate, and the cache keeps no file over a quarter of its size.
 
@@ -211,7 +211,7 @@ Before the first release an audit checked every item here against the code (2026
 
 ### Spoilers
 
-- [x] In a DM or a group a file's mark goes inside the seal, beside its name, so the den never learns which are spoilers: the den refuses one outside the seal there, and a client one the den set on a sealed file.
+- [x] In a DM a file's mark goes inside the seal, beside its name, so the den never learns which are spoilers: the den refuses one outside the seal there, and a client one the den set on a sealed file.
 - [x] In a channel the den keeps the mark on the file, which an edit can't take off, and a file swapped into a spoiler's place is one too.
 - [x] A spoiler shows covered, whatever its kind, naming nothing of the file, its name among it: a photo or a video as its preview blurred, nothing of a video playing before it's shown, and any other file as a card. The viewer leaves it out while it's covered, and a link in a spoiler draws no event's card.
 - [x] A covered text spoiler covers what's in it, links, mentions and chips too, whose own colors would show through, and holds it inert, so a link in it takes no focus and shows no address on hover, and an event's chip asks for nothing until it's shown.
@@ -227,7 +227,8 @@ Before the first release an audit checked every item here against the code (2026
 
 ### Sealed channels
 
-- [x] A channel's ID keeps its kind for good: a client remembers the kind of every channel it held or opened, deleted since or not and across its cache, and takes one that comes as another, relabeled or deleted and made again, in an event or a snapshot, as the den breaking the protocol. What's sent to an ID that was a DM, a group or notes is sealed, or fails, and a message that comes there in the clear shows as one that doesn't open, keeping nothing the den wrote in it. A device that never held a channel has nothing to hold it to.
+- [x] A sealed place is a DM or a member's notes, which the den can't read; a place several members read is a channel, which the den reads.
+- [x] A channel's ID keeps its kind for good: a client remembers the kind of every channel it held or opened, deleted since or not and across its cache, and takes one that comes as another, relabeled or deleted and made again, in an event or a snapshot, as the den breaking the protocol. What's sent to an ID that was a DM or notes is sealed, or fails, and a message that comes there in the clear shows as one that doesn't open, keeping nothing the den wrote in it; one the client kept as a group DM's, which an older den listed, gets nothing, and everything naming it is dropped unread. A device that never held a channel has nothing to hold it to.
 
 ### Identities
 
@@ -241,21 +242,6 @@ Before the first release an audit checked every item here against the code (2026
 - [x] The den takes a key only where it names the identities published now and its maker's signature checks, keeps one live key a DM, and gives each member their own copy alone.
 - [x] Starting over takes the den password.
 - [x] Nothing about identities, codes, the record or keys is logged but IDs: never a key's bytes, an identity's hash, a code's digits or the seal.
-
-### Group DMs
-
-- [x] Each change to a group is a statement its maker's identity signs, bound to the den and the group, naming its number, the hash of the change before and the members after. Each member's client checks it against the members it had, by the group's rules, and its signer against the identity it kept, so the den can't add anyone or skip a change; a den's own change takes one member out and nobody in. Members the den shows different changes stay apart until a signed change from one reaches another, which marks the group broken there; the den's own removals, signed by nobody, can differ between members until then.
-- [x] A client keeps the latest change it checked of each group for good, across its cache and the group's going, and takes an answer from before it as the den breaking the protocol, and a group listed again from a start before it, or one whose state it lost, only once its changes from that start reach that change, the same, so the den can't show a member removed as in the group again, nor have a key sealed to them; a check from the group's start takes the group's place only once it reaches that change. A device that never held the group, or whose cache was lost or doesn't parse, has nothing to hold it to.
-- [x] A group holds 3 to 10 members: any member adds, the first in the order they joined removes, anyone leaves. The den takes a change only from its maker, signed with their published identity, against the latest.
-- [x] A client knows a group's members from its checked changes alone: someone the den lists without a signed add gets no key and shows nowhere. A change that doesn't check marks the group broken, and the client makes no key for it and sends nothing there.
-- [x] A group's key is sealed and signed as a DM's is, and a client sends under one only where it names the group's members as its changes make them, with the identities kept now. The den gives a key's copies only to the members it names, so a member added holds the keys from their joining on, and one removed none made after.
-- [x] A group's message, and each member's set of reactions, is signed inside the seal by its author's identity, and its first revision opens only as its author's.
-- [x] A later revision opens only from its author or a member they named, whose names the author's identity signs inside the seal, bound to the den, the group, the author and the message, checked against an identity kept for the author; the den's list of editors decides nothing, Let others edit reads the signed names, and a reply's quote opens by the same check. One another member signed with no names, as an older Dens seals every edit, opens on its author's devices alone, which sign it only by Keep, and only the sealed revision their page showed, whatever number the den gives another; the page holds Keep a moment from each time it shows a waiting message or a change to one, past a second click, and says where one changed since it first showed. The den can still hold back the revision by which an author took an editor off, and that member edits on.
-- [x] A group shows the name of its latest checked change that carries one, and to a member added since, the name a key they hold carries, signed by the identity that key names for its maker, so the den can't show a name no member gave. A key's maker can carry another name than the group's, which renames it for members added since with no line saying so, and the den can show such a member no name.
-- [x] A group's name is sealed under one of its keys, bound to the den, the group and the key, and padded to one length, so the den reads neither it nor its length.
-- [x] A member is in at most 100 groups, each of at most 1,000 changes, and making a group, each change and each key counts toward their writes.
-- [x] A Dens speaking version 1 of the protocol gets nothing of groups.
-- [x] Nothing about a group is logged but IDs, a change's number and its kind.
 
 ### Notes to self
 

@@ -24,7 +24,7 @@ func IsStaff(role string) bool { return role == denproto.RoleModerator || role =
 func textAD(id int64) []byte { return []byte("den_messages.text:" + strconv.FormatInt(id, 10)) }
 
 // hasMessages reports whether a channel holds messages: text channels,
-// DMs and group DMs do; voice channels don't.
+// DMs and notes do; voice channels don't.
 func hasMessages(c denproto.Channel) bool {
 	return c.Kind == denproto.KindText || isPrivate(c)
 }
@@ -56,10 +56,8 @@ func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64
 }
 
 // snapshotAt is snapshot for a client that speaks a version of the
-// protocol, which gets nothing of group DMs before 2, nor of notes
-// before 3.
+// protocol, which gets nothing of notes before 3.
 func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version int, seq uint64, mc *membersCursor) (denproto.Ready, error) {
-	groups := version >= denproto.GroupsVersion
 	r := denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
 	// The version comes first: a change made while the rest is read has a
@@ -114,13 +112,6 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 		return r, err
 	}
 	r.Channels = append(r.Channels, dms...)
-	if groups {
-		gs, err := groupDMs(ctx, d.db, member)
-		if err != nil {
-			return r, err
-		}
-		r.Channels = append(r.Channels, gs...)
-	}
 	if version >= denproto.NotesVersion {
 		notes, err := d.notes(ctx, d.db, member)
 		if err != nil {
@@ -185,7 +176,7 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 	if r.DMKeys, err = memberKeys(ctx, d.db, member); err != nil {
 		return r, err
 	}
-	if r.SignedKeys, err = memberSignedKeys(ctx, d.db, member, groups); err != nil {
+	if r.SignedKeys, err = memberSignedKeys(ctx, d.db, member); err != nil {
 		return r, err
 	}
 	r.DeviceRequests = d.memberRequests(member)
@@ -200,25 +191,21 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 }
 
 // newestSeen selects each channel and DM a member sees, as id, and its
-// newest message, as newest, at a version of the protocol: with groups,
-// each group DM they're in, of the messages since they joined, and with
-// notes, their notes. ?1 says they're staff, ?2 is the member, and ?3 and
-// ?4 say their Dens speaks groups and notes. Each newest is a lookup of
-// the (channel_id, id) index, where max(id) GROUP BY channel_id would read
-// every message in the den, for each of the hundreds of snapshots a den
-// restart sends at once.
+// newest message, as newest, at a version of the protocol: with notes,
+// their notes. ?1 says they're staff, ?2 is the member, and ?3 says their
+// Dens speaks notes. Each newest is a lookup of the (channel_id, id)
+// index, where max(id) GROUP BY channel_id would read every message in the
+// den, for each of the hundreds of snapshots a den restart sends at once.
 const newestSeen = `
-	SELECT c.id AS id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id
-		AND m.id > coalesce((SELECT g.since FROM den_group_members g WHERE g.channel_id = c.id AND g.member_id = ?2), 0)) AS newest
+	SELECT c.id AS id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id) AS newest
 	FROM den_channels c
 	WHERE (c.kind = 'text' AND (c.staff_only = 0 OR ?1)) OR (c.kind = 'dm' AND (c.dm_low = ?2 OR c.dm_high = ?2))
-		OR (?3 AND c.kind = 'group_dm' AND c.id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?2))
-		OR (?4 AND c.kind = 'notes' AND c.notes_of = ?2)`
+		OR (?3 AND c.kind = 'notes' AND c.notes_of = ?2)`
 
 // lastMessages returns the newest message in each channel and DM a member
 // sees that has any, by channel, as newestSeen finds them.
 func (d *Den) lastMessages(ctx context.Context, member int64, staff bool, version int) (map[string]string, error) {
-	rows, err := d.db.QueryContext(ctx, newestSeen, staff, member, version >= denproto.GroupsVersion, version >= denproto.NotesVersion)
+	rows, err := d.db.QueryContext(ctx, newestSeen, staff, member, version >= denproto.NotesVersion)
 	if err != nil {
 		return nil, err
 	}
@@ -283,14 +270,14 @@ func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 		g := denproto.FormatID(group.Int64)
 		c.GroupID = &g
 	}
-	// Who last set a DM's or a group's time, and when.
+	// Who last set a DM's time, and when.
 	if expiresBy.Valid && expiresSet.Valid {
 		c.ExpiresSet = &denproto.ExpirySet{By: denproto.FormatID(expiresBy.Int64), At: expiresSet.Int64}
 	}
 	return c, err
 }
 
-// channels lists the channels a member can see, without DMs or group DMs.
+// channels lists the channels a member can see, without DMs.
 func (d *Den) channels(ctx context.Context, q querier, staff bool) ([]denproto.Channel, error) {
 	return d.queryChannels(ctx, q, `SELECT `+channelColumns+` FROM den_channels
 		WHERE kind IN ('text', 'voice') AND (staff_only = 0 OR ?) ORDER BY coalesce(group_id, 0), position, id`, staff)
@@ -319,14 +306,11 @@ func (d *Den) queryChannels(ctx context.Context, q querier, query string, args .
 	return out, rows.Err()
 }
 
-// channel reads a channel, a group DM's with its members.
+// channel reads a channel.
 func (d *Den) channel(ctx context.Context, q querier, id int64) (denproto.Channel, error) {
 	c, err := scanChannel(q.QueryRowContext(ctx, `SELECT `+channelColumns+` FROM den_channels WHERE id = ?`, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, errChannelNotFound
-	}
-	if err == nil && c.Kind == denproto.KindGroupDM {
-		err = fillGroup(ctx, q, &c)
 	}
 	return c, err
 }
@@ -348,8 +332,8 @@ func (d *Den) visibleChannel(ctx context.Context, s *Session, id string) (denpro
 }
 
 // visible reports whether a member can see a channel: a DM only its two
-// members, a group DM only its members, notes only their member,
-// a staff-only channel only staff, and any other channel anyone.
+// members, notes only their member, a staff-only channel only staff, and
+// any other channel anyone.
 func visible(c denproto.Channel, member int64, staff bool) bool {
 	switch {
 	case isPrivate(c):
@@ -361,16 +345,13 @@ func visible(c denproto.Channel, member int64, staff bool) bool {
 }
 
 // sees reports whether a session sees a channel: one its member can see,
-// and a group DM or notes only in a version of the
-// protocol with them.
+// and notes only in a version of the protocol with them.
 func sees(c denproto.Channel, s *Session) bool {
 	return visible(c, s.MemberID, IsStaff(s.Role)) && s.Version >= kindVersion(c.Kind)
 }
 
 func audienceOf(c denproto.Channel) Audience {
 	switch {
-	case c.Kind == denproto.KindGroupDM:
-		return audienceOfGroup(c)
 	case c.Kind == denproto.KindNotes:
 		// Their member alone; notes naming nobody, which the den never
 		// makes, reach nobody rather than falling through to everyone.
@@ -1270,11 +1251,6 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	if !hasMessages(c) {
 		return denproto.History{Messages: []denproto.Message{}}, nil
 	}
-	// A group's member reads from their joining.
-	since, err := groupSince(ctx, d.db, c, cid, s.MemberID)
-	if err != nil {
-		return denproto.History{}, err
-	}
 	n := q.Limit
 	if n == 0 {
 		n = denproto.DefaultHistory
@@ -1286,7 +1262,7 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	// keeps the messages nearest the anchor that fit.
 	older := func(below int64, limit, budget int) ([]denproto.Message, bool, error) {
 		ms, err := d.queryMessages(ctx, s.MemberID, `SELECT `+messageColumns+` FROM den_messages
-			WHERE channel_id = ? AND id < ? AND id > ? ORDER BY id DESC LIMIT ?`, cid, below, since, limit+1)
+			WHERE channel_id = ? AND id < ? ORDER BY id DESC LIMIT ?`, cid, below, limit+1)
 		if err != nil {
 			return nil, false, err
 		}
@@ -1300,7 +1276,7 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	}
 	newer := func(from int64, limit, budget int) ([]denproto.Message, bool, error) {
 		ms, err := d.queryMessages(ctx, s.MemberID, `SELECT `+messageColumns+` FROM den_messages
-			WHERE channel_id = ? AND id >= ? AND id > ? ORDER BY id LIMIT ?`, cid, from, since, limit+1)
+			WHERE channel_id = ? AND id >= ? ORDER BY id LIMIT ?`, cid, from, limit+1)
 		if err != nil {
 			return nil, false, err
 		}
@@ -1313,7 +1289,7 @@ func (d *Den) History(ctx context.Context, s *Session, channelID string, q Histo
 	}
 	exists := func(where string, id int64) (bool, error) {
 		var found bool
-		err := d.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM den_messages WHERE channel_id = ? AND id > ? AND `+where+`)`, cid, since, id).Scan(&found)
+		err := d.db.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM den_messages WHERE channel_id = ? AND `+where+`)`, cid, id).Scan(&found)
 		return found, err
 	}
 	var h denproto.History
@@ -1359,13 +1335,8 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	if err := denproto.Size("nonce", req.Nonce, denproto.NonceBytes); err != nil {
 		return denproto.Message{}, err
 	}
-	// A DM's and a group's are sealed by their members' Dens, and a
-	// group's member replies to what they can read, from their joining.
+	// A DM's is sealed by its members' Dens.
 	dm := isPrivate(c)
-	since, err := groupSince(ctx, d.db, c, cid, s.MemberID)
-	if err != nil {
-		return denproto.Message{}, err
-	}
 	most := denproto.MaxAttachments
 	if dm {
 		most = denproto.MaxDMFiles
@@ -1402,7 +1373,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		if err != nil {
 			return denproto.Message{}, invalid("reply_to: no such message")
 		}
-		replied, err := d.scanMessages(ctx, `SELECT `+messageColumns+` FROM den_messages WHERE id = ? AND channel_id = ? AND id > ?`, r, cid, since)
+		replied, err := d.scanMessages(ctx, `SELECT `+messageColumns+` FROM den_messages WHERE id = ? AND channel_id = ?`, r, cid)
 		if err != nil {
 			return denproto.Message{}, err
 		}
@@ -1447,7 +1418,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 				return err
 			}
 			keyID = &k
-			// A DM's or a group's message goes by the time it has as it's
+			// A DM's message goes by the time it has as it's
 			// sent, read here so a member setting one meanwhile can't slip
 			// in between.
 			var after int64
@@ -1505,8 +1476,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 			return err
 		}
 		if dm {
-			// A new message brings a closed DM back for both members, and a
-			// group for all of them.
+			// A new message brings a closed DM back for both members.
 			reopened, err = reopen(ctx, tx, cid, 0)
 		}
 		return err
@@ -1629,16 +1599,6 @@ func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Chan
 			return []int64{other}, nil
 		}
 		return nil, nil
-	}
-	if c.Kind == denproto.KindGroupDM {
-		// Every message counts for each other member, as in a DM.
-		var out []int64
-		for _, m := range c.Members {
-			if id, err := denproto.ParseID(m); err == nil && id != author {
-				out = append(out, id)
-			}
-		}
-		return out, nil
 	}
 	names := denproto.Mentions(text)
 	if len(names) == 0 {
@@ -1998,8 +1958,8 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 }
 
 // reader is a member a message counted for in their unread count, in its
-// channel: a DM's other member, a group's others, or one a channel's
-// message mentions, as its rows in den_mentions say.
+// channel: a DM's other member, or one a channel's message mentions, as
+// its rows in den_mentions say.
 type reader struct{ member, channel int64 }
 
 // readersOf lists the members the messages with the given IDs counted
@@ -2047,27 +2007,20 @@ func passDeleted(ctx context.Context, tx *sql.Tx, readers []reader, deleted map[
 
 // passGone moves a member's read position in a channel past the messages
 // just deleted there, ids, as far as they were all that lay between it and
-// the next message left. A group's member reads from their joining,
-// so the messages before it don't hold it back.
+// the next message left.
 func passGone(ctx context.Context, tx *sql.Tx, member, channel int64, ids []int64) error {
 	var pos int64
 	err := tx.QueryRowContext(ctx, `SELECT message_id FROM den_read_states WHERE member_id = ? AND channel_id = ?`, member, channel).Scan(&pos)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return err
 	}
-	var since int64
-	err = tx.QueryRowContext(ctx, `SELECT since FROM den_group_members WHERE channel_id = ? AND member_id = ?`, channel, member).Scan(&since)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
-	}
-	from := max(pos, since)
 	var next sql.NullInt64
-	if err := tx.QueryRowContext(ctx, `SELECT min(id) FROM den_messages WHERE channel_id = ? AND id > ?`, channel, from).Scan(&next); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT min(id) FROM den_messages WHERE channel_id = ? AND id > ?`, channel, pos).Scan(&next); err != nil {
 		return err
 	}
 	to := pos
 	for _, id := range ids {
-		if id > from && (!next.Valid || id < next.Int64) {
+		if id > pos && (!next.Valid || id < next.Int64) {
 			to = max(to, id)
 		}
 	}
@@ -2128,7 +2081,7 @@ func (d *Den) MarkAllRead(ctx context.Context, s *Session) error {
 		ON CONFLICT (member_id, channel_id) DO UPDATE SET message_id = excluded.message_id
 		WHERE excluded.message_id > den_read_states.message_id
 		RETURNING channel_id`,
-		IsStaff(s.Role), s.MemberID, s.Version >= denproto.GroupsVersion, s.Version >= denproto.NotesVersion)
+		IsStaff(s.Role), s.MemberID, s.Version >= denproto.NotesVersion)
 	if err != nil {
 		return err
 	}
@@ -2171,7 +2124,6 @@ func (d *Den) publishReadState(ctx context.Context, member, channel int64) error
 		coalesce((SELECT kind FROM den_channels WHERE id = ?2), '')`, member, channel, pos.Int64).Scan(&st.MentionCount, &kind); err != nil {
 		return err
 	}
-	// A group's and the member's notes' reach only the
-	// sockets that see them.
+	// One in the member's notes reaches only the sockets that see them.
 	return d.Hub.Publish(denproto.EventReadStateUpdated, st, OnlyMember(member).needs(kindVersion(kind)))
 }

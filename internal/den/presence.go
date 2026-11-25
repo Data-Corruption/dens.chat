@@ -96,9 +96,9 @@ func (d *Den) focus(ctx context.Context, sub *Sub, channels []string) {
 			continue
 		}
 		c, err := d.channel(ctx, d.db, cid)
-		// A socket speaking a version before group DMs shows none,
-		// nor one before notes those; and nobody else is typing in
-		// a member's notes, nor does anyone see them typing there.
+		// A socket speaking a version before notes shows none; and
+		// nobody else is typing in a member's notes, nor does anyone
+		// see them typing there.
 		if err == nil && visible(c, sub.member, staff) && sub.version >= kindVersion(c.Kind) && c.Kind != denproto.KindNotes {
 			shown[id] = true
 		}

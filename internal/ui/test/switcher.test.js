@@ -26,7 +26,6 @@ const home = {
         { id: '95', kind: 'notes', members: ['1'] },
     ],
     read_states: [read('10', '5'), read('12', '9', '3'), read('90', '7')],
-    group_dms: {},
 };
 const other = {
     me: { id: '7' },
@@ -35,23 +34,22 @@ const other = {
     channels: [
         { id: '20', kind: 'text', name: 'general', position: 0 },
         { id: '21', kind: 'text', name: 'Galleries', position: 1 },
-        { id: '30', kind: 'group_dm', members: ['7', '8', '9'] },
+        { id: '30', kind: 'dm', members: ['7', '8'] },
     ],
     read_states: [read('20', '4', '1', 1), read('21', '2'), read('30', '6', '5')],
-    group_dms: { 30: { name: '', members: ['7', '8', '9'] } },
 };
 const views = new Map([[HOME, home], [OTHER, other]]);
 const names = (list) => list.map((e) => `${e.den === HOME ? 'home' : 'other'}:${e.kind}:${e.name}`);
 
 test('before anything is typed it lists the unread alone, the open den\'s first', () => {
-    assert.deepEqual(names(switcherList(dens, views, HOME, '')), ['home:text:game night', 'other:text:general', 'other:group:Gabe, Zed']);
-    assert.deepEqual(names(switcherList(dens, views, OTHER, '  ')), ['other:text:general', 'other:group:Gabe, Zed', 'home:text:game night']);
+    assert.deepEqual(names(switcherList(dens, views, HOME, '')), ['home:text:game night', 'other:text:general', 'other:dm:Gabe']);
+    assert.deepEqual(names(switcherList(dens, views, OTHER, '  ')), ['other:text:general', 'other:dm:Gabe', 'home:text:game night']);
 });
 
 test('a few letters match the start of a name or of a word in it, across dens, the unread first', () => {
     // A den with something unread is among the unread.
     assert.deepEqual(names(switcherList(dens, views, HOME, 'ga')), [
-        'home:text:game night', 'other:den:Game Club', 'other:group:Gabe, Zed', 'other:text:Galleries',
+        'home:text:game night', 'other:den:Game Club', 'other:dm:Gabe', 'other:text:Galleries',
     ]);
     assert.deepEqual(names(switcherList(dens, views, HOME, 'gen')), ['other:text:general', 'home:text:general']);
     assert.deepEqual(names(switcherList(dens, views, HOME, 'NIGHT')), ['home:text:game night']);

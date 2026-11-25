@@ -247,18 +247,10 @@ func (h *handler) refuseRequest(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// Group DMs.
-
-func (h *handler) reserveGroup(w http.ResponseWriter, r *http.Request) {
-	if !h.limitWrite(w, r) {
-		return
-	}
-	g, err := h.d.ReserveGroup(r.Context(), session(r))
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	denproto.WriteJSON(w, http.StatusCreated, g)
+// groupsGone answers an older Dens that asks for a group DM: the den has
+// none any more.
+func groupsGone(w http.ResponseWriter, _ *http.Request) {
+	denproto.WriteError(w, denproto.Errorf(http.StatusGone, denproto.CodeNotFound, "group DMs are gone from this den"))
 }
 
 // openNotes answers with the member's notes, made the first time.
@@ -267,39 +259,6 @@ func (h *handler) openNotes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	c, err := h.d.OpenNotes(r.Context(), session(r))
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	denproto.WriteJSON(w, http.StatusOK, c)
-}
-
-func (h *handler) groupChanges(w http.ResponseWriter, r *http.Request) {
-	after := 0
-	if v := r.URL.Query().Get("after"); v != "" {
-		var err error
-		if after, err = strconv.Atoi(v); err != nil {
-			denproto.WriteError(w, denproto.Errorf(http.StatusBadRequest, denproto.CodeInvalidField, "after: a number"))
-			return
-		}
-	}
-	list, err := h.d.GroupChanges(r.Context(), session(r), chi.URLParam(r, "id"), after)
-	if err != nil {
-		h.fail(w, r, err)
-		return
-	}
-	denproto.WriteJSON(w, http.StatusOK, list)
-}
-
-func (h *handler) changeGroup(w http.ResponseWriter, r *http.Request) {
-	if !h.limitWrite(w, r) {
-		return
-	}
-	var req denproto.GroupChangeRequest
-	if !h.decode(w, r, &req) {
-		return
-	}
-	c, err := h.d.ChangeGroup(r.Context(), session(r), chi.URLParam(r, "id"), req)
 	if err != nil {
 		h.fail(w, r, err)
 		return

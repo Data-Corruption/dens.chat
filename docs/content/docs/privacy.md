@@ -17,14 +17,13 @@ protect you from.
 | Calls and screen shares | Only everyone in the call: they're end-to-end encrypted. The den carries them but can't hear or see them; it sees who's in a call, and when. On a den running an older Dens, calls aren't, and the den could listen in or watch: the lock beside the call says which |
 | Who plays which sound on the soundboard | Everyone in the call hears it and sees who played it, and the den knows who played which, as it knows who's in a call |
 | DMs, and the photos and files in them | Only the two of you: they're end-to-end encrypted |
-| Group DMs, their photos and files, and their names | Only their members, each from when they joined: they're end-to-end encrypted. The den sees who's in each group, and who changed it, but can't add anyone |
 | Your notes to self, and the files in them | Only your own devices: they're end-to-end encrypted. The den sees that you write in them, and when |
-| Reactions | In a channel, its members and the den. In a DM or a group DM, only its members, like its messages; the den sees only that someone's reactions changed, and when |
+| Reactions | In a channel, its members and the den. In a DM, only the two of you, like its messages; the den sees only that someone's reactions changed, and when |
 | Who voted for what in a poll | The den, always: it counts each vote. Members, as the poll's author chose: never, once it ends, or always |
 | Who's interested in an event | The den, until the event ends, to tell them as it starts. Members see only how many |
 | The badges you earn at events | Everyone who can see the event, on your profile, and the den. It keeps when you earned each, not who else was in the call |
-| Who DMs whom, who's in which group DMs, when, and how much | The den |
-| How long a DM's or a group DM's messages last before they disappear | Its members, and the den, which deletes them when their time comes |
+| Who DMs whom, when, and how much | The den |
+| How long a DM's messages last before they disappear | The two of you, and the den, which deletes them when their time comes |
 | Your IP address | Each den you're connected to, while you're connected. Other members never see it, even in calls |
 | When you were last seen | The den, and its moderators and owner by the day: the last day any of your devices used it. Members see only who's online now |
 | What staff do: removals and bans, roles, channels, someone's message deleted, the den's settings | Moderators, the owner and the den, for 90 days, in the den's audit log. Never what a message said, and nothing of DMs |
@@ -66,10 +65,10 @@ number of days, which its members see in its settings. Leaving a den deletes
 your notes there. A backup keeps what it held until the backup itself is
 deleted.
 
-In a DM or a group DM, anyone in it can have its messages disappear an hour, a
-day, a week or four weeks after they're sent. Each is then deleted as if its
-sender had deleted it: from the den, and from every member's devices, even
-those offline at the time. The den knows the time, since it does the deleting,
+In a DM, either of you can have its messages disappear an hour, a day, a week
+or four weeks after they're sent. Each is then deleted as if its sender had
+deleted it: from the den, and from both of your devices, even those offline at
+the time. The den knows the time, since it does the deleting,
 and still sees that the messages were sent, and when.
 
 ## What Dens doesn't protect you from

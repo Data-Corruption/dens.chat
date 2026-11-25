@@ -35,7 +35,7 @@ holds.
 | `internal/maintenance` | Lifecycle state (`state.json`), locks, start authorization |
 | `internal/layout` | The deployment forms, and every filesystem path and its permission policy; nothing else resolves paths |
 | `internal/instance` | Per-instance config written at install: ports, desktop user, release URL, and v1.0's den role |
-| `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, and every rule both apply alike, the cryptography of DMs, identities, sealed calls and group DMs among them |
+| `internal/denproto` | The client-to-den protocol both sides share: wire types, signed layouts, and every rule both apply alike, the cryptography of DMs, identities and sealed calls among them |
 | `internal/den` | The den this install hosts: members, devices, the event hub and change log, messages, files, calls' rules, events and badges, and what members seal, kept unread |
 | `internal/denclient` | The dens this install has joined: each kept connected, its state, history and files served to the page through the cache, and everything sealed, sealed and opened here |
 | `internal/relay` | Relay: links between the member's own installs on one network, which carry voice keys and a computer's sound |
