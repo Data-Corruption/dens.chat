@@ -82,6 +82,27 @@ func (h *handler) devices(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusOK, list)
 }
 
+func (h *handler) renameDevice(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	keyID, err := denproto.ParseBytes(chi.URLParam(r, "key"), denproto.IDSize)
+	if err != nil {
+		h.fail(w, r, denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such device"))
+		return
+	}
+	var req denproto.DeviceLabelRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	dev, err := h.d.RenameDevice(r.Context(), session(r), keyID, req)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, dev)
+}
+
 func (h *handler) revokeDevice(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

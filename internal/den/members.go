@@ -23,9 +23,11 @@ func forbidden(format string, args ...any) error {
 
 func bioAD(id int64) []byte { return []byte("den_members.bio:" + strconv.FormatInt(id, 10)) }
 
+func statusAD(id int64) []byte { return []byte("den_members.status:" + strconv.FormatInt(id, 10)) }
+
 // memberColumns selects a member from den_members, with the size of the
 // pictures on their profile, and whether each is animated, their
-// identity's hash and their name's style.
+// identity's hash, their name's style and their status.
 const memberColumns = `id, username, display_name, role, joined_at, left_at,
 	avatar_id, (SELECT width FROM den_files WHERE den_files.id = den_members.avatar_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.avatar_id),
@@ -33,21 +35,33 @@ const memberColumns = `id, username, display_name, role, joined_at, left_at,
 	banner_id, (SELECT width FROM den_files WHERE den_files.id = den_members.banner_id),
 	(SELECT height FROM den_files WHERE den_files.id = den_members.banner_id),
 	(SELECT animated FROM den_files WHERE den_files.id = den_members.banner_id),
-	identity, name_style`
+	identity, name_style, status, status_until`
 
-func scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) {
+// scanMember reads a member as memberColumns selects them, with a status
+// whose end has passed left out.
+func (d *Den) scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) {
 	var m denproto.Member
 	var id int64
-	var left, avatar, aw, ah, banner, bw, bh sql.NullInt64
+	var left, avatar, aw, ah, banner, bw, bh, until sql.NullInt64
 	var aa, ba sql.NullBool
-	var identity []byte
+	var identity, status []byte
 	var style sql.NullString
 	err := scan(append([]any{&id, &m.Username, &m.DisplayName, &m.Role, &m.JoinedAt, &left, &avatar, &aw, &ah, &aa, &banner, &bw, &bh, &ba,
-		&identity, &style}, extra...)...)
-	if err == nil && style.Valid {
+		&identity, &style, &status, &until}, extra...)...)
+	if err != nil {
+		return m, err
+	}
+	if style.Valid {
 		if err = json.Unmarshal([]byte(style.String), &m.NameStyle); err != nil {
 			err = fmt.Errorf("read a member's name style: %w", err)
 		}
+	}
+	if len(status) > 0 && (!until.Valid || until.Int64 > d.now().UnixMilli()) {
+		open, serr := d.v.Open(status, statusAD(id))
+		if serr != nil {
+			return m, errors.Join(err, fmt.Errorf("open a member's status: %w", serr))
+		}
+		m.Status, m.StatusUntil = string(open), until.Int64
 	}
 	m.ID = denproto.FormatID(id)
 	if len(identity) > 0 {
@@ -67,7 +81,7 @@ func scanMember(scan func(...any) error, extra ...any) (denproto.Member, error) 
 
 // Member returns a member by ID, without their bio.
 func (d *Den) Member(ctx context.Context, id int64) (denproto.Member, error) {
-	m, err := scanMember(d.db.QueryRowContext(ctx, `SELECT `+memberColumns+` FROM den_members WHERE id = ?`, id).Scan)
+	m, err := d.scanMember(d.db.QueryRowContext(ctx, `SELECT `+memberColumns+` FROM den_members WHERE id = ?`, id).Scan)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, errMemberNotFound
 	}
@@ -96,7 +110,7 @@ func (d *Den) profileOf(ctx context.Context, id string) (denproto.Member, error)
 		return denproto.Member{}, errMemberNotFound
 	}
 	var sealed []byte
-	m, err := scanMember(d.db.QueryRowContext(ctx, `SELECT `+memberColumns+`, bio FROM den_members WHERE id = ?`, mid).Scan, &sealed)
+	m, err := d.scanMember(d.db.QueryRowContext(ctx, `SELECT `+memberColumns+`, bio FROM den_members WHERE id = ?`, mid).Scan, &sealed)
 	if errors.Is(err, sql.ErrNoRows) {
 		return m, errMemberNotFound
 	}
@@ -214,6 +228,58 @@ func (d *Den) UpdateProfile(ctx context.Context, s *Session, req denproto.Profil
 	return m, d.Hub.Publish(denproto.EventMemberUpdated, public, Everyone)
 }
 
+// SetStatus sets the member's own status until its end, or with none
+// until they clear it, or clears it, and tells everyone.
+func (d *Den) SetStatus(ctx context.Context, s *Session, req denproto.StatusRequest) (denproto.Member, error) {
+	now := d.now()
+	var status []byte
+	var until any // NULL for none
+	switch {
+	case req.Status == "" && req.Until != 0:
+		return denproto.Member{}, invalid("until: a status that's cleared has no end")
+	case req.Status != "":
+		line, err := denproto.CleanStatus(req.Status)
+		if err != nil {
+			return denproto.Member{}, invalid("status: %v", err)
+		}
+		if req.Until != 0 {
+			if req.Until <= now.UnixMilli() {
+				return denproto.Member{}, invalid("until: a status ends after now")
+			}
+			until = req.Until
+		}
+		if status, err = d.v.Seal([]byte(line), statusAD(s.MemberID)); err != nil {
+			return denproto.Member{}, err
+		}
+	}
+	err := d.tx(ctx, func(tx *sql.Tx) error {
+		// NULL itself: a nil slice can be stored as an empty blob.
+		var sealed any
+		if status != nil {
+			sealed = status
+		}
+		if _, err := tx.ExecContext(ctx, `UPDATE den_members SET status = ?, status_until = ? WHERE id = ?`, sealed, until, s.MemberID); err != nil {
+			return err
+		}
+		return logMember(ctx, tx, s.MemberID, now)
+	})
+	if err != nil {
+		return denproto.Member{}, err
+	}
+	m, err := d.Member(ctx, s.MemberID)
+	if err != nil {
+		return m, err
+	}
+	return m, d.Hub.Publish(denproto.EventMemberUpdated, m, Everyone)
+}
+
+// pruneStatuses removes the statuses whose end has passed. It tells
+// nobody: every record that carried one carried its end.
+func (d *Den) pruneStatuses(ctx context.Context) error {
+	_, err := d.db.ExecContext(ctx, `UPDATE den_members SET status = NULL, status_until = NULL WHERE status_until <= ?`, d.now().UnixMilli())
+	return err
+}
+
 // SetRole makes a member a moderator or a member again. Only the owner
 // may, and the owner's own role changes only when the den changes hands.
 func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.RoleRequest) (denproto.Member, error) {
@@ -282,7 +348,7 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 func (d *Den) depart(ctx context.Context, tx *sql.Tx, id, now int64) (departure, error) {
 	var out departure
 	for _, stmt := range []string{
-		`UPDATE den_members SET left_at = ?1, role = 'member', identity = NULL WHERE id = ?2`,
+		`UPDATE den_members SET left_at = ?1, role = 'member', identity = NULL, status = NULL, status_until = NULL WHERE id = ?2`,
 		`DELETE FROM den_identities WHERE member_id = ?2`,
 		`DELETE FROM den_records WHERE member_id = ?2`,
 		`DELETE FROM den_devices WHERE member_id = ?2`, // and, through them, sessions
@@ -563,7 +629,7 @@ func (d *Den) Bans(ctx context.Context, s *Session) (denproto.BanList, error) {
 	for rows.Next() {
 		var b denproto.Ban
 		var by sql.NullInt64
-		if b.Member, err = scanMember(rows.Scan, &b.BannedAt, &by); err != nil {
+		if b.Member, err = d.scanMember(rows.Scan, &b.BannedAt, &by); err != nil {
 			return list, err
 		}
 		if by.Valid {

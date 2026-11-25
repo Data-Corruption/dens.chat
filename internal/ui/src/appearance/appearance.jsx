@@ -16,7 +16,7 @@ import {
 } from './background.js';
 import { setCallTimer, useCallTimer } from '../voice/calltimer.js';
 import {
-    Actions, Button, Choices, ColorField, CopyButton, ErrorText, Field, PLAIN, Slider, StatusText, Steps, SubmitButton, TextInput, Ticks, Tip, Toggle, useAction,
+    Actions, Button, Choices, ColorField, CopyButton, ErrorText, Field, PLAIN, PreviewFrame, Slider, StatusText, Steps, SubmitButton, TextInput, Ticks, Tip, Toggle, useAction,
     useBackground,
 } from '../ui/components.jsx';
 import { DENSITY_COMPACT, DENSITY_DEFAULT, setDensity, useDensity } from './density.js';
@@ -188,7 +188,7 @@ export function AppearancePage({ guard }) {
             ))}
         </MiddlePane>
     );
-    const preview = <PreviewColumn theme={shown} builtIn={builtIn} />;
+    const preview = <PreviewColumn theme={shown} builtIn={builtIn} framed={layout !== 'phone'} />;
     if (layout === 'three') {
         return (
             <div class="flex min-h-0 flex-1" data-appearance="three">
@@ -661,11 +661,13 @@ function ChatBackground() {
 }
 
 // PreviewColumn holds the den in the theme shown, as wide as the column
-// lets it be, its layout by its own width.
-function PreviewColumn({ theme, builtIn }) {
+// lets it be, its layout by its own width. Beside the editor it's framed
+// as a preview; on the phone layout its tab already says so.
+function PreviewColumn({ theme, builtIn, framed }) {
+    const den = theme && <DenPreview theme={theme} builtIn={builtIn} bare={framed} />;
     return (
         <div data-panel data-preview-column class="@container min-h-0 min-w-0 flex-1 overflow-y-auto bg-base-200 p-4">
-            <div class="mx-auto max-w-5xl">{theme && <DenPreview theme={theme} builtIn={builtIn} />}</div>
+            <div class="mx-auto max-w-5xl">{den && framed ? <PreviewFrame>{den}</PreviewFrame> : den}</div>
         </div>
     );
 }

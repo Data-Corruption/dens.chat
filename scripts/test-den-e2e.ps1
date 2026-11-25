@@ -25,7 +25,7 @@ the call in progress. The member sends a phone photo with GPS data, which
 must reach the owner without it, a phone video, which must arrive stripped
 with its preview and play from any byte, and an iPhone HEIC, which must
 arrive as a JPEG. The owner's retention period must reach the member and
-outlive the restart. At their limit, the member swaps a file for a smaller
+outlive the restart, as the owner's status must. At their limit, the member swaps a file for a smaller
 one and deletes another. A HEIC sent smaller must arrive as a copy at
 1920x2560, and another switched to full size, full size, and a video over a
 lowered limit as an AV1 copy that fits, with its preview. The member's cache
@@ -686,6 +686,9 @@ den.test:$HttpsPort {
     Wait-Retention $member $denID 30
     Write-Host "The member heard the den's retention period."
 
+    # The owner's status, read again after the restart.
+    Invoke-Api $owner PUT "/api/dens/$denID/me/status" @{ status = "out walking" } | Out-Null
+
     Step "restart the den's service"
     Invoke-Native -FilePath $Dens -Arguments @("service", "restart") | Out-Null
     $since = Wait-Connected $member $since
@@ -694,6 +697,9 @@ den.test:$HttpsPort {
     Send-Message $owner $denID $channel "after the restart"
     $history = Get-History $member $denID $channel
     if ($history -ne "hello from the member|hello back, @bob|after the restart") { Fail "the member's history after the restart is: $history" }
+    $status = ((Invoke-Api $member GET "/api/dens/$denID/state").members | Where-Object { $_.username -eq "alice" }).status
+    if ($status -cne "out walking") { Fail "after the restart the member reads the owner's status as: $status" }
+    Write-Host "The owner's status reads the same through Caddy after the restart."
     Wait-Retention $member $denID 30
     Invoke-Api $owner POST "/api/dens/$denID/settings" @{ retention = 0 } | Out-Null
     Wait-Retention $member $denID 0

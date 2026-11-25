@@ -77,6 +77,10 @@ your other devices are signed out.
 If a sign-in you didn't start asks for approval, refuse it, and change your den
 password: whoever asked has it.
 
+A device shows by its name, in a den's **Devices**, in an approval and in
+Relay. To name a device, open **Settings** → **Devices** on it and choose
+**Rename** beside **This device**: the name reaches all your dens at once.
+
 ## Direct messages
 
 DMs are end-to-end encrypted: only you and the other person can read them, not
@@ -193,6 +197,9 @@ soundboard work as you'd expect. What's different:
   on someone else's theme, so it stays readable there. To see names plain,
   or in their colors alone, set **Settings** → **Appearance** → **Messages**
   → **Name styles**.
+- **Status**, in **Edit profile**: a line under your name, which everyone
+  in the den sees until you empty it or the time you picked under **Clear
+  after** passes.
 - **Appearance** takes the whole window: the themes at the left, the one you
   chose in the middle, with **Messages** and **Calls** beside it, and a small
   den at the right that shows each change as you make it. Choosing a theme

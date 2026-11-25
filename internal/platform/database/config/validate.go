@@ -7,6 +7,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/types"
 	"github.com/Data-Corruption/dens.chat/pkg/xlog"
 )
@@ -29,6 +30,11 @@ func validate(cfg *types.Configuration) error {
 	if id := cfg.RelayID; id != "" {
 		if b, err := hex.DecodeString(id); err != nil || len(b) != 16 {
 			return fmt.Errorf("the Relay ID is %q, not 32 hex digits", id)
+		}
+	}
+	if name := cfg.DeviceName; name != "" {
+		if clean, err := denproto.CleanName(name, denproto.MaxNameRunes); err != nil || clean != name {
+			return fmt.Errorf("the device's name %q isn't a name of 1 to %d characters, cleaned", name, denproto.MaxNameRunes)
 		}
 	}
 	return validateSounds(cfg.Notifications.Sounds)

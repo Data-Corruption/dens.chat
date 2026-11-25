@@ -696,7 +696,7 @@ func TestPhoneLabels(t *testing.T) {
 func TestAPhoneJoinsByItsNameAndModel(t *testing.T) {
 	h, owner, _, denID, _ := chatDen(t)
 	phone := h.client(t, noOwnDen)
-	phone.Label = denclient.PhoneLabel("Fern's phone", "Pixel 9 Pro")
+	phone.SetLabel(denclient.PhoneLabel("Fern's phone", "Pixel 9 Pro"))
 	joinWithCodes(t, owner, phone, denID, "fern")
 	list, err := phone.Devices(context.Background(), denID)
 	if err != nil || len(list.Devices) != 1 || list.Devices[0].Label != "Fern's phone (Pixel 9 Pro)" || !list.Devices[0].Current {

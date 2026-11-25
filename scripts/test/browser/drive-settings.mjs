@@ -22,7 +22,8 @@
 // button one of the page's kinds by the layout audit; Manage holding what
 // staff manage, the owner's Events among it, bob found in its Members by
 // two letters and his row's menu opened; and her own sections of the
-// den, from the cog on its page, as its group above the app's. Then
+// den, from the cog on its page, as its group above the app's, this
+// device renamed from its row in Devices and read there. Then
 // the code a block in the generator's shape; a stranger's blocks read for
 // what the page reads alone; and a v1.13.0 code read as it was.
 // Appearance as a page that takes the window, Back going to the
@@ -394,6 +395,8 @@ async function themesAt(width, layout) {
     await h.snap(`themes-${name}-made`, { scroll: TABPANEL, max: 3 });
     await seePreview(b);
     const made = await previewWears(b);
+    const framed = await b.eval(`${PREVIEW}.parentElement.matches('[data-preview-frame]') && ${PREVIEW}.previousElementSibling?.textContent === 'Preview'`);
+    c.report(framed === (layout !== 'phone'), at(`the preview is framed as one beside the editor, and unframed as the phone's tab: ${framed}`));
     const kept = await wears(b);
     c.report(holds(made, { theme: 'light', page: '#f4efe6', text: '#2a2118', primary: '#c2410c', button: '#c2410c', radius: '0px', borderWidth: '2px' })
         && made.error === dracula.error && made.secondary === dracula.secondary,
@@ -601,6 +604,25 @@ try {
             c.report(wrapped.length === 0, `${name}: every hint reads in a line${wrapped.length ? `; wrapped: ${wrapped.join('; ')}` : ''}`);
             frame(name, await b.eval(FRAME));
         }
+        step('this device renamed from its row in Devices');
+        await openSettings(b, 'Devices');
+        const button = (text) => `[...${PANEL}.querySelectorAll('button')].find((x) => x.textContent.trim() === ${JSON.stringify(text)})`;
+        await waitFor(() => b.eval(`!!${button('Rename')}`), 'Rename');
+        await b.eval(`${button('Rename')}.click(), true`);
+        await waitFor(() => b.eval(`!!${PANEL}.querySelector('[data-device-name]')`), 'the name field');
+        await b.eval(`(() => {
+            const box = ${PANEL}.querySelector('[data-device-name]');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(box, "Alice's desk");
+            box.dispatchEvent(new Event('input', { bubbles: true }));
+            return true;
+        })()`);
+        await sleep(200);
+        await b.eval(`${PANEL}.querySelector('[data-device-name]').form.querySelector('button[type=submit]').click(), true`);
+        const renamed = await waitFor(() => b.eval(`[...${PANEL}.querySelectorAll('li .font-medium')].some((x) => x.textContent === "Alice's desk")`),
+            'the new name in Devices').then(() => true, () => false);
+        const label = JSON.parse(lib('api', 'alice', 'GET', '/api/settings')).deviceLabel;
+        c.report(renamed && /^Alice's desk \(.+\)$/.test(label), `Rename names this device, which Devices reads as the den tells it, what it is kept: ${label}`);
+        await h.snap('settings-den-devices-renamed', { scroll: PANEL, max: 2 });
         await closeSettings(b);
         await b.go(`http://localhost:${ALICE.port}/`);
 

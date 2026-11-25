@@ -115,8 +115,9 @@ var retiredKeys = []string{"den_dm_keys", "den_dm_key_members"}
 // lines, which start empty, each by and about members alone; a database
 // v1.15.0 left, with a line, keeps it. Group name signatures adds the
 // signature beside a group's name, Forwards a message's forwarded mark,
-// which none has, and No group DMs deletes the group DM and drops its
-// tables, the signatures' column among them, keeping every other row.
+// which none has, No group DMs deletes the group DM and drops its
+// tables, the signatures' column among them, keeping every other row, and
+// Statuses adds each member's status and its end, which none has.
 func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 	bi := build.BuildInfo{DefaultLogLevel: "warn"}
 	for _, released := range releasedSchema {
@@ -382,6 +383,18 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				}
 				if _, err := db.Exec(`UPDATE den_messages SET forwarded = 2 WHERE id = 1`); err == nil {
 					t.Errorf("%s takes a forward's mark other than 0 or 1", what)
+				}
+				// No member has a status until they set one, and an end
+				// comes with a status.
+				var statuses int
+				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE status IS NOT NULL OR status_until IS NOT NULL`).Scan(&statuses); err != nil || statuses != 0 {
+					t.Errorf("%s holds %d statuses after the migration, %v", what, statuses, err)
+				}
+				if _, err := db.Exec(`UPDATE den_members SET status = x'00', status_until = 9 WHERE id = 1`); err != nil {
+					t.Errorf("%s takes no status after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`UPDATE den_members SET status = NULL WHERE id = 1`); err == nil {
+					t.Errorf("%s takes a status's end with no status", what)
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {

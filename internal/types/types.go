@@ -72,6 +72,10 @@ type Configuration struct {
 	// RelaySound is Share this computer's sound: the member's other
 	// devices may listen to it, off until the member turns it on.
 	RelaySound bool `json:"relaySound,omitempty"`
+	// DeviceName is this install's name, which the member gave it, and
+	// which its label on every den and in Relay starts with; "" until they
+	// do, for the computer's name or the phone's.
+	DeviceName string `json:"deviceName,omitempty"`
 }
 
 // Notifications are the member's choices for what notifies them:

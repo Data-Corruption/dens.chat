@@ -11,6 +11,7 @@ import (
 func (rt *router) mountMembers(r chi.Router) {
 	r.Get("/api/dens/{den}/members/{member}", rt.handleProfile)
 	r.Patch("/api/dens/{den}/me", rt.handleUpdateProfile)
+	r.Put("/api/dens/{den}/me/status", rt.handleSetStatus)
 	r.Put("/api/dens/{den}/me/badges/{event}", rt.handleSetBadgeHidden)
 	r.Put("/api/dens/{den}/members/{member}/role", rt.handleSetRole)
 	r.Post("/api/dens/{den}/members/{member}/remove", rt.handleRemoveMember)
@@ -47,6 +48,19 @@ func (rt *router) handleUpdateProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	m, err := rt.a.Dens.UpdateProfile(r.Context(), chi.URLParam(r, "den"), req)
+	if err != nil {
+		rt.denError(w, r, err)
+		return
+	}
+	writeJSON(w, m)
+}
+
+func (rt *router) handleSetStatus(w http.ResponseWriter, r *http.Request) {
+	var req denproto.StatusRequest
+	if !decodeJSON(w, r, &req) {
+		return
+	}
+	m, err := rt.a.Dens.SetStatus(r.Context(), chi.URLParam(r, "den"), req)
 	if err != nil {
 		rt.denError(w, r, err)
 		return

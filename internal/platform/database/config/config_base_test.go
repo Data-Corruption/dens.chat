@@ -358,3 +358,63 @@ func TestReadsTheReleasedConfiguration(t *testing.T) {
 		t.Error("a malformed Relay ID was kept")
 	}
 }
+
+// v1_15_0Row is the configuration as v1.15.0 kept it, marshaled from its
+// Configuration: v1.14.0's, with a channel at All messages and Do not
+// disturb on until a time.
+const v1_15_0Row = `{"logLevel":"info","hosting":true,"denExported":"2026-11-01T10:00:00Z","updateNotifications":true,` +
+	`"backgroundUpdateChecks":true,"lastUpdateCheck":"2026-11-09T08:00:00Z","updateCheckSource":"background",` +
+	`"latestUpdateVersion":"v1.11.0","lastShutdownVersion":"v1.11.0","cacheLimit":1073741824,` +
+	`"voiceKeys":{"ptt":{"code":"KeyV","label":"V","ctrl":false,"alt":false,"shift":false,"meta":false}},"desktopKeys":true,` +
+	`"startAtSignIn":false,"notifications":{"dms":true,"mentions":true,"eventsOff":true,` +
+	`"muted":{"abc":{"den":true},"def":{"channels":["11","12"],"all":["13"]}},"dnd":true,"dndUntil":"2026-11-22T18:00:00Z",` +
+	`"sounds":{"message":{"off":true}}},"backgroundDim":40,"backgroundHover":55,` +
+	`"relayID":"00112233445566778899aabbccddeeff","relayKeys":true,"relaySound":true}`
+
+// The configuration v1.15.0 kept reads as it was, with no name for the
+// device, and takes one cleaned as a display name is, refusing one that
+// isn't.
+func TestReadsV1_15_0Configuration(t *testing.T) {
+	tmp := t.TempDir()
+	logger, err := xlog.New(filepath.Join(tmp, "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.New(filepath.Join(tmp, "db"), logger, build.BuildInfo{DefaultLogLevel: "warn"}, database.ApplyPendingMigrations)
+	if err != nil {
+		logger.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		db.Close()
+		logger.Close()
+	})
+	if _, err := db.Exec(`UPDATE config SET value = ? WHERE key = ?`, v1_15_0Row, database.ConfigDataKey); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := View(db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := cfg.Notifications
+	if cfg.DeviceName != "" || !n.DoNotDisturb || !slices.Equal(n.Muted["def"].All, []string{"13"}) || !cfg.RelayKeys {
+		t.Errorf("v1.15.0's configuration read as %+v", cfg)
+	}
+	for _, bad := range []string{" Pearl", "Pe‮arl", "​", strings.Repeat("a", 33)} {
+		if _, err := Update(db, func(c *types.Configuration) error {
+			c.DeviceName = bad
+			return nil
+		}); err == nil {
+			t.Errorf("the device's name %q was taken", bad)
+		}
+	}
+	if cfg, err = Update(db, func(c *types.Configuration) error {
+		c.DeviceName = "Bob's desk"
+		return nil
+	}); err != nil || cfg.DeviceName != "Bob's desk" {
+		t.Fatalf("naming the device: %+v %v", cfg, err)
+	}
+	if cfg, err = View(db); err != nil || cfg.DeviceName != "Bob's desk" || !cfg.Notifications.DoNotDisturb {
+		t.Errorf("the name kept as %q, %v", cfg.DeviceName, err)
+	}
+}

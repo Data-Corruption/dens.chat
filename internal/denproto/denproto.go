@@ -337,6 +337,11 @@ type Den struct {
 	// Forward says the den keeps a channel's message's forwarded mark; a
 	// den older than it drops the mark.
 	Forward bool `json:"forward,omitempty"`
+	// DeviceNames says a device may change its own label, at PATCH
+	// /api/me/devices/{key_id}, and Status that members set a status, at
+	// PUT /api/me/status; a den older than them has neither route.
+	DeviceNames bool `json:"device_names,omitempty"`
+	Status      bool `json:"status,omitempty"`
 }
 
 // Roles.
@@ -352,7 +357,9 @@ const (
 // Identity is the hash of the identity their Dens published, as
 // base64url, which a change to it reaches everyone with; none before it
 // published one, as from an older Dens. NameStyle is how their name
-// shows, left out when they set none.
+// shows, left out when they set none. Status is a line they set, shown
+// until StatusUntil, in unix milliseconds, or with none until they clear
+// it; a den leaves out one whose end has passed.
 type Member struct {
 	ID          string    `json:"id"`
 	Username    string    `json:"username"`
@@ -365,6 +372,8 @@ type Member struct {
 	Banner      Image     `json:"banner,omitzero"`
 	Identity    string    `json:"identity,omitempty"`
 	NameStyle   NameStyle `json:"name_style,omitzero"`
+	Status      string    `json:"status,omitempty"`
+	StatusUntil int64     `json:"status_until,omitempty"`
 }
 
 // MemberProfile is a member as GET /api/members/{id} answers, for their

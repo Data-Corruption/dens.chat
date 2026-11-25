@@ -157,6 +157,13 @@ try {
         return sw && sw.checked && rows.length === 1 && rows[0].includes('Linked') ? rows[0] : '';
     })()`), "the laptop in bob's Relay settings, linked", 15000).catch(() => '');
     report(!!listed, `bob's Relay settings have Keybind relay on, and list the laptop as linked: ${JSON.stringify(listed)}`);
+    // Named on itself, the laptop is listed by its name.
+    lib('api', 'laptop', 'POST', '/api/settings', JSON.stringify({ deviceName: "Bob's laptop" }));
+    const named = await waitFor(() => B.b.eval(`(() => {
+        const rows = [...${SETTINGS}.querySelectorAll('[data-device]')].map((li) => li.textContent);
+        return rows.length === 1 && rows[0].startsWith("Bob's laptop (") ? rows[0] : '';
+    })()`), "the laptop's new name in bob's Relay settings", 15000).catch(() => '');
+    report(!!named, `named on itself, the laptop is listed by its name in bob's Relay settings: ${JSON.stringify(named)}`);
     await B.b.shot(`${HOME}/shot-relay-${which}-settings.png`).catch(() => {});
     await B.b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
 

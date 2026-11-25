@@ -78,6 +78,9 @@ type denState struct {
 	// it keeps a channel's message's forwarded mark. The cache keeps none
 	// of them: they matter only while connected.
 	relay, auditLog, membersSeen, forward bool
+	// deviceNames says a device may change its label there, and statuses
+	// that members set a status.
+	deviceNames, statuses bool
 	// notes says the snapshot came on a socket speaking the protocol's
 	// version with notes to self.
 	notes bool
@@ -144,6 +147,11 @@ type View struct {
 	// Forward says the den keeps a channel's message's forwarded mark,
 	// which Forward offers its channels only then.
 	Forward bool `json:"forward"`
+	// DeviceNames says a device may change its label, which Devices offers
+	// only then, and Statuses that members set a status, which their own
+	// card offers only then.
+	DeviceNames bool `json:"device_names"`
+	Statuses    bool `json:"statuses"`
 	// HasNotes says the den has notes to self for this Dens, which the page
 	// offers only then.
 	HasNotes bool `json:"has_notes"`
@@ -223,7 +231,8 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
 		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
 		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Events: sortedEvents(s.events),
-		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen, Forward: s.forward}
+		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen, Forward: s.forward,
+		DeviceNames: s.deviceNames, Statuses: s.statuses}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -484,6 +493,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.spoilers, next.moveMembers, next.away, next.nameStyles = r.Den.Spoilers, r.Den.MoveMembers, r.Den.Away, r.Den.NameStyles
 	next.readAll = r.Den.ReadAll
 	next.relay, next.auditLog, next.membersSeen, next.forward = r.Den.Relay, r.Den.AuditLog, r.Den.MembersSeen, r.Den.Forward
+	next.deviceNames, next.statuses = r.Den.DeviceNames, r.Den.Status
 	sounds, ok := cleanSounds(r.Sounds)
 	if !ok {
 		return errMalformed

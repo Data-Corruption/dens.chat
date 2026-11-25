@@ -330,6 +330,10 @@ func (rt *router) handleSettings(w http.ResponseWriter, r *http.Request) {
 		// What this install relays to the member's others, and
 		// Keybind relay's switch and Share this computer's sound.
 		"relay": map[string]any{"can": rt.a.Relay.Can(), "keys": cfg.RelayKeys, "sound": cfg.RelaySound},
+		// The name the member gave this install, "" for none, and the
+		// label it goes by with it.
+		"deviceName":  cfg.DeviceName,
+		"deviceLabel": rt.a.Dens.Label(),
 	}
 	// The Android app downloads the updates it finds, for Android's
 	// installer to install.
@@ -649,6 +653,9 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		// Share this computer's sound.
 		RelayKeys  *bool `json:"relayKeys"`
 		RelaySound *bool `json:"relaySound"`
+		// DeviceName names this install, or "" gives it the computer's
+		// name again.
+		DeviceName *string `json:"deviceName"`
 	}
 	if !decodeJSON(w, r, &body) {
 		return
@@ -705,6 +712,14 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	if body.RelaySound != nil && !slices.Contains(rt.a.Relay.Can(), "sound") {
 		http.Error(w, "this install shares no sound", http.StatusBadRequest)
 		return
+	}
+	if n := body.DeviceName; n != nil && *n != "" {
+		name, err := denproto.CleanName(*n, denproto.MaxNameRunes)
+		if err != nil {
+			http.Error(w, "a device's name is 1 to 32 characters", http.StatusBadRequest)
+			return
+		}
+		*body.DeviceName = name
 	}
 	if body.CacheLimit != nil {
 		if *body.CacheLimit < cache.MinLimit || *body.CacheLimit > cache.MaxLimit || rt.a.Cache == nil {
@@ -769,6 +784,12 @@ func (rt *router) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 	if body.RelaySound != nil {
 		rt.a.Relay.SetSound(cfg.RelaySound)
+	}
+	if body.DeviceName != nil {
+		if err := rt.a.SetDeviceName(*body.DeviceName); err != nil {
+			xhttp.Error(r.Context(), w, err)
+			return
+		}
 	}
 	writeJSON(w, map[string]bool{"ok": true})
 }

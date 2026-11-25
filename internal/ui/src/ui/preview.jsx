@@ -160,8 +160,8 @@ const channelRow = (c) => (
     channel open, its header, the chat and the composer; and under them a
     button of each kind, a notice of each status, a toggle and a slider.
     Nothing in it acts. Narrower than a list beside a chat takes, the list
-    stands above the chat. */
-export function DenPreview({ theme, builtIn = '' }) {
+    stands above the chat. bare leaves its border to a frame around it. */
+export function DenPreview({ theme, builtIn = '', bare = false }) {
     const vars = useMemo(() => variables(theme), [theme]);
     const colors = useMemo(() => ({
         backs: ['--color-base-100', '--color-base-200', '--color-base-300'].map((v) => hexOf(vars[v])),
@@ -171,7 +171,7 @@ export function DenPreview({ theme, builtIn = '' }) {
     const [at] = useState(() => Date.now());
     return (
         <div data-theme={builtIn || (theme.dark ? 'dark' : 'light')} style={builtIn ? {} : vars} inert role="group" aria-label="Preview" data-theme-preview
-            class="flex select-none flex-col overflow-hidden rounded-box border border-base-300 text-sm">
+            class={`flex select-none flex-col overflow-hidden text-sm ${bare ? '' : 'rounded-box border border-base-300'}`}>
             <ShownColors.Provider value={colors}>
                 <div class="grid @xl:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
                     <div class="flex min-h-0 flex-col bg-base-200 @max-xl:border-b @max-xl:border-base-300" data-preview-list>

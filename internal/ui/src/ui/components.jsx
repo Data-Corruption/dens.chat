@@ -431,6 +431,18 @@ export function Field({ label, hint, children }) {
     );
 }
 
+// PreviewFrame marks what it holds as a preview of what others will see:
+// a border that stands out from the page's own, its top a bar that says
+// so.
+export function PreviewFrame({ children }) {
+    return (
+        <div class="overflow-hidden rounded-box border-2 border-base-content/30" data-preview-frame>
+            <p class="cursor-default select-none bg-base-content/30 px-3 py-0.5 text-center text-xs font-semibold" aria-hidden="true">Preview</p>
+            {children}
+        </div>
+    );
+}
+
 // Toggle is a setting that's on or off, one size wherever it shows:
 // its switch, its label beside it, a line on what it does if it
 // needs one, and a tip for the rest.

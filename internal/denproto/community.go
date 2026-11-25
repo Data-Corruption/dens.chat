@@ -9,9 +9,13 @@ import (
 
 // Limits for profiles, and the channels a connection views.
 const (
-	MaxBioRunes = 300
-	MaxBioBytes = 4 * MaxBioRunes
-	MaxFocus    = 10 // channels one connection can be viewing at once
+	MaxBioRunes    = 300
+	MaxBioBytes    = 4 * MaxBioRunes
+	MaxStatusRunes = 80
+	MaxFocus       = 10 // channels one connection can be viewing at once
+	// maxStatusBytes bounds a status before it's cleaned, so cleaning
+	// never reads much.
+	maxStatusBytes = 1 << 10
 )
 
 // Events for members, presence and typing. Presence and typing are
@@ -76,6 +80,14 @@ type ProfileRequest struct {
 	NameStyle   *NameStyle `json:"name_style,omitempty"`
 }
 
+// StatusRequest sets the member's own status until Until, in unix
+// milliseconds, or with no Until until they clear it; an empty Status
+// clears it.
+type StatusRequest struct {
+	Status string `json:"status"`
+	Until  int64  `json:"until,omitempty"`
+}
+
 type RoleRequest struct {
 	Role string `json:"role"`
 }
@@ -113,6 +125,15 @@ func CheckBio(text string) error {
 		return fmt.Errorf("a bio is at most %d characters", MaxBioRunes)
 	}
 	return nil
+}
+
+// CleanStatus cleans a status as a display name is cleaned, keeping each
+// of Unicode's emoji whole, at up to MaxStatusRunes characters.
+func CleanStatus(s string) (string, error) {
+	if len(s) > maxStatusBytes {
+		return "", fmt.Errorf("a status is at most %d characters", MaxStatusRunes)
+	}
+	return cleanText(s, MaxStatusRunes, true, "status")
 }
 
 // Rank orders roles by what they may do to each other: a member may remove

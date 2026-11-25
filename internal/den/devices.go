@@ -318,6 +318,46 @@ func (d *Den) Devices(ctx context.Context, s *Session) (denproto.DeviceList, err
 	return list, err
 }
 
+// RenameDevice changes the label of the device making the request, which
+// alone may change it, and tells the member's sessions.
+func (d *Den) RenameDevice(ctx context.Context, s *Session, keyID []byte, req denproto.DeviceLabelRequest) (denproto.Device, error) {
+	if !denproto.Equal(keyID, s.KeyID) {
+		var n int
+		if err := d.db.QueryRowContext(ctx, `SELECT count(*) FROM den_devices WHERE key_id = ? AND member_id = ?`, keyID, s.MemberID).Scan(&n); err != nil {
+			return denproto.Device{}, err
+		}
+		if n == 0 {
+			return denproto.Device{}, denproto.Errorf(http.StatusNotFound, denproto.CodeNotFound, "no such device")
+		}
+		return denproto.Device{}, forbidden("a device changes its own label alone")
+	}
+	label, err := denproto.CleanName(req.Label, denproto.MaxLabelRunes)
+	if err != nil {
+		return denproto.Device{}, invalid("label: %v", err)
+	}
+	dev := denproto.Device{KeyID: keyID, Current: true}
+	var was string
+	err = d.tx(ctx, func(tx *sql.Tx) error {
+		if err := tx.QueryRowContext(ctx, `SELECT label, created_at, last_seen_at FROM den_devices WHERE key_id = ?`, keyID).
+			Scan(&was, &dev.CreatedAt, &dev.LastSeenAt); err != nil {
+			return err
+		}
+		if was == label {
+			return nil
+		}
+		_, err := tx.ExecContext(ctx, `UPDATE den_devices SET label = ? WHERE key_id = ?`, label, keyID)
+		return err
+	})
+	if err != nil {
+		return denproto.Device{}, err
+	}
+	dev.Label = label
+	if was == label {
+		return dev, nil
+	}
+	return dev, d.Hub.Publish(denproto.EventDeviceUpdated, denproto.DeviceUpdated{KeyID: keyID, Label: label}, OnlyMember(s.MemberID))
+}
+
 // RevokeDevice removes one of the member's device keys, which ends its
 // sessions and closes their sockets at once. Revoking the session's own
 // device signs this device out.

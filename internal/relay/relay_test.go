@@ -256,6 +256,13 @@ func TestTwoInstallsLink(t *testing.T) {
 			len(d) == 1 && d[0].Name == "Laptop" && d[0].Linked
 	})
 
+	// Renamed, the laptop says so, and the desk lists it by its new name.
+	laptop.relay.SetName("Laptop (Linux)")
+	waitFor(t, "the desk listing the laptop by its new name", func() bool {
+		d := desk.relay.Devices()
+		return len(d) == 1 && d[0].Name == "Laptop (Linux)" && d[0].Linked
+	})
+
 	take(shortcuts.Press{Action: "ptt", Down: true})
 	waitFor(t, "push to talk held again", func() bool { return slices.Equal(desk.hub.held(device), []string{"ptt"}) })
 	stopped := time.Now()

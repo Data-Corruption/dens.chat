@@ -13,7 +13,8 @@
 # a different distro, trusts that authority, installs Dens and joins with an
 # invite from the owner. The two chat, a YouTube link losing its tracking,
 # the den's service restarts, and the member must reconnect with the whole
-# history. The two then call each other in a voice channel, a test binary
+# history, a message they forwarded marked so, the owner's status, and the
+# name they gave their install, which the den lists it by. The two then call each other in a voice channel, a test binary
 # with Pion standing in for each one's browser, and each must hear the
 # other: over UDP, and with the member's side over TCP alone. Both installs
 # must give the call's length a second apart at most. The member's
@@ -247,11 +248,11 @@ run() {
   since=$(guest "$CLIENT" wait-connected 0)
 
   echo ">> Chatting"
-  local channel history
+  local channel history reply
   channel=$(guest "$DEN" channel "$den_id" general)
   [[ "$(guest "$CLIENT" wait-channel "$den_id")" == "$channel" ]] || { echo "error: the member sees another channel" >&2; return 1; }
   guest "$CLIENT" send "$den_id" "$channel" "hello from the member" >/dev/null
-  guest "$DEN" send "$den_id" "$channel" "hello back, @bob" >/dev/null
+  reply=$(guest "$DEN" send "$den_id" "$channel" "hello back, @bob")
   history=$(guest "$DEN" history "$den_id" "$channel")
   [[ "$history" == $'hello from the member\nhello back, @bob' ]] || { echo "error: the owner's history is: $history" >&2; return 1; }
 
@@ -262,6 +263,16 @@ run() {
   guest "$CLIENT" wait-retention "$den_id" 30
   echo ">> The member heard the den's retention period"
 
+  # The owner sets a status, the member forwards her message, and names
+  # the install, which the den lists it by, each read again after the
+  # restart.
+  local forwarded label
+  guest "$DEN" set-status "$den_id" "out walking"
+  forwarded=$(guest "$CLIENT" forward "$den_id" "$channel" "$reply" "$channel")
+  guest "$CLIENT" device-name "Bob's laptop"
+  label=$(guest "$CLIENT" wait-device-label "$den_id" "Bob's laptop (")
+  echo ">> The member named their install, which the den lists as $label"
+
   echo ">> Restarting the den's service"
   "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
   since=$(guest "$CLIENT" wait-connected "$since")
@@ -269,9 +280,15 @@ run() {
   guest "$DEN" wait-connected 0 >/dev/null
   guest "$DEN" send "$den_id" "$channel" "after the restart" >/dev/null
   history=$(guest "$CLIENT" history "$den_id" "$channel")
-  [[ "$history" == $'hello from the member\nhello back, @bob\nafter the restart' ]] ||
+  [[ "$history" == $'hello from the member\nhello back, @bob\nhello back, @bob\nafter the restart' ]] ||
     { echo "error: the member's history after the restart is: $history" >&2; return 1; }
   echo ">> The member's history is complete after the restart"
+  [[ "$(guest "$CLIENT" forwarded "$den_id" "$channel" "$forwarded")" == true && "$(guest "$CLIENT" forwarded "$den_id" "$channel" "$reply")" == false ]] ||
+    { echo "error: after the restart the forward doesn't read as forwarded, or its original does" >&2; return 1; }
+  [[ "$(guest "$CLIENT" status-of "$den_id" alice)" == "out walking" ]] ||
+    { echo "error: after the restart the member reads the owner's status as: $(guest "$CLIENT" status-of "$den_id" alice)" >&2; return 1; }
+  [[ "$(guest "$CLIENT" wait-device-label "$den_id" "Bob's laptop (")" == "$label" ]] || return 1
+  echo ">> The forward, the owner's status and the install's name read the same through Caddy after the restart"
   guest "$CLIENT" wait-retention "$den_id" 30
   guest "$DEN" retention "$den_id" 0
   guest "$CLIENT" wait-retention "$den_id" 0

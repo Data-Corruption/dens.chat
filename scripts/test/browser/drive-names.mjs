@@ -12,6 +12,10 @@
 // plain, which a reload keeps; and alice clears her style. Then her
 // name in each font in turn, its box holding every Latin letter and digit
 // the font draws, by how far the browser measures each one's ink reaching.
+// Then alice sets a status in Edit profile, its end picked by hand,
+// beside a card framed as a preview; bob reads it under her name and on
+// her card; opened again, the editor reads its end and a save leaves it;
+// and one a few seconds long goes from his page at its end.
 //
 //   run.sh names chromium|firefox
 import { setTimeout as sleep } from 'node:timers/promises';
@@ -328,6 +332,58 @@ try {
     await waitFor(() => styleOf('alice') === undefined, "alice's style gone from bob's den state");
     const cleared = await waitFor(async () => { const l = await look(bob, LIST); return l.ends.length === 0 && !l.font.startsWith('Dens name') && l; }, "alice's name plain again on bob's page");
     c.report(cleared.color === (await look(bob, named('nav[aria-label=Members]', 'Bob'))).color, `cleared, her record carries no style and her name shows plain: ${q(cleared)}`);
+
+    step('alice sets a status in Edit profile, which bob reads until its end');
+    const END = `${PROFILE}.querySelector('[data-status-end]')`;
+    await editProfile();
+    await set(alice, '[data-status-text]', '🍕 at lunch');
+    await waitFor(() => alice.eval(`${END}?.value === 'today'`), 'Clear after, at Today once there are words');
+    // The end is picked as a member's hands pick it: with the mouse in
+    // Chromium, whose list opens as a picker of the page's own, and with
+    // the keys in Firefox, whose own list no page can reach into.
+    if (which === 'chromium') {
+        const middle = (of) => alice.eval(`JSON.stringify((() => { const r = ${of}.getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2]; })())`).then(JSON.parse);
+        await alice.eval(`${END}.scrollIntoView({ block: 'center' }), true`);
+        await sleep(300);
+        await alice.click(...await middle(END));
+        await waitFor(() => alice.eval(`${END}.options[1].getBoundingClientRect().height > 0`), "Clear after's list open");
+        await alice.click(...await middle(`${END}.options[1]`));
+    } else {
+        await alice.eval(`${END}.focus(), true`);
+        await alice.key('ArrowUp');
+        await alice.key('ArrowUp');
+    }
+    const picked = await waitFor(() => alice.eval(`${END}.value === '1h'`), 'Clear after at 1 hour', 3000).catch(() => false);
+    const framed = await alice.eval(`document.querySelector('[data-profile-preview] [data-preview-frame]')?.firstElementChild.textContent === 'Preview'
+        && document.querySelector('[data-profile-preview] [data-status]')?.textContent === '🍕 at lunch'`);
+    await shot(alice, 'status');
+    const asked = Date.now();
+    await save();
+    const statusOn = (on) => on.eval(`${named('nav[aria-label=Members]', 'Alice')}?.closest('li').querySelector('[data-status]')?.textContent || ''`);
+    const read = await waitFor(async () => ((await statusOn(bob)) === '🍕 at lunch' ? true : null), "alice's status in bob's member list").catch(() => false);
+    const until = state().members.find((m) => m.username === 'alice').status_until;
+    c.report(picked && read && Math.abs(until - (asked + 3600000)) < 5000, `Clear after takes the pick, and bob reads her status under her name, its end an hour on: ${until - asked} ms`);
+    c.report(framed, 'the card beside the fields is framed as a preview, and shows the status as it was typed');
+    // Opened again, Clear after reads the end the status has, and saving
+    // the profile leaves it there.
+    await editProfile();
+    const itsEnd = await waitFor(() => alice.eval(`${END}?.value === 'keep' && ${END}.selectedOptions[0].textContent`), 'Clear after at its end').catch(() => '');
+    await save();
+    await sleep(500);
+    const after = state().members.find((m) => m.username === 'alice').status_until;
+    c.report(!!itsEnd && after === until, `opened again, Clear after reads its end, ${q(itsEnd)}, which a save leaves as it was`);
+    await bob.eval(`${named('nav[aria-label=Members]', 'Alice')}.closest('button').click(), true`);
+    const onCard = await waitFor(() => bob.eval(`document.querySelector('[data-profile] [data-status]')?.textContent || ''`), "alice's status on her card").catch(() => '');
+    c.report(onCard === '🍕 at lunch', `and on her card: ${q(onCard)}`);
+    await shot(bob, 'status-card');
+    await bob.eval(CLOSE_CARD);
+    // One that ends a few seconds off goes from bob's page by its own
+    // clock, with nothing from the den.
+    const end = Date.now() + 4000;
+    lib('api', 'alice', 'PUT', `/api/dens/${den}/me/status`, q({ status: 'back in a moment', until: end }));
+    const shown = await waitFor(async () => ((await statusOn(bob)) === 'back in a moment' ? true : null), 'the short status on bob\'s page').catch(() => false);
+    const gone = await waitFor(async () => ((await statusOn(bob)) === '' ? Date.now() : null), 'the short status gone', 10000).catch(() => 0);
+    c.report(shown && gone >= end && gone - end < 2000, `a status a few seconds long shows on bob's page and goes at its end, ${gone - end} ms after it`);
 } catch (e) {
     c.fail(e);
     await shot(alice, 'failed-alice').catch(() => {});

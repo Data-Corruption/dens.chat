@@ -59,7 +59,7 @@ export function YourDen({ den, view, at, onClose, navigate }) {
     if (shown) {
         return <RecoveryCodes den={den} codes={shown.codes} seal={shown.seal} sealNew={shown.sealNew} onDone={() => setShown(null)} />;
     }
-    if (at === 'devices') return <Devices den={den} />;
+    if (at === 'devices') return <Devices den={den} view={view} />;
     if (at === 'password') {
         return <PasswordAndRecovery den={den} onCodes={(codes) => setShown({ codes, seal: '', sealNew: false })}
             onKey={(seal) => setShown({ codes: [], seal, sealNew: true })} />;
@@ -94,16 +94,32 @@ const NEW_FOR = 24 * 60 * 60 * 1000;
 
 // Devices lists this member's devices in the den, each by its name with
 // what it is under it, those just added marked, and signs any of them
-// out, after saying what that does.
-function Devices({ den }) {
+// out, after saying what that does. Where the den keeps device names,
+// this device's row renames it, which names the install everywhere.
+function Devices({ den, view }) {
     const [list, setList] = useState(null);
     const [confirm, setConfirm] = useState('');
+    const [renaming, setRenaming] = useState(null);
     const act = useAction();
+    const rename = useAction();
     const load = async () => setList(await api.get(`/api/dens/${den.den_id}/devices`));
     const slow = useLater(list === null && !act.error, 1000);
     useEffect(() => {
         act.run(load);
+        // A device's label reaches the list as the den tells this
+        // device's sessions of it, this one's own among them.
+        return onEvent((m) => {
+            if (m.t === 'den' && m.d.den === den.den_id && (m.d.events || []).some((e) => e.t.startsWith('device.'))) load().catch(() => {});
+        });
     }, [den.den_id]);
+
+    function saveName(e) {
+        e.preventDefault();
+        rename.run(async () => {
+            await api.post('/api/settings', { deviceName: renaming.trim() });
+            setRenaming(null);
+        });
+    }
 
     function signOut(d) {
         act.run(async () => {
@@ -132,8 +148,26 @@ function Devices({ den }) {
                                         {detail && <span class="block text-base-content/70">{detail}</span>}
                                         <span class="block text-xs text-base-content/60">Added {day(d.created_at)} · last seen {day(d.last_seen_at)}</span>
                                     </span>
+                                    {d.current && view?.device_names && renaming === null && (
+                                        <Button size="xs" onClick={() => {
+                                            rename.setError('');
+                                            setRenaming(name);
+                                        }}>Rename</Button>
+                                    )}
                                     {confirm !== d.key_id && <Button kind="danger" size="xs" onClick={() => setConfirm(d.key_id)}>Sign out</Button>}
                                 </div>
+                                {d.current && renaming !== null && (
+                                    <form class="flex flex-col gap-2 rounded-box bg-base-100 p-3 max-md:bg-base-200" onSubmit={saveName}>
+                                        <Field label="Name" hint="Your dens and your other devices show this device by it.">
+                                            <TextInput value={renaming} onInput={setRenaming} maxlength="32" data-device-name />
+                                        </Field>
+                                        <ErrorText message={rename.error} />
+                                        <Actions>
+                                            <SubmitButton busy={rename.busy}>Save</SubmitButton>
+                                            <Button kind="quiet" onClick={() => setRenaming(null)}>Cancel</Button>
+                                        </Actions>
+                                    </form>
+                                )}
                                 {confirm === d.key_id && (
                                     <div class="flex flex-col gap-2 rounded-box bg-base-100 p-3 max-md:bg-base-200">
                                         <p>

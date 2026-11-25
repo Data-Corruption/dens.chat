@@ -114,6 +114,11 @@ Before the first release an audit checked every item here against the code (2026
 - [x] The fonts are the binary's own, fetched from the page's origin under `font-src 'self'`, and each license is in the notices.
 - [x] A color that wouldn't read on the reader's theme is moved until it does, so a name can't hide in its background, and a reader turns styles off.
 
+### Statuses and device names
+
+- [x] A status is plain text, cleaned as names are with emoji whole, which a client checks again as it arrives and the page shows as text. The den keeps it sealed with the data key, bound to its member, sends none past its end, and never logs it.
+- [x] A device's label changes only from that device's own session, cleaned as names are, and reaches that member's sessions alone.
+
 ### Events and badges
 
 - [x] An event's name and place and a badge's title are plain text, cleaned as names are, and its description the markdown subset; a client checks each again as it arrives, with the event's times, banner and badge, and the page shows them as text. The den keeps them sealed with the data key, bound to the event.
