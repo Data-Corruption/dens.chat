@@ -7,11 +7,11 @@ import (
 	"time"
 )
 
-// Disappearing messages: a DM's or a group's message sent under a
-// time keeps when it goes, and the cache keeps that beside it. The cache
-// lets it go then, with the files on it and the replies' quotes of it,
-// whether the den can be reached or not, so a den offline shows none of
-// it, and keeps out a copy past its time that a page or an event brings.
+// Disappearing messages: a DM's message sent under a time keeps when it
+// goes, and the cache keeps that beside it. The cache lets it go then, with
+// the files on it and the replies' quotes of it, whether the den can be
+// reached or not, so a den offline shows none of it, and keeps out a copy
+// past its time that a page or an event brings.
 // The client hears which went, to take them off its pages and out of the
 // notifications; the den deletes them at the same time, by its own clock.
 

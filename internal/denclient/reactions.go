@@ -62,18 +62,7 @@ func (c *conn) openSetLocked(channel, message string, r denproto.SealedReactions
 	keyID, _ := denproto.ParseID(r.KeyID)
 	who, _ := denproto.ParseID(r.MemberID)
 	ad := denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who, KeyID: keyID, Revision: r.Revision}
-	var set denproto.ReactionSet
-	var err error
-	if c.den.channels[channel].Kind == denproto.KindGroupDM {
-		// Signed by its member, whose identity its key names.
-		stmt, serr := c.den.signed[r.KeyID].Statement(c.j.denID)
-		if serr != nil {
-			return PageReactionSet{}, false
-		}
-		set, err = denproto.OpenGroupReactions(key, ad, stmt.Named(who), r.Sealed)
-	} else {
-		set, err = denproto.OpenReactions(key, ad, r.Sealed)
-	}
+	set, err := denproto.OpenReactions(key, ad, r.Sealed)
 	if err != nil {
 		return PageReactionSet{}, false
 	}
@@ -371,17 +360,7 @@ func (c *conn) nextSet(ctx context.Context, channelID, messageID string, sets []
 	kid, _ := denproto.ParseID(keyID)
 	who, _ := denproto.ParseID(me)
 	ad := denproto.ReactionsAD{DenID: c.j.denID, Channel: ch, Message: mid, Member: who, KeyID: kid, Revision: revision + 1}
-	var sealed denproto.Bytes
-	if c.isGroup(channelID) {
-		// A group's set is signed by its member.
-		err = c.ownIdentity(func(ik *denproto.IdentityKeys) error {
-			var err error
-			sealed, err = denproto.SealGroupReactions(key, ad, ik, denproto.ReactionSet{Emoji: next})
-			return err
-		})
-	} else {
-		sealed, err = denproto.SealReactions(key, ad, denproto.ReactionSet{Emoji: next})
-	}
+	sealed, err := denproto.SealReactions(key, ad, denproto.ReactionSet{Emoji: next})
 	if err != nil {
 		return nil, inputError(err)
 	}

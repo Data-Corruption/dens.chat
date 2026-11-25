@@ -235,7 +235,7 @@ func (c *conn) changeDMFile(ctx context.Context, channelID, messageID, fileID st
 			return false, errEmpty
 		}
 		return true, nil
-	}, true, nil)
+	}, true)
 	return err
 }
 

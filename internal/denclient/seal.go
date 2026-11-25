@@ -43,8 +43,8 @@ func (c *conn) setSeal(ctx context.Context, seal []byte) error {
 	c.ownHash = nil
 	clear(c.copies)
 	clear(c.verdicts)
-	// The identity before signed the changes to groups this member made
-	// before.
+	// The identity before goes in the record, for an older Dens of the
+	// member's (see identityRecord).
 	now := c.ownHashLocked()
 	replaced := before != nil && !bytes.Equal(before, now)
 	if replaced {

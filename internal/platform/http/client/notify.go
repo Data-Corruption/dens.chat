@@ -21,8 +21,8 @@ func (rt *router) handleMute(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Channel string `json:"channel"`
 		Muted   bool   `json:"muted"`
-		// Level is all, mentions or nothing; a DM's and a group's bell
-		// stays a mute, since each of their messages notifies already.
+		// Level is all, mentions or nothing; a DM's bell stays a mute,
+		// since each of its messages notifies already.
 		Level notify.Level `json:"level"`
 	}
 	if !decodeJSON(w, r, &body) {

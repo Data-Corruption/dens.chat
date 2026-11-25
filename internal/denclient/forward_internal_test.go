@@ -20,7 +20,7 @@ func PayloadOf(m *Manager, denID, channelID, messageID string) (denproto.DMPaylo
 	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	p, _, locked := c.openPayloadLocked(msg.ChannelID, msg.AuthorID, msg.KeyID, msg.Nonce, msg.Revision, msg.Sealed)
+	p, locked := c.openPayloadLocked(msg.ChannelID, msg.AuthorID, msg.KeyID, msg.Nonce, msg.Revision, msg.Sealed)
 	if locked != "" {
 		return p, errors.New(locked)
 	}

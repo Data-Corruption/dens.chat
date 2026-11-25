@@ -8,23 +8,21 @@
 // the cache, applying reactions' and polls' events to the cache's copies;
 // makes the smaller copies of photos and videos, and animated pictures,
 // before they're sent; relays calls, and turns each call's length into its
-// start on this computer's clock; sets a DM's or a group's time to
-// disappear, and takes what the cache let go of at its time off the pages
-// and out of the notifications; approves new devices, with the sign-in
-// codes it makes for the page to draw (codes.go, with rsc.io/qr); and
-// tells notify what may notify the member (notices.go).
+// start on this computer's clock; sets a DM's time to disappear, and takes
+// what the cache let go of at its time off the pages and out of the
+// notifications; approves new devices, with the sign-in codes it makes for
+// the page to draw (codes.go, with rsc.io/qr); and tells notify what may
+// notify the member (notices.go).
 //
 // What's sealed is sealed and opened here: DMs, their files and spoilers,
 // and their reactions' sets; identities, this member's published and
 // others' kept on first use, with their changes, the codes compared and
 // the record written every hour; the DM keys sealed to identities; a
 // sealed call's keys, made as its members change and handed to the page
-// whole; group DMs' changes, members, keys for each membership and names,
-// and the messages and sets signed inside their seal; the member's notes,
-// under the key their seal makes; and the boxes between the member's
-// devices for Relay. It checks what a den sends, as a profile's badges
-// and a member's name style, and keeps the protocol version each den
-// shares.
+// whole; the member's notes, under the key their seal makes; and the
+// boxes between the member's devices for Relay. It checks what a den
+// sends, as a profile's badges and a member's name style, and keeps the
+// protocol version each den shares.
 package denclient
 
 import (
@@ -377,7 +375,6 @@ func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *c
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
 		done: make(chan struct{}), wake: make(chan struct{}, 1),
 		ids: ids, verdicts: map[string]string{}, copies: map[string]denproto.Bytes{}, idDue: make(chan struct{}, 1),
-		groups: map[string]*groupState{}, marks: map[string]groupMark{}, groupDue: make(chan struct{}, 1),
 		dmFiles: map[string]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
 		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1),

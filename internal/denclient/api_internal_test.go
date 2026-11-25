@@ -82,7 +82,7 @@ func TestVersionsNegotiated(t *testing.T) {
 
 // A socket opens at the version the den and this build share: one dialed
 // at an older version than a den that updated since speaks dials again at
-// the newer, rather than going without group DMs until it reconnects, and
+// the newer, rather than going without notes until it reconnects, and
 // one a den older than this build refuses dials again at the den's.
 func TestSocketDialsAtTheSharedVersion(t *testing.T) {
 	ctx := context.Background()

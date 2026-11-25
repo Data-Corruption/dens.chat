@@ -46,3 +46,10 @@ func (m *Manager) OpenNotes(ctx context.Context, denID string) (denproto.Channel
 	}
 	return ch, nil
 }
+
+// isNotes reports whether a channel is this member's notes.
+func (c *conn) isNotes(channel string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.den != nil && c.den.channels[channel].Kind == denproto.KindNotes
+}
