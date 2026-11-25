@@ -107,8 +107,8 @@ func (d *Den) planTimer() {
 }
 
 // dueAt has the timer go by at, a time something just sent comes due,
-// where it isn't set to go sooner: a busy group's every message doesn't
-// ask the database when the next is due.
+// where it isn't set to go sooner: a busy DM's every message doesn't ask
+// the database when the next is due.
 func (d *Den) dueAt(at int64) {
 	t := &d.timer
 	t.mu.Lock()

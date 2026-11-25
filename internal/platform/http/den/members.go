@@ -188,7 +188,7 @@ func (h *handler) closeDM(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// setExpiry sets how long a DM's or a group's messages stay.
+// setExpiry sets how long a DM's messages stay.
 func (h *handler) setExpiry(w http.ResponseWriter, r *http.Request) {
 	if !h.limitWrite(w, r) {
 		return

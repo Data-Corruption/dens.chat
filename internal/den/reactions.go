@@ -132,10 +132,6 @@ func (d *Den) reactable(ctx context.Context, s *Session, messageID string) (denp
 	if err != nil {
 		return denproto.Channel{}, 0, 0, errMessageNotFound
 	}
-	// A group's member reacts to what they can read, from their joining.
-	if since, err := groupSince(ctx, d.db, c, cid, s.MemberID); err != nil || mid <= since {
-		return denproto.Channel{}, 0, 0, errMessageNotFound
-	}
 	// Nobody else reads a member's notes, to react to them.
 	if isNotes(c) {
 		return denproto.Channel{}, 0, 0, invalid("notes take no reactions")
@@ -422,8 +418,6 @@ func (d *Den) SetDMReactions(ctx context.Context, s *Session, messageID string, 
 			return &reactionsConflict{current}
 		}
 		if current == nil {
-			// A group's message carries the sets of its members and of those
-			// who left it, as many as a message may.
 			var sets int
 			if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_dm_reactions WHERE message_id = ?`, mid).Scan(&sets); err != nil {
 				return err

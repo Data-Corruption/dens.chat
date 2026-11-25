@@ -49,9 +49,9 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id LEFT JOIN den_channels mc ON mc.id = m.channel_id
 		WHERE f.uploader_id = ?1 AND NOT EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
 			AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?2, ?3)
-			AND (mc.kind IS NULL OR (mc.kind != 'group_dm' OR ?6) AND (mc.kind != 'notes' OR ?7))
+			AND (mc.kind IS NULL OR mc.kind != 'notes' OR ?6)
 		ORDER BY space DESC, f.id DESC LIMIT ?4`, s.MemberID, space, last, denproto.OwnFilesPage+1, IsStaff(s.Role),
-		s.Version >= kindVersion(denproto.KindGroupDM), s.Version >= kindVersion(denproto.KindNotes))
+		s.Version >= kindVersion(denproto.KindNotes))
 	if err != nil {
 		return page, err
 	}

@@ -14,13 +14,13 @@ type Audience struct {
 	kind audienceKind
 	a, b int64
 	// set holds a poll's voters, for an audience of them or of the rest of
-	// its channel, and staff whether the channel is staff's alone;
-	// or a group DM's members. Nothing changes a set once its
-	// audience is made, since the ring keeps the audience for replays.
+	// its channel, and staff whether the channel is staff's alone. Nothing
+	// changes a set once its audience is made, since the ring keeps the
+	// audience for replays.
 	set   map[int64]bool
 	staff bool
 	// version is the protocol's version a socket speaks to get the event:
-	// one about a group DM needs 2, and one about notes 3.
+	// one about notes needs 3.
 	version int
 }
 
@@ -34,7 +34,6 @@ const (
 	toNobody
 	toVoters
 	toNonVoters
-	toSet
 )
 
 // Audiences.
@@ -62,22 +61,11 @@ func NonVoters(voters map[int64]bool, staffOnly bool) Audience {
 	return Audience{kind: toNonVoters, set: voters, staff: staffOnly}
 }
 
-// Members is the audience of a group DM's members, which a socket speaking
-// version 1 of the protocol never gets. members mustn't change
-// once it's passed.
-func Members(members map[int64]bool) Audience {
-	return Audience{kind: toSet, set: members, version: denproto.GroupsVersion}
-}
-
 // notesOf is the audience of a member's notes: the member, on sockets
 // speaking version 3 of the protocol.
 func notesOf(member int64) Audience {
 	return Audience{kind: toMembers, a: member, b: member, version: denproto.NotesVersion}
 }
-
-// aboutGroups is the audience with events about a group DM, which a socket
-// speaking version 1 of the protocol never gets.
-func (a Audience) aboutGroups() Audience { return a.needs(denproto.GroupsVersion) }
 
 // needs is the audience on sockets speaking a version of the protocol at
 // least, as an event about a channel of a kind newer than the protocol's
@@ -106,8 +94,6 @@ func (a Audience) includes(member int64, staff bool, version int) bool {
 		return (staff || !a.staff) && a.set[member]
 	case toNonVoters:
 		return (staff || !a.staff) && !a.set[member]
-	case toSet:
-		return a.set[member]
 	}
 	return true
 }
@@ -158,7 +144,7 @@ type ringEntry struct {
 // Sub is one socket's subscription. Events arrive in order; the channel is
 // closed when the socket falls too far behind (Slow) or unsubscribes.
 // version is the protocol's version its socket speaks, which decides
-// whether it gets group DMs and notes.
+// whether it gets notes.
 type Sub struct {
 	member  int64
 	version int
@@ -366,8 +352,7 @@ func (h *Hub) Subscribe(member int64, staff bool, epoch string, after uint64) (s
 }
 
 // SubscribeAt subscribes as Subscribe does, for a socket that speaks a
-// version of the protocol, which gets nothing of group DMs before 2,
-// nor of notes before 3.
+// version of the protocol, which gets nothing of notes before 3.
 func (h *Hub) SubscribeAt(member int64, staff bool, version int, epoch string, after uint64) (sub *Sub, missed []denproto.Event, resumed bool, seq uint64) {
 	h.mu.Lock()
 	defer h.mu.Unlock()

@@ -87,6 +87,15 @@ func TestMain(m *testing.M) {
 	os.Exit(m.Run())
 }
 
+// drain takes a subscription's events waiting now, by type.
+func drain(sub *Sub) []string {
+	var out []string
+	for _, e := range drainEvents(sub) {
+		out = append(out, e.T)
+	}
+	return out
+}
+
 // testStorage makes the directories a den keeps uploads in.
 func testStorage(t *testing.T) Storage {
 	t.Helper()

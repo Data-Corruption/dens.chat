@@ -15,13 +15,13 @@
 // writes the length of a call past its channel's record, and sweeps the
 // audit log, each at its time.
 //
-// What members seal it keeps without reading, and passes on: DMs and group
-// DMs, with the keys sealed to their members' identities and each group's
-// changes, checked and kept in order; a sealed call's keys; each member's
-// sealed record and their notes; and the boxes Relay sends between a
-// member's devices, which it keeps nowhere. A client speaking an older
-// protocol version gets none of what it can't read: no group DMs below
-// version 2, and no notes below 3.
+// What members seal it keeps without reading, and passes on: DMs, with the
+// keys sealed to their members' identities; a sealed call's keys; each
+// member's sealed record and their notes; and the boxes Relay sends
+// between a member's devices, which it keeps nowhere. A client speaking an
+// older protocol version gets none of what it can't read: no notes below
+// version 3. An older Dens that asks for a group DM, which version 2
+// brought, reads that they're gone.
 //
 // Every method returns protocol errors (*denproto.Error) for anything a
 // client did wrong, and plain errors for the den's own failures.
@@ -138,10 +138,9 @@ type Den struct {
 	// a sleeping phone, whose client checks its session's renewal then;
 	// tests shorten it.
 	PingInterval time.Duration
-	// ShortTimes lets members set a DM's or a group's messages to
-	// disappear after a few seconds, and make events of a few
-	// seconds, which a development instance's den takes for the
-	// browser checks, as tests do.
+	// ShortTimes lets members set a DM's messages to disappear after a few
+	// seconds, and make events of a few seconds, which a development
+	// instance's den takes for the browser checks, as tests do.
 	ShortTimes bool
 }
 
@@ -153,23 +152,16 @@ type Session struct {
 	Role      string
 	ExpiresAt time.Time
 	// Version is the protocol version the request speaks, which the den's
-	// router sets; a session that speaks one before group DMs sees nothing
-	// of them, and one before notes nothing of those.
+	// router sets; a session that speaks one before notes sees nothing of
+	// them.
 	Version int
 }
 
-// groups reports whether the session speaks a version of the protocol
-// with group DMs.
-func (s *Session) groups() bool { return s.Version >= denproto.GroupsVersion }
-
 // kindVersion is the protocol's version a session or socket speaks, at
-// least, to see a channel of a kind: 2 for a group DM, 3 for notes,
-// and 0, any, for the kinds every version has.
+// least, to see a channel of a kind: 3 for notes, and 0, any, for the
+// kinds every version has.
 func kindVersion(kind string) int {
-	switch kind {
-	case denproto.KindGroupDM:
-		return denproto.GroupsVersion
-	case denproto.KindNotes:
+	if kind == denproto.KindNotes {
 		return denproto.NotesVersion
 	}
 	return 0

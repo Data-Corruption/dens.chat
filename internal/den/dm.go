@@ -81,6 +81,12 @@ func (d *Den) CloseDM(ctx context.Context, s *Session, channelID string) error {
 	return d.publishReadState(ctx, s.MemberID, cid)
 }
 
+// isPrivate reports whether a channel's messages are sealed by its
+// members' Dens: a DM's, or a member's notes.
+func isPrivate(c denproto.Channel) bool {
+	return c.Kind == denproto.KindDM || c.Kind == denproto.KindNotes
+}
+
 // reopen marks a closed DM open again, for one member or, with member 0,
 // both, and returns whose it reopened.
 func reopen(ctx context.Context, q querier, channel, member int64) ([]int64, error) {

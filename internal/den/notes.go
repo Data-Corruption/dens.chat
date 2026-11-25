@@ -80,7 +80,7 @@ func deleteNotes(ctx context.Context, tx *sql.Tx, member int64) ([][]byte, error
 }
 
 // sealedKey checks the key a sealed message names, as it's sent or edited:
-// a DM's or a group's live key, as sendKey checks it, or in notes their
+// a DM's live key, as sendKey checks it, or in notes their
 // channel's ID, which names the key the member's Dens makes from their
 // seal. It returns the key_id the message keeps.
 func sealedKey(ctx context.Context, q querier, c denproto.Channel, channel int64, keyID string, member int64) (int64, error) {

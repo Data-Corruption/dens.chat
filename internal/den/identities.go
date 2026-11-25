@@ -148,23 +148,20 @@ func loadSignedKeys(ctx context.Context, q querier, member int64, where string, 
 }
 
 // memberSignedKeys lists the signed keys of every DM a member is in, for
-// their snapshot, and with groups those of the group DMs they're in that
-// they hold a copy of.
-func memberSignedKeys(ctx context.Context, q querier, member int64, groups bool) ([]denproto.SignedKey, error) {
-	return loadSignedKeys(ctx, q, member, `(k.channel_id IN (SELECT id FROM den_channels
-		WHERE kind = 'dm' AND (dm_low = ?2 OR dm_high = ?2)) OR ?3 AND k.channel_id IN (SELECT channel_id FROM den_group_members WHERE member_id = ?2)
-		AND EXISTS (SELECT 1 FROM den_dm_key_members c WHERE c.key_id = k.id AND c.member_id = ?2))`, member, groups)
+// their snapshot.
+func memberSignedKeys(ctx context.Context, q querier, member int64) ([]denproto.SignedKey, error) {
+	return loadSignedKeys(ctx, q, member, `k.channel_id IN (SELECT id FROM den_channels
+		WHERE kind = 'dm' AND (dm_low = ?2 OR dm_high = ?2))`, member)
 }
 
 // SignedKeys lists a DM's signed keys, oldest first, as the session's
-// member sees them, or a group's they hold a copy of.
+// member sees them.
 func (d *Den) SignedKeys(ctx context.Context, s *Session, channelID string) (denproto.SignedKeyList, error) {
 	_, cid, _, err := d.keyChannel(ctx, s, channelID, false)
 	if err != nil {
 		return denproto.SignedKeyList{}, err
 	}
-	keys, err := loadSignedKeys(ctx, d.db, s.MemberID, `k.channel_id = ?2 AND ((SELECT kind FROM den_channels WHERE id = ?2) = 'dm'
-		OR EXISTS (SELECT 1 FROM den_dm_key_members c WHERE c.key_id = k.id AND c.member_id = ?3))`, cid, s.MemberID)
+	keys, err := loadSignedKeys(ctx, d.db, s.MemberID, `k.channel_id = ?2`, cid)
 	return denproto.SignedKeyList{Keys: keys}, err
 }
 
@@ -184,19 +181,16 @@ func publishedIdentity(ctx context.Context, q querier, member int64) (published,
 }
 
 // MakeSignedKey makes a DM's key from its maker's statement and a copy
-// for each member, sealed to their identities, or a group DM's for its
-// members as they are. A DM has one live key: a key both members
-// checked before v1.9.0 stays live, as does a signed key that names the
-// identities its members have now, and a second made at once gets 409
-// key_exists, so the slower takes the live one. A signed key that names an
-// identity its member no longer has, or a group's members as they were,
-// retires as replaced.
+// for each member, sealed to their identities. A DM has one live key: a
+// key both members checked before v1.9.0 stays live, as does a signed key
+// that names the identities its members have now, and a second made at
+// once gets 409 key_exists, so the slower takes the live one. A signed key
+// that names an identity its member no longer has retires as replaced.
 func (d *Den) MakeSignedKey(ctx context.Context, s *Session, channelID string, req denproto.SignedKeyRequest) (denproto.SignedKey, error) {
-	c, cid, members, err := d.keyChannel(ctx, s, channelID, true)
+	_, cid, members, err := d.keyChannel(ctx, s, channelID, true)
 	if err != nil {
 		return denproto.SignedKey{}, err
 	}
-	group := c.Kind == denproto.KindGroupDM
 	info, _ := d.Info()
 	d.keys.Lock()
 	defer d.keys.Unlock()
@@ -204,20 +198,8 @@ func (d *Den) MakeSignedKey(ctx context.Context, s *Session, channelID string, r
 	var id int64
 	var retired []int64
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		if group {
-			// The group's members as they are now, which a change may have
-			// moved on since its channel was read.
-			g, err := loadGroup(ctx, tx, info.ID, cid)
-			if err != nil {
-				return err
-			}
-			if !slices.Contains(g.members, s.MemberID) {
-				return errChannelNotFound
-			}
-			members = g.members
-		}
 		var err error
-		id, retired, err = putKey(ctx, tx, info.ID, cid, s.MemberID, members, req, now, false, group)
+		id, retired, err = putKey(ctx, tx, info.ID, cid, s.MemberID, members, req, now)
 		return err
 	})
 	if err != nil {
@@ -226,14 +208,6 @@ func (d *Den) MakeSignedKey(ctx context.Context, s *Session, channelID string, r
 	d.log.Infof("Member %d made key %d for DM %d", s.MemberID, id, cid)
 	if err := d.publishKeys(ctx, append(retired, id)...); err != nil {
 		return denproto.SignedKey{}, err
-	}
-	if group && req.Name != nil {
-		// Its name, sealed again under the new key.
-		if c, err := d.channel(ctx, d.db, cid); err != nil {
-			return denproto.SignedKey{}, err
-		} else if err := d.Hub.Publish(denproto.EventChannelUpdated, c, audienceOfGroup(c)); err != nil {
-			return denproto.SignedKey{}, err
-		}
 	}
 	keys, err := loadSignedKeys(ctx, d.db, s.MemberID, `k.id = ?2`, id)
 	if err != nil {
@@ -245,17 +219,15 @@ func (d *Den) MakeSignedKey(ctx context.Context, s *Session, channelID string, r
 	return keys[0], nil
 }
 
-// putKey makes a signed key for a DM's or a group's members within tx,
-// which its maker's statement names, each with the identity they publish
-// now, with a copy for each, and the maker's signature; the caller holds
-// d.keys. A live key both members checked before v1.9.0 stays (key_exists),
-// as does a live signed key naming these members with the identities they
-// publish now, unless replace says a change to a group made its
-// membership new; any other retires as replaced. A group's key may carry
-// the group's name sealed under it, signed by its maker. It returns the
-// key's ID and those it retired.
+// putKey makes a signed key for a DM's members within tx, which its
+// maker's statement names, each with the identity they publish now, with a
+// copy for each, and the maker's signature; the caller holds d.keys. A
+// live key both members checked before v1.9.0 stays (key_exists), as does
+// a live signed key naming these members with the identities they publish
+// now; any other retires as replaced. It returns the key's ID and those it
+// retired.
 func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, members []int64, req denproto.SignedKeyRequest,
-	now int64, replace, group bool) (int64, []int64, error) {
+	now int64) (int64, []int64, error) {
 	stmt, err := req.Statement(denID, denproto.FormatID(cid), denproto.FormatID(maker))
 	if err != nil {
 		return 0, nil, invalid("statement: %v", err)
@@ -273,9 +245,6 @@ func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, mem
 			return 0, nil, invalid("copies: one of %d bytes for each member", denproto.KeyCopySize)
 		}
 		copies[id] = cp.Copy
-	}
-	if req.Name != nil && (!group || req.Name.Check() != nil || !denproto.Equal(req.Name.KID, req.KID)) {
-		return 0, nil, invalid("name: a group's name, sealed under its key")
 	}
 	ids := map[int64]published{}
 	for _, m := range members {
@@ -295,10 +264,6 @@ func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, mem
 	if !denproto.VerifyStatement(made.sig, stmt, req.Signature) {
 		return 0, nil, invalid("signature: it doesn't check against your identity")
 	}
-	// An older Dens signs no name; one that does signs it as the key's maker.
-	if req.Name != nil && req.Name.Sig != nil && !denproto.VerifyGroupName(denID, cid, *req.Name, made.sig) {
-		return 0, nil, invalid("name: its signature doesn't check against your identity")
-	}
 	live, err := dmLiveKey(ctx, tx, cid)
 	if err != nil {
 		return 0, nil, err
@@ -309,21 +274,19 @@ func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, mem
 		if err := tx.QueryRowContext(ctx, `SELECT statement FROM den_dm_keys WHERE id = ?`, live.id).Scan(&statement); err != nil {
 			return 0, nil, err
 		}
-		if statement == nil && !replace {
+		if statement == nil {
 			return 0, nil, errKeyExists // checked by both members before v1.9.0
 		}
 		var kept keptStatement
-		if statement != nil {
-			if err := json.Unmarshal(statement, &kept); err != nil {
-				return 0, nil, err
-			}
+		if err := json.Unmarshal(statement, &kept); err != nil {
+			return 0, nil, err
 		}
 		current := len(kept.Members) == len(members) && !slices.ContainsFunc(kept.Members, func(m denproto.KeyMember) bool {
 			mid, _ := denproto.ParseID(m.MemberID)
 			p, in := ids[mid]
 			return !in || !bytes.Equal(m.Identity, p.hash)
 		})
-		if statement != nil && current && !replace {
+		if current {
 			return 0, nil, errKeyExists
 		}
 		if retired, err = retireKeys(ctx, tx, maker, now, denproto.RetiredReplaced, `k.id = ?`, live.id); err != nil {
@@ -347,17 +310,6 @@ func putKey(ctx context.Context, tx *sql.Tx, denID []byte, cid, maker int64, mem
 	for member, copied := range copies {
 		if _, err := tx.ExecContext(ctx, `INSERT INTO den_dm_key_members (key_id, member_id, sealed, checked_at) VALUES (?, ?, ?, ?)`,
 			id, member, copied, now); err != nil {
-			return 0, nil, err
-		}
-	}
-	if req.Name != nil {
-		// NULL, not an empty blob, for an older Dens's unsigned name.
-		var sig any
-		if req.Name.Sig != nil {
-			sig = []byte(req.Name.Sig)
-		}
-		if _, err := tx.ExecContext(ctx, `UPDATE den_group_dms SET name = ?, name_kid = ?, name_sig = ? WHERE channel_id = ?`,
-			[]byte(req.Name.Sealed), []byte(req.Name.KID), sig, cid); err != nil {
 			return 0, nil, err
 		}
 	}

@@ -10,7 +10,7 @@ import (
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
 
-// setExpiry sets a DM's or a group's time as a member.
+// setExpiry sets a DM's time as a member.
 func (f *fixture) setExpiry(s *Session, channel string, after int) denproto.Channel {
 	f.t.Helper()
 	c, err := f.d.SetExpiry(context.Background(), s, channel, denproto.ExpiryRequest{ExpiresAfter: after})
@@ -20,12 +20,12 @@ func (f *fixture) setExpiry(s *Session, channel string, after int) denproto.Chan
 	return c
 }
 
-// Any member of a DM or a group sets its time, which the den checks: 0 or
-// one of the four, and for a development instance's den any time up to
-// four weeks. A channel has none, someone outside the DM can't set it, nor
-// a member at version 1 a group's, and a DM whose other member left takes
-// none. Both members hear it, with who set it and when, which their
-// snapshots carry too; the same again tells nobody.
+// Either member of a DM sets its time, which the den checks: 0 or one of
+// the four, and for a development instance's den any time up to four
+// weeks. A channel has none, someone outside the DM can't set it, and a DM
+// whose other member left takes none. Both members hear it, with who set
+// it and when, which their snapshots carry too; the same again tells
+// nobody.
 func TestSetExpiry(t *testing.T) {
 	f, owner, bob := chatFixture(t)
 	ctx := context.Background()
@@ -236,52 +236,37 @@ func TestDisappearingByTimer(t *testing.T) {
 	}
 }
 
-// A group's messages disappear as a DM's do, told to its members alone,
-// and none of it to a socket speaking version 1. A member who still holds
-// an older message unread, sent under a longer time, keeps their read
-// position short of it.
-func TestDisappearingInGroups(t *testing.T) {
-	f, owner, m := groupFixture(t, "carol")
-	bob, carol := m[0], m[1]
+// A member who still holds an older message of a DM unread, sent under a
+// longer time, keeps their read position short of it as a newer one goes.
+func TestDisappearingPastAnOlderUnread(t *testing.T) {
+	f, owner, bob := chatFixture(t)
 	ctx := context.Background()
-	g, err := f.makeGroup(owner, bob, carol)
+	dm, err := f.d.OpenDM(ctx, owner, denproto.DMRequest{MemberID: denproto.FormatID(bob.MemberID)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	old := *bob
-	old.Version = 1
-	_, err = f.d.SetExpiry(ctx, &old, g.id, denproto.ExpiryRequest{ExpiresAfter: denproto.ExpiresHour})
-	wantCode(t, err, denproto.CodeNotFound)
-	oldSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, 1, "", 0)
-	defer f.d.Hub.Unsubscribe(oldSub)
-	sub, _, _, _ := f.d.Hub.Subscribe(carol.MemberID, false, "", 0)
+	sub, _, _, _ := f.d.Hub.Subscribe(bob.MemberID, false, "", 0)
 	defer f.d.Hub.Unsubscribe(sub)
 
-	f.setExpiry(owner, g.id, denproto.MaxExpiresAfter)
-	older, err := g.send(owner, "older")
-	if err != nil {
-		t.Fatal(err)
-	}
-	f.setExpiry(bob, g.id, denproto.ExpiresHour)
-	soon, err := g.send(owner, "soon")
-	if err != nil || soon.ExpiresAt != f.clock.Add(time.Hour).UnixMilli() || older.ExpiresAt != f.clock.Add(4*7*24*time.Hour).UnixMilli() {
-		t.Fatalf("sent under each time: %d, %d, %v", older.ExpiresAt, soon.ExpiresAt, err)
+	f.setExpiry(owner, dm.ID, denproto.MaxExpiresAfter)
+	older := f.send(owner, dm.ID, "older")
+	f.setExpiry(bob, dm.ID, denproto.ExpiresHour)
+	soon := f.send(owner, dm.ID, "soon")
+	if soon.ExpiresAt != f.clock.Add(time.Hour).UnixMilli() || older.ExpiresAt != f.clock.Add(4*7*24*time.Hour).UnixMilli() {
+		t.Fatalf("sent under each time: %d, %d", older.ExpiresAt, soon.ExpiresAt)
 	}
 	f.clock = f.clock.Add(time.Hour)
 	if err := f.d.deleteDue(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if d := nextEvent[denproto.MessageDeleted](t, sub, denproto.EventMessageDeleted); d.ID != soon.ID {
-		t.Fatalf("carol heard %+v", d)
+		t.Fatalf("bob heard %+v", d)
 	}
-	if r := nextEvent[denproto.ReadState](t, sub, denproto.EventReadStateUpdated); r.ChannelID != g.id || r.ReadPosition != "" || r.MentionCount != 1 {
-		t.Fatalf("carol's read state, the older still unread: %+v", r)
+	if r := nextEvent[denproto.ReadState](t, sub, denproto.EventReadStateUpdated); r.ChannelID != dm.ID || r.ReadPosition != "" || r.MentionCount != 1 {
+		t.Fatalf("bob's read state, the older still unread: %+v", r)
 	}
-	h, err := f.d.History(ctx, carol, g.id, HistoryQuery{})
+	h, err := f.d.History(ctx, bob, dm.ID, HistoryQuery{})
 	if err != nil || len(h.Messages) != 1 || h.Messages[0].ID != older.ID {
-		t.Fatalf("carol's history: %+v %v", h.Messages, err)
-	}
-	if got := drain(oldSub); len(got) != 0 {
-		t.Errorf("a socket at version 1 heard %v", got)
+		t.Fatalf("bob's history: %+v %v", h.Messages, err)
 	}
 }

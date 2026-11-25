@@ -28,6 +28,9 @@ const (
 	KindText  = "text"
 	KindVoice = "voice"
 	KindDM    = "dm" // a conversation between two members
+	// KindGroupDM is a group DM's, which a den older than v1.16.0 lists
+	// and a client drops, keeping its ID's kind.
+	KindGroupDM = "group_dm"
 )
 
 // Event types for chat.
@@ -76,10 +79,7 @@ type RetentionPreview struct {
 
 // Channel is a text or voice channel, or a DM. A DM has no name, group or
 // position, and names its two members, lower ID first. A voice channel has
-// a bitrate, in bits a second, for its call's Opus. A group DM
-// names its members as the den holds them, in the order they
-// joined, the number of its latest change, and its name sealed; a Dens
-// knows its members from its changes alone. A member's notes name
+// a bitrate, in bits a second, for its call's Opus. A member's notes name
 // that member alone, and have no name, group or position either.
 type Channel struct {
 	ID          string   `json:"id"`
@@ -91,12 +91,9 @@ type Channel struct {
 	StaffOnly   bool     `json:"staff_only"`
 	Members     []string `json:"members,omitempty"`
 	Bitrate     int      `json:"bitrate,omitempty"`
-	// Changes and SealedName are a group DM's.
-	Changes    int         `json:"changes,omitempty"`
-	SealedName *SealedName `json:"sealed_name,omitempty"`
-	// ExpiresAfter is how long, in seconds, a DM's or a group's messages
-	// stay after they're sent, 0 while they stay, and ExpiresSet who last
-	// set it and when, once anyone has.
+	// ExpiresAfter is how long, in seconds, a DM's messages stay after
+	// they're sent, 0 while they stay, and ExpiresSet who last set it and
+	// when, once anyone has.
 	ExpiresAfter int        `json:"expires_after,omitempty"`
 	ExpiresSet   *ExpirySet `json:"expires_set,omitempty"`
 }
@@ -142,8 +139,8 @@ type Message struct {
 	// Everyone marks a channel's message whose @everyone staff put there,
 	// which mentions every member who can see the channel.
 	Everyone bool `json:"everyone,omitempty"`
-	// ExpiresAt is when a DM's or a group's message disappears, by the
-	// time its channel had as it was sent.
+	// ExpiresAt is when a DM's message disappears, by the time its channel
+	// had as it was sent.
 	ExpiresAt int64 `json:"expires_at,omitempty"`
 	// Forwarded marks a channel's message its author forwarded, which
 	// says nothing of where from; a sealed place's mark is in its seal.
@@ -370,8 +367,9 @@ func CheckMessage(m Message) error {
 		if err := checkSealed(m.Sealed, m.KeyID, m.Nonce, m.Revision); err != nil || m.Text != "" || len(m.Attachments) > 0 {
 			return errors.New("message has an invalid sealed text")
 		}
-		// A DM's other member, or a group's others.
-		if len(m.Editors) > MaxGroupMembers-1 {
+		// As many others as a key is sealed to, which an older den's group
+		// DM's message named.
+		if len(m.Editors) > MaxKeyMembers-1 {
 			return errors.New("message has too many editors")
 		}
 	}
@@ -392,7 +390,7 @@ func CheckMessage(m Message) error {
 	if m.Sealed != nil && (m.Poll != nil || m.Everyone) {
 		return errors.New("a DM's message has no poll and mentions nobody by @everyone")
 	}
-	// Only a DM's or a group's messages disappear, after they're sent.
+	// Only a DM's messages disappear, after they're sent.
 	if m.ExpiresAt != 0 && (m.Sealed == nil || m.ExpiresAt <= m.CreatedAt) {
 		return errors.New("message has an invalid time to disappear")
 	}
