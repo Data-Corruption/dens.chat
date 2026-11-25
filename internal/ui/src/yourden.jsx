@@ -460,6 +460,10 @@ function Files({ den, navigate }) {
 // message this device opens, and no forward's, which only comes off.
 export const swappable = (f) => !!f.message_id && !f.locked && !f.forwarded;
 
+// ownFileThumb is the address of one of a member's files' preview, where
+// it is, if it's on a message.
+export const ownFileThumb = (denID, f) => thumbURL(denID, f.id, f.message_id ? { channel: f.channel_id, message: f.message_id } : undefined);
+
 // FileRow is one of a member's files in their list: its preview, name,
 // size and what uses it, and what they can do with it. A file being
 // swapped shows how far its replacement is, and how far a video's copy.
@@ -472,7 +476,7 @@ function FileRow({ denID, f, view, confirming, busy, progress, onOpen, onSwap, o
     return (
         <li class="flex flex-wrap items-center gap-2 py-2">
             {f.thumb && !f.locked ? (
-                <img src={thumbURL(denID, f.id)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" loading="lazy" draggable={false} />
+                <img src={ownFileThumb(denID, f)} alt="" class="h-10 w-10 shrink-0 rounded bg-base-300 object-cover" loading="lazy" draggable={false} />
             ) : (
                 <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded bg-base-300 text-xs">FILE</span>
             )}

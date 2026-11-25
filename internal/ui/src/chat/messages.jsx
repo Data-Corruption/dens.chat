@@ -26,7 +26,7 @@ import { useStaffMarks } from '../ui/staffmarks.js';
 import { completeChannel, completeEmoji, completeMention, completionAt, denKey, emojiList, inTone, keyOf, loadEmoji, noteSent, noteUses, skinTone, unicodeKey } from './emoji.js';
 import { Completions, EmojiPicker } from './emoji.jsx';
 import {
-    Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, thumbURL, upload,
+    Attachments, MAX_ATTACHMENTS, Thumb, Viewer, addPreview, attachmentKind, formatSize, isImageFile, needsPreview, placeOf, thumbURL, upload,
 } from './files.jsx';
 import { compareIds, newNonce } from '../core/ids.js';
 import { channelLinkTo, linkTo } from './links.js';
@@ -117,7 +117,7 @@ const lasts = (m) => (m.expires_at ? m.expires_at - m.created_at : 0);
 export function viewed(m, file, covered = new Set()) {
     const files = (m.attachments || []).filter((f) => attachmentKind(f) === 'image' && !covered.has(f.id));
     const index = files.findIndex((f) => f.id === file.id);
-    return index < 0 ? null : { message: m.id, files, index };
+    return index < 0 ? null : { message: m.id, at: placeOf(m), files, index };
 }
 
 // editable says whether a member may edit a message and tick its tasks:
@@ -952,7 +952,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
                 )}
             </div>
             {viewing && (
-                <Viewer denID={denID} files={viewing.files} index={viewing.index} onClose={() => setViewing(null)}
+                <Viewer denID={denID} at={viewing.at} files={viewing.files} index={viewing.index} onClose={() => setViewing(null)}
                     onIndex={(index) => setViewing((v) => v && { ...v, index })} />
             )}
             {deleting && (
@@ -1136,7 +1136,7 @@ export function MessageRow({ m, compact, line, marks = false, author, replied, r
     const below = (
         <>
             {m.poll && !m.locked && !editing && <Poll m={m} me={me} denID={denID} nameOf={nameOf} onPolled={onPolled} />}
-            {m.attachments?.length > 0 && <Attachments denID={denID} files={m.attachments} onOpen={onView} />}
+            {m.attachments?.length > 0 && <Attachments denID={denID} at={placeOf(m)} files={m.attachments} onOpen={onView} />}
             {children}
             {!m.locked && !editing && m.text && <Videos text={m.text} />}
             {!m.locked && !editing && m.text && <Games text={m.text} />}
