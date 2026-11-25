@@ -182,9 +182,7 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 	}()
 	var oldThumb string
 	if replaces != "" {
-		c.mu.Lock()
-		oldThumb = c.dmFiles[replaces].thumb
-		c.mu.Unlock()
+		oldThumb = c.ownPreview(replaces)
 	}
 	var sealed io.Reader = pr
 	if p != nil && p.sending != nil {
@@ -209,10 +207,6 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		}
 	}
 	c.uploads[file.ID] = dmUpload{channel: channelID, file: file, at: now}
-	c.dmFiles[file.ID] = dmFile{channel: ch, key: file.Key}
-	if file.Thumb != nil {
-		c.dmFiles[file.ID] = dmFile{channel: ch, key: file.Key, thumb: file.Thumb.ID}
-	}
 	c.mu.Unlock()
 	up := dmUploaded(file)
 	up.Stripped = res.Removed
@@ -220,6 +214,20 @@ func (c *conn) uploadDM(ctx context.Context, channelID, name string, size int64,
 		up.Stripped, up.Converted = true, p.converted
 	}
 	return up, nil
+}
+
+// ownPreview is the blob of the preview of a file of this member's, as a
+// message of theirs names it, or one of anyone's, or empty.
+func (c *conn) ownPreview(fileID string) string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	preview := ""
+	for _, df := range c.dmFiles[fileID] {
+		if df.file.Thumb != nil && (df.mine || preview == "") {
+			preview = df.file.Thumb.ID
+		}
+	}
+	return preview
 }
 
 // dmFit is the largest file that fits a den's limit sealed, as a DM's file

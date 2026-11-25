@@ -42,11 +42,13 @@ func assertNoLocation(t *testing.T, data []byte) {
 	}
 }
 
-func attach(t *testing.T, m *denclient.Manager, denID, channel string, files ...string) {
+func attach(t *testing.T, m *denclient.Manager, denID, channel string, files ...string) string {
 	t.Helper()
-	if _, err := m.Send(context.Background(), denID, channel, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: files}); err != nil {
+	msg, err := m.Send(context.Background(), denID, channel, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: files})
+	if err != nil {
 		t.Fatal(err)
 	}
+	return msg.ID
 }
 
 // A phone video with a location arrives without it, with its preview, as
@@ -61,7 +63,7 @@ func TestVideoArrivesStripped(t *testing.T) {
 		t.Fatalf("%+v", up)
 	}
 	attach(t, member, denID, channelID, up.ID)
-	f, err := owner.OpenFile(ctx, denID, up.ID, false)
+	f, err := owner.OpenFile(ctx, denID, up.ID, denclient.FileAt{}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +94,7 @@ func TestDMVideo(t *testing.T) {
 		up.Thumb == nil || up.Thumb.Width != 320 || up.Thumb.Height != 568 {
 		t.Fatalf("a DM video: %+v %v", up, err)
 	}
-	attach(t, owner, denID, dm, up.ID)
+	sent := attach(t, owner, denID, dm, up.ID)
 	var seen denproto.File
 	for _, m := range history(t, member, denID, dm) {
 		if len(m.Attachments) == 1 {
@@ -102,7 +104,7 @@ func TestDMVideo(t *testing.T) {
 	if seen.ID != up.ID || seen.Duration != up.Duration || seen.Thumb == nil || seen.Type != "video/mp4" {
 		t.Fatalf("bob sees %+v", seen)
 	}
-	f, err := member.OpenFile(ctx, denID, up.ID, false)
+	f, err := member.OpenFile(ctx, denID, up.ID, denclient.FileAt{Channel: dm, Message: sent}, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,11 +210,11 @@ func TestPagePreviews(t *testing.T) {
 	if _, err := setThumb(owner, dup.ID, testPreview(t, 64, 48)); !isInput(err) {
 		t.Fatalf("a second preview: %v", err)
 	}
-	attach(t, owner, denID, dm, dup.ID)
+	sent := attach(t, owner, denID, dm, dup.ID)
 	// The member's service learns a DM file's key from the message, as the
 	// page reads it before it asks for the file.
 	history(t, member, denID, dm)
-	if _, kind, err := fetch(t, member, denID, dup.ID, true); err != nil || !kind.Image() {
+	if _, kind, err := fetchIn(t, member, denID, dm, sent, dup.ID, true); err != nil || !kind.Image() {
 		t.Fatalf("bob's copy of its preview: %v %v", kind, err)
 	}
 }
@@ -226,9 +228,9 @@ func TestLargeFilesReadByRanges(t *testing.T) {
 	for i := range big {
 		big[i] = byte(i*7 + i>>13)
 	}
-	check := func(m *denclient.Manager, id string) {
+	check := func(m *denclient.Manager, channel, message, id string) {
 		t.Helper()
-		f, err := m.OpenFile(ctx, denID, id, false)
+		f, err := m.OpenFile(ctx, denID, id, denclient.FileAt{Channel: channel, Message: message}, false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -253,8 +255,7 @@ func TestLargeFilesReadByRanges(t *testing.T) {
 		}
 	}
 	up := upload(t, member, denID, "big.bin", big)
-	attach(t, member, denID, channelID, up.ID)
-	check(owner, up.ID)
+	check(owner, channelID, attach(t, member, denID, channelID, up.ID), up.ID)
 
 	dm := openDM(t, owner, member, denID)
 	readyDM(t, owner, member, denID, dm)
@@ -262,7 +263,7 @@ func TestLargeFilesReadByRanges(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	attach(t, owner, denID, dm, dup.ID)
+	sent := attach(t, owner, denID, dm, dup.ID)
 	history(t, member, denID, dm)
-	check(member, dup.ID)
+	check(member, dm, sent, dup.ID)
 }

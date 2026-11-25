@@ -320,11 +320,17 @@ func inMemory(data []byte, kind media.Kind) *OpenedFile {
 		Head: data[:min(len(data), media.SniffLen)]}
 }
 
-// OpenFile opens a file, or its preview, from a den, or from the cache. A
-// DM's file opens with the key its message sealed, chunk by chunk as it's
-// read. Another den's files come through the cache on disk; the
-// install's own den, on the same disk, keeps a small one in memory.
-func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool) (*OpenedFile, error) {
+// FileAt is where the page shows a file: the message it's on, in its
+// channel, or neither, for a picture or an upload waiting to be sent.
+type FileAt struct{ Channel, Message string }
+
+// OpenFile opens a file, or its preview, from a den, or from the cache,
+// as the page shows it at at. A file in a DM or notes opens with the key
+// the message it's on sealed, chunk by chunk as it's read, and an upload
+// waiting to be sent at no message. Another den's files come through the
+// cache on disk; the install's own den, on the same disk, keeps a small
+// one in memory.
+func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, at FileAt, thumb bool) (*OpenedFile, error) {
 	c, err := m.find(denID)
 	if err != nil {
 		return nil, err
@@ -332,14 +338,28 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool
 	if err := checkID("file", fileID); err != nil {
 		return nil, err
 	}
-	if m.Cache != nil && !c.own {
-		return c.openCached(ctx, fileID, thumb)
+	var where place
+	if at != (FileAt{}) {
+		message, err1 := denproto.ParseID(at.Message)
+		channel, err2 := denproto.ParseID(at.Channel)
+		if err1 != nil || err2 != nil {
+			return nil, inputError(errors.New("a message's file names its message and channel"))
+		}
+		where = place{channel: channel, message: message}
 	}
-	key := cacheKey{den: denID, file: fileID, thumb: thumb}
+	ref, err := c.fileRef(fileID, where, thumb)
+	if err != nil {
+		return nil, err
+	}
+	if m.Cache != nil && !c.own {
+		return c.openCached(ctx, ref)
+	}
+	// What a file opened to under one message is no answer under another.
+	key := cacheKey{den: denID, file: fileID, at: where, thumb: thumb}
 	if data, kind, ok := m.files.get(key); ok {
 		return inMemory(data, kind), nil
 	}
-	r, err := c.fileSource(ctx, fileID, thumb)
+	r, err := c.fileSource(ctx, ref)
 	if err != nil {
 		return nil, err
 	}
@@ -362,21 +382,46 @@ func (m *Manager) OpenFile(ctx context.Context, denID, fileID string, thumb bool
 	return &OpenedFile{SectionReader: io.NewSectionReader(r, 0, size), Kind: media.Sniff(head), Head: head, close: r.Close}, nil
 }
 
+// fileRef is a file, or its preview, the page asks for under a message or
+// none, resolved once: whether a message this service opened seals it, with
+// its key, and what it's on, which says whether the cache on disk may keep
+// it. The fetch goes by it, so a ready that clears the keys meanwhile
+// can't have a cache keep the den's sealed bytes as the file.
+type fileRef struct {
+	id     string
+	at     place
+	thumb  bool
+	sealed bool
+	df     dmFile
+	owner  cache.Owner
+}
+
+func (c *conn) fileRef(fileID string, at place, thumb bool) (fileRef, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if at.message != 0 && c.den == nil {
+		return fileRef{}, ErrNotStarted
+	}
+	df, sealed, err := c.sealedLocked(fileID, at)
+	if err != nil {
+		return fileRef{}, err
+	}
+	return fileRef{id: fileID, at: at, thumb: thumb, sealed: sealed, df: df, owner: c.ownerLocked(fileID, at)}, nil
+}
+
 // fileSource starts fetching a file, or its preview, from the den: a DM's
 // opened with the key its message sealed, chunk by chunk as it's read.
-func (c *conn) fileSource(ctx context.Context, fileID string, thumb bool) (cache.Source, error) {
-	c.mu.Lock()
-	df, sealed := c.dmFiles[fileID]
-	c.mu.Unlock()
-	path := "/api/files/" + fileID
+func (c *conn) fileSource(ctx context.Context, ref fileRef) (cache.Source, error) {
+	df, sealed := ref.df, ref.sealed
+	path := "/api/files/" + ref.id
 	switch {
-	case sealed && thumb:
+	case sealed && ref.thumb:
 		// A DM file's preview is a blob of its own.
-		if df.thumb == "" {
+		if df.file.Thumb == nil {
 			return nil, &denproto.Error{Status: http.StatusNotFound, Code: denproto.CodeNotFound, Message: "no preview"}
 		}
-		path = "/api/files/" + df.thumb
-	case thumb:
+		path = "/api/files/" + df.file.Thumb.ID
+	case ref.thumb:
 		path += "/thumb"
 	}
 	rf, err := c.openRemote(ctx, path)
@@ -385,7 +430,7 @@ func (c *conn) fileSource(ctx context.Context, fileID string, thumb bool) (cache
 	}
 	var src cache.Source = rf
 	if sealed {
-		opened, err := vault.OpenStreamAtWith(df.key, rf, rf.size, denproto.DMFileAD(c.j.denID, df.channel, thumb))
+		opened, err := vault.OpenStreamAtWith(df.file.Key, rf, rf.size, denproto.DMFileAD(c.j.denID, df.channel, ref.thumb))
 		if err != nil {
 			rf.Close()
 			return nil, err
@@ -567,6 +612,7 @@ func (c *conn) limits() denproto.Limits {
 
 type cacheKey struct {
 	den, file string
+	at        place
 	thumb     bool
 }
 

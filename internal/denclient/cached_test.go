@@ -56,21 +56,25 @@ func postFile(t *testing.T, m *denclient.Manager, denID, channelID, name string,
 // history or its socket, which says what the cache keeps the file for.
 func look(t *testing.T, m *denclient.Manager, denID, channelID string, up denclient.Uploaded) (full, thumb []byte) {
 	t.Helper()
+	message := ""
 	eventually(t, "the file's message", func() bool {
 		page, err := m.History(context.Background(), denID, channelID, denclient.HistoryQuery{})
 		if err != nil {
 			t.Fatal(err)
 		}
-		return slices.ContainsFunc(page.Messages, func(pm denclient.PageMessage) bool {
-			return slices.ContainsFunc(pm.Attachments, func(f denproto.File) bool { return f.ID == up.ID })
-		})
+		for _, pm := range page.Messages {
+			if slices.ContainsFunc(pm.Attachments, func(f denproto.File) bool { return f.ID == up.ID }) {
+				message = pm.ID
+			}
+		}
+		return message != ""
 	})
-	full, _, err := fetch(t, m, denID, up.ID, false)
+	full, _, err := fetchIn(t, m, denID, channelID, message, up.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if up.Thumb != nil {
-		if thumb, _, err = fetch(t, m, denID, up.ID, true); err != nil {
+		if thumb, _, err = fetchIn(t, m, denID, channelID, message, up.ID, true); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -103,11 +107,11 @@ func eventually(t *testing.T, what string, cond func() bool) {
 	}
 }
 
-// gone reports whether a file no longer opens: not from the cache, and not
-// from the den, which deleted it.
-func gone(t *testing.T, m *denclient.Manager, denID, id string) bool {
+// gone reports whether a file of a message no longer opens: not from the
+// cache, and not from the den, which deleted it.
+func gone(t *testing.T, m *denclient.Manager, denID, channel, message, id string) bool {
 	t.Helper()
-	_, _, err := fetch(t, m, denID, id, false)
+	_, _, err := fetchIn(t, m, denID, channel, message, id, false)
 	return denproto.IsCode(err, denproto.CodeNotFound)
 }
 
@@ -115,8 +119,8 @@ func TestCachedFilesOutlastRestarts(t *testing.T) {
 	h, owner, _, denID, channelID := chatDen(t)
 	s := newCachedStore(t)
 	member, stop := cachedMember(t, h, owner, denID, s)
-	photo, _ := postFile(t, owner, denID, channelID, "photo.jpg", gpsJPEG(t))
-	clip, _ := postFile(t, owner, denID, channelID, "clip.bin", randomBytes(3<<20+12345))
+	photo, photoMsg := postFile(t, owner, denID, channelID, "photo.jpg", gpsJPEG(t))
+	clip, clipMsg := postFile(t, owner, denID, channelID, "clip.bin", randomBytes(3<<20+12345))
 	wantPhoto, wantThumb := look(t, member, denID, channelID, photo)
 	wantClip, _ := look(t, member, denID, channelID, clip)
 	if member.CacheUsage().Used < int64(len(wantClip)) {
@@ -127,15 +131,15 @@ func TestCachedFilesOutlastRestarts(t *testing.T) {
 		t.Helper()
 		before := h.files.Load()
 		// Without the den, what the page showed still opens.
-		full, _, err := fetch(t, member, denID, photo.ID, false)
+		full, _, err := fetchIn(t, member, denID, channelID, photoMsg.ID, photo.ID, false)
 		if err != nil {
 			t.Fatalf("%s: %v", when, err)
 		}
-		thumb, _, err := fetch(t, member, denID, photo.ID, true)
+		thumb, _, err := fetchIn(t, member, denID, channelID, photoMsg.ID, photo.ID, true)
 		if err != nil || !bytes.Equal(full, wantPhoto) || !bytes.Equal(thumb, wantThumb) {
 			t.Fatalf("%s: the photo came back changed: %v", when, err)
 		}
-		f, err := member.OpenFile(context.Background(), denID, clip.ID, false)
+		f, err := member.OpenFile(context.Background(), denID, clip.ID, denclient.FileAt{Channel: channelID, Message: clipMsg.ID}, false)
 		if err != nil {
 			t.Fatalf("%s: %v", when, err)
 		}
@@ -164,7 +168,7 @@ func TestCachedFilesOutlastRestarts(t *testing.T) {
 	if usage := member.CacheUsage(); usage.Used != 0 || usage.Limit != cache.DefaultLimit {
 		t.Fatalf("after emptying: %+v", usage)
 	}
-	if _, _, err := fetch(t, member, denID, photo.ID, false); err == nil {
+	if _, _, err := fetchIn(t, member, denID, channelID, photoMsg.ID, photo.ID, false); err == nil {
 		t.Fatal("an emptied cache still served a file with the den away")
 	}
 	stop()
@@ -190,7 +194,7 @@ func TestFilesThatWentLeaveTheCache(t *testing.T) {
 	})
 	a, msgA := postFile(t, owner, denID, channelID, "a.bin", randomBytes(200_000))
 	b, msgB := postFile(t, owner, denID, channelID, "b.bin", randomBytes(200_000))
-	c, _ := postFile(t, owner, denID, doomed, "c.bin", randomBytes(200_000))
+	c, msgC := postFile(t, owner, denID, doomed, "c.bin", randomBytes(200_000))
 	live, msgLive := postFile(t, owner, denID, channelID, "live.bin", randomBytes(200_000))
 	for _, f := range []struct {
 		up      denclient.Uploaded
@@ -203,7 +207,7 @@ func TestFilesThatWentLeaveTheCache(t *testing.T) {
 	if err := owner.DeleteMessage(ctx, denID, msgLive.ID); err != nil {
 		t.Fatal(err)
 	}
-	eventually(t, "a deleted message's file to leave the cache", func() bool { return gone(t, member, denID, live.ID) })
+	eventually(t, "a deleted message's file to leave the cache", func() bool { return gone(t, member, denID, channelID, msgLive.ID, live.ID) })
 
 	// While it's away, the changes since say what went.
 	stop()
@@ -216,8 +220,8 @@ func TestFilesThatWentLeaveTheCache(t *testing.T) {
 	h.restart()
 	member, stop = restartMember(t, h, s, stop)
 	defer stop()
-	eventually(t, "the deleted message's file to leave the cache", func() bool { return gone(t, member, denID, a.ID) })
-	eventually(t, "the deleted channel's file to leave the cache", func() bool { return gone(t, member, denID, c.ID) })
+	eventually(t, "the deleted message's file to leave the cache", func() bool { return gone(t, member, denID, channelID, msgA.ID, a.ID) })
+	eventually(t, "the deleted channel's file to leave the cache", func() bool { return gone(t, member, denID, doomed, msgC.ID, c.ID) })
 	before := h.files.Load()
 	look(t, member, denID, channelID, b)
 	if h.files.Load() != before {
@@ -309,5 +313,25 @@ func TestTheOwnDenIsntCached(t *testing.T) {
 	look(t, owner, denID, v.Channels[0].ID, a)
 	if used := owner.CacheUsage().Used; used != 0 {
 		t.Fatalf("the cache holds %d bytes of the install's own den", used)
+	}
+}
+
+// A channel's file fetched under no message, as nothing of the page's
+// asks for one, isn't kept as its message's, whatever the den said it's
+// on: what the den answered then is no part of what the page shows under
+// that message, which the den, away, no longer gives.
+func TestAFileAskedForUnderNoMessageIsNotItsMessages(t *testing.T) {
+	h, owner, _, denID, channelID := chatDen(t)
+	member, stop := cachedMember(t, h, owner, denID, newCachedStore(t))
+	defer stop()
+	clip, clipMsg := postFile(t, owner, denID, channelID, "clip.bin", randomBytes(100<<10))
+	messageOn(t, member, denID, channelID, clipMsg.ID, "the file's message", func(pm denclient.PageMessage) bool { return len(pm.Attachments) == 1 })
+	if _, _, err := fetch(t, member, denID, clip.ID, false); err != nil {
+		t.Fatal(err)
+	}
+	h.stop()
+	waitFor(t, member, "the den away", func(s denclient.Status) bool { return !connected(s) })
+	if _, _, err := fetchIn(t, member, denID, channelID, clipMsg.ID, clip.ID, false); err == nil {
+		t.Error("the file opened under its message from what a fetch under none kept")
 	}
 }

@@ -49,8 +49,14 @@ func (m *Manager) disappeared(gone []cache.Gone) {
 func (c *conn) forgetFiles(messages map[int64]bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	for id, f := range c.dmFiles {
-		if messages[f.message] {
+	for id, byMessage := range c.dmFiles {
+		for message := range byMessage {
+			if messages[message] {
+				delete(byMessage, message)
+				c.dmFileN--
+			}
+		}
+		if len(byMessage) == 0 {
 			delete(c.dmFiles, id)
 		}
 	}

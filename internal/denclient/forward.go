@@ -67,7 +67,7 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 	// waits open on the den while the others upload.
 	sizes := make([]int64, len(msg.Attachments))
 	for i, a := range msg.Attachments {
-		f, err := m.OpenFile(ctx, denID, a.ID, false)
+		f, err := m.OpenFile(ctx, denID, a.ID, FileAt{Channel: channelID, Message: messageID}, false)
 		if err != nil {
 			return PageMessage{}, err
 		}
@@ -95,7 +95,7 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 		}
 	}()
 	for _, a := range msg.Attachments {
-		up, err := m.forwardFile(ctx, denID, a, dst, to.Channel)
+		up, err := m.forwardFile(ctx, denID, FileAt{Channel: channelID, Message: messageID}, a, dst, to.Channel)
 		if err != nil {
 			return PageMessage{}, err
 		}
@@ -104,7 +104,7 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 			req.Spoilers = append(req.Spoilers, up.ID)
 		}
 		if strings.HasPrefix(up.Type, "video/") && up.Width > 0 && up.Thumb == nil && a.Thumb != nil {
-			m.carryPreview(ctx, denID, a.ID, dst, up.ID)
+			m.carryPreview(ctx, denID, FileAt{Channel: channelID, Message: messageID}, a.ID, dst, up.ID)
 		}
 	}
 	out, err := dst.sendMessage(ctx, to.Channel, req)
@@ -144,10 +144,10 @@ func (c *conn) toForward(ctx context.Context, channelID, messageID string) (Page
 	return msg, nil
 }
 
-// forwardFile uploads one of a forward's files to the place channel names,
-// as the member's own.
-func (m *Manager) forwardFile(ctx context.Context, denID string, a denproto.File, dst *conn, channel string) (Uploaded, error) {
-	f, err := m.OpenFile(ctx, denID, a.ID, false)
+// forwardFile uploads one of a forward's files, where it is, to the place
+// channel names, as the member's own.
+func (m *Manager) forwardFile(ctx context.Context, denID string, at FileAt, a denproto.File, dst *conn, channel string) (Uploaded, error) {
+	f, err := m.OpenFile(ctx, denID, a.ID, at, false)
 	if err != nil {
 		return Uploaded{}, err
 	}
@@ -215,8 +215,8 @@ func (c *conn) roomFor(ctx context.Context, sizes []int64, sealed bool) error {
 // a page drew where the media module couldn't, as SetThumb does. One that
 // doesn't take leaves the video without, as a page that couldn't draw one
 // sends it.
-func (m *Manager) carryPreview(ctx context.Context, denID, fileID string, dst *conn, uploadID string) {
-	f, err := m.OpenFile(ctx, denID, fileID, true)
+func (m *Manager) carryPreview(ctx context.Context, denID string, at FileAt, fileID string, dst *conn, uploadID string) {
+	f, err := m.OpenFile(ctx, denID, fileID, at, true)
 	if err == nil {
 		defer f.Close()
 		var data []byte

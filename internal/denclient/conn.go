@@ -97,10 +97,12 @@ type conn struct {
 	done chan struct{}      // closed when run has returned
 	wake chan struct{}      // cuts a wait between reconnects short
 
-	// DMs: the keys of DM files this service opened; files uploaded
-	// for DMs, waiting to be sent; and sign-ins this device is approving,
-	// or approved, whose digits the new device may still be waiting for.
-	dmFiles   map[string]dmFile
+	// DMs: the DM files the messages this service opened name, by file
+	// and then message, and how many; files uploaded for DMs, waiting to
+	// be sent; and sign-ins this device is approving, or approved, whose
+	// digits the new device may still be waiting for.
+	dmFiles   map[string]map[int64]dmFile
+	dmFileN   int
 	uploads   map[string]dmUpload
 	approvals map[string]*approval
 	approved  map[string]RequestView
@@ -692,6 +694,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.members = &membersCursor{epoch: r.Sync.Epoch, version: r.Sync.Version}
 		c.stateDirty, c.membersDirty = true, true
 		clear(c.dmFiles)
+		c.dmFileN = 0
 		clear(c.verdicts)
 		// The identities the den gives now, against those kept.
 		met := c.meetLocked()
@@ -932,9 +935,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.m.files.drop(c.j.denID.String(), gone...)
 		c.dropFiles(gone)
 		c.mu.Lock()
-		for _, id := range gone {
-			delete(c.dmFiles, id)
-		}
+		c.dropDMFilesLocked(gone...)
 		c.mu.Unlock()
 	}
 	// A deleted channel, or a retention pass, takes files the memory

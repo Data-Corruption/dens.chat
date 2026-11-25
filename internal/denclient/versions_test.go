@@ -14,7 +14,6 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
-	"time"
 
 	"github.com/Data-Corruption/dens.chat/internal/denclient"
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -312,20 +311,16 @@ func TestDMPhotoGoesSmaller(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := owner.Send(ctx, denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{back.ID}}); err != nil {
+	sent, err := owner.Send(ctx, denID, dm, denproto.SendRequest{Nonce: denproto.Random(16), Attachments: []string{back.ID}})
+	if err != nil {
 		t.Fatal(err)
 	}
 	page, err := owner.Files(ctx, denID, "")
 	if err != nil || len(page.Files) != 1 || page.Files[0].ID != back.ID {
 		t.Fatalf("the owner's files: %+v %v", page, err)
 	}
-	var got []byte
-	for range 100 {
-		if got, _, err = fetch(t, member, denID, back.ID, false); err == nil {
-			break
-		}
-		time.Sleep(20 * time.Millisecond)
-	}
+	messageOn(t, member, denID, dm, sent.ID, "the copy's message", func(denclient.PageMessage) bool { return true })
+	got, _, err := fetchIn(t, member, denID, dm, sent.ID, back.ID, false)
 	if err != nil {
 		t.Fatal(err)
 	}
