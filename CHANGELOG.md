@@ -1,5 +1,29 @@
 # Changelog
 
+## [v1.16.0] - 2026-11-25
+
+### Added
+
+- Forward, in a message's menu: it sends the message, with its photos and files, to a channel or a DM in any den you're in. It shows there as forwarded, with nothing of where it came from.
+- A status, in Edit profile once the den is updated: a line under your name that everyone in the den sees, until you empty it or the time you picked passes.
+- Rename, beside This device in an updated den's Devices: the name shows in all your dens, in Relay and when the device asks to sign in somewhere new.
+
+### Changed
+
+- The card beside Edit profile's fields, and the small den beside Appearance's editor, have a border marked Preview.
+
+### Removed
+
+- Group DMs. Updating a den deletes them, with their messages and files. Keeping them private from the den, when one of their members could help it, kept opening new holes, and few used them.
+
+### Fixed
+
+- Since v1.9.0, a DM waiting on you after someone's keys changed could stop waiting once another of your devices signed in or saved what it knows, without you choosing Compare or Send anyway. It waits on every device until you choose.
+- Since v1.0.0, a den could put a message of its own, unencrypted, into a DM or your notes, and Dens showed it as written by the other member or by you. It shows as a message that can't be read.
+- Since v1.0.0, a photo or file in a DM or your notes could open as whatever the den sent in its place, after Dens reconnected or restarted. It opens only once its message has loaded again.
+- Since v1.12.0, listening to another device's sound could stop at once, as not shared, just after that device started sharing it.
+- Since v1.0.0, a covered spoiler showed the links and mentions inside it, and since v1.10.0 an event's link inside one fetched the event before it was shown.
+
 ## [v1.15.0] - 2026-11-22
 
 ### Added
