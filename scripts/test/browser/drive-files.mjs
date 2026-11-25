@@ -152,7 +152,7 @@ try {
     // tileShows says what the GIF's tile shows: its preview, or the GIF
     // over it, loaded, with the preview hidden.
     const tileShows = (b) => b.eval(`(() => { const imgs = [...(${tile})?.querySelectorAll('img') || []];
-        const gif = imgs.find((i) => !i.getAttribute('src').endsWith('/thumb'));
+        const gif = imgs.find((i) => !new URL(i.src).pathname.endsWith('/thumb'));
         if (!gif) return imgs.length === 1 ? 'still' : 'none';
         return gif.complete && gif.naturalWidth > 0 && getComputedStyle(imgs[0]).opacity === '0' ? 'playing' : 'loading'; })()`);
     const animations = async (b, value) => {

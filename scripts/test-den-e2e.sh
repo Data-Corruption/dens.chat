@@ -567,20 +567,20 @@ run() {
   echo ">> The video went as an AV1 copy of ${bytes} bytes within the 1 MiB limit, with its preview, and plays from any byte"
 
   echo ">> The member's cache keeps what they viewed across both restarts, and drops what went"
-  local cached_photo cached_message cached_video cached started to_edit to_delete
+  local cached_photo cached_message cached_video cached_video_message cached started to_edit to_delete
   "${INCUS[@]}" file push -q scripts/test/gps-photo.jpg "$DEN/root/gps-photo.jpg"
   "${INCUS[@]}" file push -q internal/media/ffmpeg/testdata/with-gps.mov "$DEN/root/with-gps.mov"
   read -r cached_photo _ <<<"$(guest "$DEN" upload "$den_id" /root/gps-photo.jpg cached.jpg "$channel")"
   cached_message=$(guest "$DEN" send-file "$den_id" "$channel" "$cached_photo")
   read -r cached_video _ <<<"$(guest "$DEN" upload-media "$den_id" /root/with-gps.mov cached.mov "$channel")"
-  guest "$DEN" send-file "$den_id" "$channel" "$cached_video" >/dev/null
+  cached_video_message=$(guest "$DEN" send-file "$den_id" "$channel" "$cached_video")
   to_edit=$(guest "$DEN" send "$den_id" "$channel" "to be edited")
   to_delete=$(guest "$DEN" send "$den_id" "$channel" "to be deleted")
   # The member's page loads the channel, and shows its photo and video.
   guest "$CLIENT" history "$den_id" "$channel" >/dev/null
-  guest "$CLIENT" fetch "$den_id" "$cached_photo" /root/cached-photo.jpg >/dev/null
-  guest "$CLIENT" fetch "$den_id" "$cached_photo" /root/cached-preview.jpg thumb >/dev/null
-  guest "$CLIENT" fetch "$den_id" "$cached_video" /root/cached-video.mp4 >/dev/null
+  guest "$CLIENT" fetch "$den_id" "$cached_photo" /root/cached-photo.jpg "$channel" "$cached_message" >/dev/null
+  guest "$CLIENT" fetch "$den_id" "$cached_photo" /root/cached-preview.jpg thumb "$channel" "$cached_message" >/dev/null
+  guest "$CLIENT" fetch "$den_id" "$cached_video" /root/cached-video.mp4 "$channel" "$cached_video_message" >/dev/null
   cached=$(guest "$CLIENT" cache)
   (( cached > 0 )) || { echo "error: the member's cache holds nothing" >&2; return 1; }
   # The member's service stops, the owner deletes the photo, and the den
@@ -592,7 +592,7 @@ run() {
   "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
   "${INCUS[@]}" exec "$CLIENT" -- systemctl start dens@main
   guest "$CLIENT" wait-connected 0 >/dev/null
-  guest "$CLIENT" wait-gone "$den_id" "$cached_photo"
+  guest "$CLIENT" wait-gone "$den_id" "$cached_photo" "$channel" "$cached_message"
   # The edit and the delete reached the member's history.
   for _ in $(seq 20); do
     history=$(guest "$CLIENT" history "$den_id" "$channel")
@@ -607,17 +607,17 @@ run() {
   history=$(guest "$CLIENT" history "$den_id" "$channel")
   [[ "$history" == *"edited while away"* && "$history" != *"to be deleted"* ]] ||
     { echo "error: the member's history with the den stopped: $history" >&2; return 1; }
-  guest "$CLIENT" fetch "$den_id" "$cached_video" /root/cached-video-again.mp4 >/dev/null
+  guest "$CLIENT" fetch "$den_id" "$cached_video" /root/cached-video-again.mp4 "$channel" "$cached_video_message" >/dev/null
   "${INCUS[@]}" exec "$CLIENT" -- cmp -s /root/cached-video.mp4 /root/cached-video-again.mp4 ||
     { echo "error: the cached video came back changed" >&2; return 1; }
-  guest "$CLIENT" range "$den_id" "$cached_video" /root/cached-video.mp4 100000 199999
+  guest "$CLIENT" range "$den_id" "$cached_video" /root/cached-video.mp4 100000 199999 "$channel" "$cached_video_message"
   started=$(date +%s%3N)
   "${INCUS[@]}" exec "$DEN" -- systemctl start dens@main
   guest "$CLIENT" wait-connected "$started" >/dev/null
   echo ">> The deleted photo left the member's cache as they came back, an edit and a delete reached their history, and the video and the channel read from the cache with the den stopped"
 
   echo ">> A private DM, written at once, and the members' codes compared"
-  local alice bob dm owner_code member_code refusal owner_send member_send
+  local alice bob dm owner_code member_code refusal owner_send member_send sent
   bob=$(guest "$DEN" member-id "$den_id" bob)
   alice=$(member member-id "$den_id" alice)
   dm=$(guest "$DEN" dm "$den_id" "$bob")
@@ -652,41 +652,42 @@ run() {
   upload=$(member upload "$den_id" /root/gps-photo.jpg IMG_0002.jpg "$dm")
   read -r file stripped size preview <<<"$upload"
   [[ "$stripped $size $preview" == "true 300x400 preview" ]] || { echo "error: the DM photo came back as: $upload" >&2; return 1; }
-  member send-file "$den_id" "$dm" "$file" >/dev/null
-  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-photo.jpg)
+  sent=$(member send-file "$den_id" "$dm" "$file")
+  guest "$DEN" history "$den_id" "$dm" >/dev/null
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-photo.jpg "$dm" "$sent")
   [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/dm-photo.jpg)" == "400x300 JFIF,orientation 6" ]] ||
     { echo "error: the DM photo arrived as $kind $(guest "$DEN" jpeg /root/dm-photo.jpg)" >&2; return 1; }
-  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-preview.jpg thumb)
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-preview.jpg thumb "$dm" "$sent")
   [[ "$kind" == image/jpeg ]] || { echo "error: the DM photo's preview came as $kind" >&2; return 1; }
   versions=$(member upload-versions "$den_id" /root/rotated.heic IMG_0008.HEIC smaller "$dm")
   read -r file sent size full fits <<<"$versions"
   [[ "$sent $size $full" == "smaller 1920x2560 3024x4032" ]] || { echo "error: the DM photo went as: $versions" >&2; return 1; }
-  member send-file "$den_id" "$dm" "$file" >/dev/null
+  sent=$(member send-file "$den_id" "$dm" "$file")
   guest "$DEN" history "$den_id" "$dm" >/dev/null
-  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-copy.jpg)
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-copy.jpg "$dm" "$sent")
   [[ "$kind" == image/jpeg && "$(guest "$DEN" jpeg /root/dm-copy.jpg)" == "1920x2560 ICC_PROFILE" ]] ||
     { echo "error: the DM photo's copy arrived as $kind $(guest "$DEN" jpeg /root/dm-copy.jpg)" >&2; return 1; }
   read -r file type size preview converted name duration <<<"$(member upload-media "$den_id" /root/with-gps.mov IMG_0005.MOV "$dm")"
   [[ "$type $size $preview" == "video/mp4 320x568 preview" && "$duration" -gt 3900 ]] ||
     { echo "error: the DM video came back as: $file $type $size $preview $duration" >&2; return 1; }
-  member send-file "$den_id" "$dm" "$file" >/dev/null
-  # The owner's service learns the video's key from the message, which the
-  # page reads before it asks for the file.
+  sent=$(member send-file "$den_id" "$dm" "$file")
+  # The owner's service learns the video's key from the message, which
+  # the page reads before it asks for the file under it.
   guest "$DEN" history "$den_id" "$dm" >/dev/null
-  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video.mp4)
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video.mp4 "$dm" "$sent")
   [[ "$kind" == video/mp4 ]] || { echo "error: the DM video came as $kind" >&2; return 1; }
   guest "$DEN" clean /root/dm-video.mp4
-  guest "$DEN" range "$den_id" "$file" /root/dm-video.mp4 200000 299999
+  guest "$DEN" range "$den_id" "$file" /root/dm-video.mp4 200000 299999 "$dm" "$sent"
   versions=$(member upload-versions "$den_id" /root/with-gps.mov IMG_0009.MOV smaller "$dm")
   read -r file sent size full fits <<<"$versions"
   [[ "$sent $size $full $fits" == "smaller 320x568 320x568 fits" ]] || { echo "error: the DM video went as: $versions" >&2; return 1; }
-  member send-file "$den_id" "$dm" "$file" >/dev/null
+  sent=$(member send-file "$den_id" "$dm" "$file")
   guest "$DEN" history "$den_id" "$dm" >/dev/null
-  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video-copy.mp4)
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video-copy.mp4 "$dm" "$sent")
   read -r codec bytes <<<"$(guest "$DEN" mp4 /root/dm-video-copy.mp4)"
   [[ "$kind $codec" == "video/mp4 av01" ]] || { echo "error: the DM video's copy arrived as $kind $codec" >&2; return 1; }
   guest "$DEN" clean /root/dm-video-copy.mp4
-  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video-copy.jpg thumb)
+  kind=$(guest "$DEN" fetch "$den_id" "$file" /root/dm-video-copy.jpg thumb "$dm" "$sent")
   [[ "$kind" == image/jpeg ]] || { echo "error: the DM video's copy has a preview of $kind" >&2; return 1; }
   guest "$DEN" dm-sealed "a private word"
   stored=$(guest "$DEN" sealed)
