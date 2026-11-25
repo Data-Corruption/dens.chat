@@ -70,7 +70,7 @@ func TestNotesAcrossDevices(t *testing.T) {
 	if len(got) != 1 || got[0].Text != first.Text || got[0].Locked != "" || len(got[0].Attachments) != 1 || got[0].Attachments[0].Name != "IMG_3001.jpg" {
 		t.Fatalf("the notes on the laptop: %+v", got)
 	}
-	data, kind, err := fetch(t, laptop, denID, up.ID, false)
+	data, kind, err := fetchIn(t, laptop, denID, notes.ID, first.ID, up.ID, false)
 	if err != nil || kind != media.JPEG || bytes.Contains(data, []byte("GPSLatitude")) || int64(len(data)) != up.Size {
 		t.Fatalf("the laptop's copy of the photo: %d bytes, %v, %v", len(data), kind, err)
 	}

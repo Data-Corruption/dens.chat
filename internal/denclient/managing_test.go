@@ -141,7 +141,7 @@ func TestManagingDMFiles(t *testing.T) {
 	if len(seen.Attachments) != 1 || seen.Attachments[0].ID != next.ID || seen.Attachments[0].Name != "IMG_2002.jpg" || seen.Text != "a photo for you" {
 		t.Fatalf("the other member sees the swap as %+v", seen)
 	}
-	if _, _, err := fetch(t, member, denID, next.ID, true); err != nil {
+	if _, _, err := fetchIn(t, member, denID, dm, sent.ID, next.ID, true); err != nil {
 		t.Fatalf("the new file's preview: %v", err)
 	}
 	if err := owner.RemoveFile(ctx, denID, dm, sent.ID, next.ID); err != nil {

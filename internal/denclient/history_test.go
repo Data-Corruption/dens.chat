@@ -103,7 +103,7 @@ func TestADayAwayDownloadsOnlyWhatChanged(t *testing.T) {
 	for i := range 30 {
 		sent = append(sent, send(t, owner, denID, channelID, fmt.Sprintf("message %d", i)))
 	}
-	photo, _ := postFile(t, owner, denID, channelID, "photo.jpg", gpsJPEG(t))
+	photo, photoMsg := postFile(t, owner, denID, channelID, "photo.jpg", gpsJPEG(t))
 	look(t, member, denID, channelID, photo)
 
 	// A day away: the member's service is off, the den restarts and its
@@ -155,7 +155,7 @@ func TestADayAwayDownloadsOnlyWhatChanged(t *testing.T) {
 	if got := h.changes.Load() - changesBefore; got != 1 {
 		t.Fatalf("%d requests for changes", got)
 	}
-	look2, _, err := fetch(t, member, denID, photo.ID, false)
+	look2, _, err := fetchIn(t, member, denID, channelID, photoMsg.ID, photo.ID, false)
 	if err != nil || len(look2) == 0 || h.files.Load() != filesBefore {
 		t.Fatalf("the photo after the day away: %v, %d requests for files", err, h.files.Load()-filesBefore)
 	}

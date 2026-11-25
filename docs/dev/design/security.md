@@ -229,6 +229,7 @@ Before the first release an audit checked every item here against the code (2026
 
 - [x] A sealed place is a DM or a member's notes, which the den can't read; a place several members read is a channel, which the den reads.
 - [x] A channel's ID keeps its kind for good: a client remembers the kind of every channel it held or opened, deleted since or not and across its cache, and takes one that comes as another, relabeled or deleted and made again, in an event or a snapshot, as the den breaking the protocol. What's sent to an ID that was a DM or notes is sealed, or fails, and a message that comes there in the clear shows as one that doesn't open, keeping nothing the den wrote in it; one the client kept as a group DM's, which an older den listed, gets nothing, and everything naming it is dropped unread. A device that never held a channel has nothing to hold it to.
+- [x] The page asks for a message's file where it shows it, the message and its channel, and a file in a DM or notes opens only with the key of a message the client opened that names it: never as the den's bytes, though a client holds no file's key from a reconnect or a restart until the page loads the message again, and fails it meanwhile. A cache holds a file only for a request under the message and channel it kept it under, or under neither for one naming neither, and keeps a file asked for under no message only as a picture's or an emoji's. What a v1.15.0 client kept under a message before it updated is served as kept.
 
 ### Identities
 

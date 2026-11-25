@@ -259,11 +259,11 @@ func TestDMsStaySealed(t *testing.T) {
 	if len(seen.Attachments) != 1 || seen.Attachments[0].Name != "IMG_2001.jpg" || seen.Attachments[0].Thumb == nil {
 		t.Fatalf("bob sees %+v", seen)
 	}
-	data, kind, err := fetch(t, member, denID, up.ID, false)
+	data, kind, err := fetchIn(t, member, denID, dm, msg.ID, up.ID, false)
 	if err != nil || kind != media.JPEG || bytes.Contains(data, []byte("GPSLatitude")) || int64(len(data)) != up.Size {
 		t.Fatalf("bob's copy of the photo: %d bytes, %v, %v", len(data), kind, err)
 	}
-	if _, kind, err := fetch(t, member, denID, up.ID, true); err != nil || !kind.Image() {
+	if _, kind, err := fetchIn(t, member, denID, dm, msg.ID, up.ID, true); err != nil || !kind.Image() {
 		t.Fatalf("its preview: %v %v", kind, err)
 	}
 	// All the den has of it is noise.

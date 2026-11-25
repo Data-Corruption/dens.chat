@@ -228,6 +228,5 @@ func (c *conn) setDMThumb(ctx context.Context, fileID string, u dmUpload, data [
 	}
 	cur.file.Thumb = thumb
 	c.uploads[fileID] = cur
-	c.dmFiles[fileID] = dmFile{channel: ch, key: f.Key, thumb: thumb.ID}
 	return dmUploaded(cur.file), nil
 }

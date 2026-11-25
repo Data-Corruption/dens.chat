@@ -5,9 +5,16 @@ import { h, render as mount } from 'preact';
 import { ALWAYS, HoverRow, ON_HOVER, setAnimations } from '../src/appearance/animations.js';
 import { clampOffset, coverScale, sourceRect, zoomAt } from '../src/ui/crop.jsx';
 import {
-    Attachments, attachmentKind, downloadURL, fileWhere, fitBox, formatDuration, formatSize, needsPreview, playbackTime, previewSize, step,
+    Attachments, Viewer, attachmentKind, downloadURL, fileWhere, fitBox, formatDuration, formatSize, needsPreview, placeOf, playbackTime, previewSize, step,
 } from '../src/chat/files.jsx';
+import { ownFileThumb } from '../src/yourden.jsx';
 import { setFileNames } from '../src/appearance/filenames.js';
+
+function all(node, match, found = []) {
+    if (match(node)) found.push(node);
+    for (const c of node.childNodes || []) all(c, match, found);
+    return found;
+}
 
 test('sizes read as people write them', () => {
     assert.equal(formatSize(0), '0 B');
@@ -70,8 +77,51 @@ test("a drawn preview keeps the video's shape", () => {
     assert.deepEqual(previewSize(0, 0, 1280), { w: 0, h: 0 });
 });
 
-test("a download link carries the file's name as data", () => {
+test("a download link carries the file's name as data, and the message it's on", () => {
     assert.equal(downloadURL('abc', { id: '7', name: 'a b&c=d/e?.pdf' }), '/api/dens/abc/files/7?download=a%20b%26c%3Dd%2Fe%3F.pdf');
+    assert.equal(downloadURL('abc', { id: '7', name: 'a.pdf' }, { channel: '9', message: '42' }), '/api/dens/abc/files/7?download=a.pdf&channel=9&message=42');
+});
+
+// A DM's file opens only under the message that sealed it, so each of a
+// message's files, and its preview, is asked for where it's shown, its
+// message and that message's channel: in the list, covered or not, in the
+// viewer, and in the member's own files; a picture, or an upload waiting
+// to be sent, at none.
+test("a message's files and their previews are asked for under the message, in its channel", async () => {
+    const kept = new Map();
+    globalThis.localStorage = { getItem: (k) => kept.get(k) ?? null, setItem: (k, v) => kept.set(k, v) };
+    const listeners = { addEventListener() {}, removeEventListener() {} };
+    globalThis.window = {
+        matchMedia: () => ({ matches: false, ...listeners }), ...listeners,
+        history: { state: null, pushState() {}, replaceState() {}, back() {}, go() {} }, location: { protocol: 'http:', host: 'localhost', pathname: '/', href: 'http://localhost/' },
+    };
+    globalThis.ResizeObserver ??= class { observe() {} disconnect() {} };
+    const files = [
+        { id: '1', name: 'photo.jpg', type: 'image/jpeg', size: 900000, width: 400, height: 300, thumb: { width: 400, height: 300 } },
+        { id: '2', name: 'hidden.jpg', type: 'image/jpeg', size: 900000, width: 400, height: 300, thumb: { width: 400, height: 300 }, spoiler: true },
+        { id: '3', name: 'clip.mp4', type: 'video/mp4', size: 900000, width: 320, height: 240, thumb: { width: 320, height: 240 } },
+        { id: '4', name: 'song.ogg', type: 'audio/ogg', size: 9000 },
+        { id: '5', name: 'notes.pdf', type: 'application/pdf', size: 9000 },
+    ];
+    const addresses = (root) => all(root, (n) => n.attributes?.src || n.attributes?.poster || n.attributes?.href)
+        .flatMap((n) => [n.attributes.src, n.attributes.poster, n.attributes.href]).filter((a) => a?.startsWith('/api/'));
+    const root = document.createElement('div');
+    mount(h(Attachments, { denID: 'D', at: placeOf({ id: '42', channel_id: '9' }), files, onOpen() {} }), root);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const listed = addresses(root);
+    for (const id of ['1', '2', '3', '4', '5']) assert.ok(listed.some((a) => a.includes(`/files/${id}`)), `file ${id} in ${listed}`);
+    assert.ok(listed.every((a) => /[?&]channel=9&message=42$/.test(a)), listed.join(' '));
+    mount(null, root);
+
+    mount(h(Viewer, { denID: 'D', at: { channel: '9', message: '42' }, files: files.slice(0, 1), index: 0, onIndex() {}, onClose() {} }), root);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const viewed = addresses(root);
+    assert.ok(viewed.includes('/api/dens/D/files/1?channel=9&message=42') && viewed.includes('/api/dens/D/files/1/thumb?channel=9&message=42'), viewed.join(' '));
+    assert.ok(viewed.every((a) => /[?&]channel=9&message=42$/.test(a)), viewed.join(' '));
+    mount(null, root);
+
+    assert.equal(ownFileThumb('D', { id: '9', message_id: '43', channel_id: '8' }), '/api/dens/D/files/9/thumb?channel=8&message=43');
+    assert.equal(ownFileThumb('D', { id: '9' }), '/api/dens/D/files/9/thumb', 'an upload waiting to be sent');
 });
 
 test('the crop frame stays covered', () => {

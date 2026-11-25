@@ -54,7 +54,7 @@ func (m *Manager) Files(ctx context.Context, denID, after string) (FilesPage, er
 		pm := c.open(msg)
 		opened[msg.ID] = pm
 		for _, f := range pm.Attachments {
-			if thumb := c.previewOf(f.ID); thumb != "" {
+			if thumb := c.previewOf(f.ID, msg.ID); thumb != "" {
 				previews[thumb] = true
 			}
 		}
@@ -89,12 +89,16 @@ func (m *Manager) Files(ctx context.Context, denID, after string) (FilesPage, er
 	return out, nil
 }
 
-// previewOf is the blob of a DM file's preview, as far as this service
-// knows, or empty.
-func (c *conn) previewOf(fileID string) string {
+// previewOf is the blob of a DM file's preview, as the message it's on
+// names it, or empty.
+func (c *conn) previewOf(fileID, messageID string) string {
+	message, _ := denproto.ParseID(messageID)
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.dmFiles[fileID].thumb
+	if t := c.dmFiles[fileID][message].file.Thumb; t != nil {
+		return t.ID
+	}
+	return ""
 }
 
 // DropUpload deletes one of this member's uploads waiting to be sent, so
@@ -115,7 +119,6 @@ func (m *Manager) DropUpload(ctx context.Context, denID, uploadID string) error 
 			blobs = append(blobs, u.file.Thumb.ID)
 		}
 		delete(c.uploads, uploadID)
-		delete(c.dmFiles, uploadID)
 	}
 	c.mu.Unlock()
 	c.dropKept(blobs[:1])

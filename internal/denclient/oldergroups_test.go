@@ -123,7 +123,7 @@ func TestAnOlderDensGroupMessageGoesNowhere(t *testing.T) {
 	defer store.Close()
 	m.Cache = store
 	c := &conn{m: m, j: &joined{denID: g.Ready.Den.ID}, den: newState(), ids: newKept(), verdicts: map[string]string{},
-		copies: map[string]denproto.Bytes{}, dmFiles: map[string]dmFile{}}
+		copies: map[string]denproto.Bytes{}, dmFiles: map[string]map[int64]dmFile{}}
 	c.profile.Member = g.Ready.Me
 	if err := c.den.load(g.Ready.Den.ID, g.Ready, nil, nil, nil, time.Now()); err != nil {
 		t.Fatal(err)

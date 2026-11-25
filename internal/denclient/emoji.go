@@ -147,9 +147,12 @@ func (c *conn) fillEmoji(ctx context.Context) error {
 		if whole {
 			continue
 		}
-		fileID := denproto.FormatID(f.file)
-		h, err := c.m.Cache.File(c.j.denID, f.file, f.thumb, cache.Owner{Named: f.emoji}, func() (cache.Source, error) {
-			return c.fileSource(ctx, fileID, f.thumb)
+		ref, err := c.fileRef(denproto.FormatID(f.file), place{}, f.thumb)
+		if err != nil {
+			return err
+		}
+		h, err := c.m.Cache.File(c.j.denID, f.file, f.thumb, cache.Owner{}, cache.Owner{Named: f.emoji}, func() (cache.Source, error) {
+			return c.fileSource(ctx, ref)
 		})
 		if err != nil {
 			return err

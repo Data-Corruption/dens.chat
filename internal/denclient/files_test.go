@@ -73,9 +73,19 @@ func upload(t *testing.T, m *denclient.Manager, denID, name string, data []byte)
 	return up
 }
 
+// fetch reads a file as the page asks for one under no message: a
+// channel's, a picture, or an upload waiting to be sent.
 func fetch(t *testing.T, m *denclient.Manager, denID, id string, thumb bool) ([]byte, media.Kind, error) {
 	t.Helper()
-	f, err := m.OpenFile(context.Background(), denID, id, thumb)
+	return fetchIn(t, m, denID, "", "", id, thumb)
+}
+
+// fetchIn reads a file as the page asks for one shown under a message, in
+// its channel.
+func fetchIn(t *testing.T, m *denclient.Manager, denID, channel, message, id string, thumb bool) ([]byte, media.Kind, error) {
+	t.Helper()
+	at := denclient.FileAt{Channel: channel, Message: message}
+	f, err := m.OpenFile(context.Background(), denID, id, at, thumb)
 	if err != nil {
 		return nil, 0, err
 	}

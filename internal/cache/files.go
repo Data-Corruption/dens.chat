@@ -78,10 +78,12 @@ type entry struct {
 
 	// Guarded by Store.mu: the handles reading it, whether its row went
 	// while they did, in which case its file goes as the last one closes,
-	// and the bytes it holds on disk.
-	refs   int
-	doomed bool
-	held   int64
+	// the bytes it holds on disk, and the message it's on, if any, in
+	// its channel.
+	refs             int
+	doomed           bool
+	held             int64
+	message, channel int64
 
 	// fill lets one handle at a time fetch the chunks it lacks.
 	fill sync.Mutex
@@ -182,12 +184,17 @@ type File struct {
 // Size is the file's size.
 func (h *File) Size() int64 { return h.size }
 
-// File opens a file or its preview from a den, at the cache. A file the
-// cache holds, whole or in part, reads from it, and open reaches the den
-// only for the chunks it lacks. A file it doesn't hold yet comes from the
-// den, and is kept as it's read if it's on something the cache can
-// follow, owner, and fits a quarter of the cache.
-func (s *Store) File(denID []byte, id int64, thumb bool, owner Owner, open func() (Source, error)) (*File, error) {
+// File opens a file or its preview from a den, at the cache, as the page
+// shows it under a message in its channel, under, or under none. A file
+// the cache holds, whole or in part, reads from it, and open reaches the
+// den only for the chunks it lacks; but it holds a file for a request
+// only if it kept it under the same message and channel, or under none
+// for a request naming none, since a DM's file opens as its message seals
+// it, and the den's bytes for it fetched another way are no part of it. A
+// file it doesn't hold yet comes from the den, and is kept as it's read if
+// it's on something the cache can follow, owner, and fits a quarter of
+// the cache.
+func (s *Store) File(denID []byte, id int64, thumb bool, under Owner, owner Owner, open func() (Source, error)) (*File, error) {
 	s.mu.Lock()
 	den, err := s.denLocked(denID)
 	if err != nil {
@@ -195,9 +202,10 @@ func (s *Store) File(denID []byte, id int64, thumb bool, owner Owner, open func(
 		return nil, err
 	}
 	k := key{den: den, id: id, thumb: thumb}
-	e, err := s.takeLocked(k, denID, owner)
+	e, err := s.takeLocked(k, denID, under, owner)
 	s.mu.Unlock()
-	if err != nil {
+	elsewhere := errors.Is(err, errElsewhere)
+	if err != nil && !elsewhere {
 		return nil, err
 	}
 	if e != nil {
@@ -209,7 +217,7 @@ func (s *Store) File(denID []byte, id int64, thumb bool, owner Owner, open func(
 		return nil, err
 	}
 	h := &File{s: s, size: src.Size(), src: src, last: -1}
-	if !owner.known() || h.size == 0 || h.size > s.Limit()/4 {
+	if elsewhere || !owner.known() || h.size == 0 || h.size > s.Limit()/4 {
 		return h, nil
 	}
 	s.mu.Lock()
@@ -218,7 +226,10 @@ func (s *Store) File(denID []byte, id int64, thumb bool, owner Owner, open func(
 		return h, nil
 	}
 	// Another handle may have started keeping it meanwhile.
-	if e, err := s.takeLocked(k, denID, owner); err != nil || e != nil {
+	if e, err := s.takeLocked(k, denID, under, owner); err != nil || e != nil {
+		if errors.Is(err, errElsewhere) {
+			return h, nil
+		}
 		if err != nil {
 			src.Close()
 			return nil, err
@@ -239,26 +250,44 @@ func (s *Store) File(denID []byte, id int64, thumb bool, owner Owner, open func(
 	return h, nil
 }
 
+// errElsewhere is a cached file asked for under another message, or
+// channel, than it was kept under.
+var errElsewhere = errors.New("the file is kept under another message")
+
+// keptUnder reports whether a file kept under message in channel answers
+// a request under under.
+func keptUnder(message, channel int64, under Owner) bool {
+	return message == under.Message && (message == 0 || channel == under.Channel)
+}
+
 // takeLocked returns the cached file k, with a handle counted on it, or
-// nil if the cache doesn't hold it. The caller holds s.mu.
-func (s *Store) takeLocked(k key, denID []byte, owner Owner) (*entry, error) {
+// nil if the cache doesn't hold it; errElsewhere if it holds it under
+// another message than under names. The caller holds s.mu.
+func (s *Store) takeLocked(k key, denID []byte, under Owner, owner Owner) (*entry, error) {
 	if s.closed {
 		return nil, nil
 	}
 	e := s.entries[k]
+	if e != nil && !keptUnder(e.message, e.channel, under) {
+		return nil, errElsewhere
+	}
 	if e == nil {
 		var name string
 		var size, held int64
-		var message, member, named sql.NullInt64
-		err := s.db.QueryRow(`SELECT name, size, held, message, member, named FROM files WHERE den = ? AND id = ? AND thumb = ?`,
-			k.den, k.id, k.thumb).Scan(&name, &size, &held, &message, &member, &named)
+		var message, channel, member, named sql.NullInt64
+		err := s.db.QueryRow(`SELECT name, size, held, message, channel, member, named FROM files WHERE den = ? AND id = ? AND thumb = ?`,
+			k.den, k.id, k.thumb).Scan(&name, &size, &held, &message, &channel, &member, &named)
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		if err != nil {
 			return nil, err
 		}
+		if !keptUnder(message.Int64, channel.Int64, under) {
+			return nil, errElsewhere
+		}
 		e = newEntry(k, denID, name, size)
+		e.message, e.channel = message.Int64, channel.Int64
 		got, err := e.load(s.path(name))
 		if err != nil {
 			s.log.Warnf("read a cached file: %v", err)
@@ -302,6 +331,10 @@ func (s *Store) setOwnerLocked(k key, owner Owner) {
 	if _, err := s.db.Exec(`UPDATE files SET message = ?, channel = ?, member = ?, named = ? WHERE den = ? AND id = ? AND thumb = ?`,
 		nullable(owner.Message), nullable(owner.Channel), nullable(owner.Member), nullable(owner.Named), k.den, k.id, k.thumb); err != nil {
 		s.log.Warnf("note what a cached file is on: %v", err)
+		return
+	}
+	if e := s.entries[k]; e != nil {
+		e.message, e.channel = owner.Message, owner.Channel
 	}
 }
 
@@ -326,7 +359,7 @@ func (s *Store) addLocked(k key, denID []byte, size int64, owner Owner) (*entry,
 		return nil, err
 	}
 	e := newEntry(k, denID, name, size)
-	e.f, e.refs = f, 1
+	e.f, e.refs, e.message, e.channel = f, 1, owner.Message, owner.Channel
 	s.entries[k] = e
 	return e, nil
 }
