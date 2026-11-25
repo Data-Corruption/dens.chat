@@ -33,6 +33,22 @@ func (h *handler) updateProfile(w http.ResponseWriter, r *http.Request) {
 	denproto.WriteJSON(w, http.StatusOK, m)
 }
 
+func (h *handler) setStatus(w http.ResponseWriter, r *http.Request) {
+	if !h.limitWrite(w, r) {
+		return
+	}
+	var req denproto.StatusRequest
+	if !h.decode(w, r, &req) {
+		return
+	}
+	m, err := h.d.SetStatus(r.Context(), session(r), req)
+	if err != nil {
+		h.fail(w, r, err)
+		return
+	}
+	denproto.WriteJSON(w, http.StatusOK, m)
+}
+
 // setBadgeHidden hides a badge the member earned from their profile card,
 // or shows it again.
 func (h *handler) setBadgeHidden(w http.ResponseWriter, r *http.Request) {

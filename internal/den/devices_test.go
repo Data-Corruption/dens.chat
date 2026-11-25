@@ -4,6 +4,8 @@ import (
 	"context"
 	"crypto/ed25519"
 	"encoding/json"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
@@ -242,6 +244,62 @@ func TestDevicesAndRevoking(t *testing.T) {
 	}
 	err = f.d.RevokeDevice(ctx, member, laptop.id())
 	wantCode(t, err, denproto.CodeNotFound)
+}
+
+// A device changes its own label, cleaned as one it signed in with, and
+// the member's sessions hear of it; no other device, the member's own
+// among them, can.
+func TestRenameDevice(t *testing.T) {
+	f, owner, member := chatFixture(t)
+	ctx := context.Background()
+	laptop := newDevice()
+	resp, err := f.signIn(member, "bob", "password", laptop)
+	if err != nil {
+		t.Fatal(err)
+	}
+	onLaptop, _ := f.d.Authenticate(ctx, resp.Token)
+	sub, _, _, _ := f.d.Hub.Subscribe(member.MemberID, false, "", 0)
+	others, _, _, _ := f.d.Hub.Subscribe(owner.MemberID, true, "", 0)
+
+	_, err = f.d.RenameDevice(ctx, member, laptop.id(), denproto.DeviceLabelRequest{Label: "Bob's laptop"})
+	wantCode(t, err, denproto.CodeForbidden)
+	_, err = f.d.RenameDevice(ctx, owner, laptop.id(), denproto.DeviceLabelRequest{Label: "Bob's laptop"})
+	wantCode(t, err, denproto.CodeNotFound)
+	_, err = f.d.RenameDevice(ctx, onLaptop, laptop.id(), denproto.DeviceLabelRequest{Label: "​"})
+	wantCode(t, err, denproto.CodeInvalidField)
+	_, err = f.d.RenameDevice(ctx, onLaptop, laptop.id(), denproto.DeviceLabelRequest{Label: strings.Repeat("a", denproto.MaxLabelRunes+1)})
+	wantCode(t, err, denproto.CodeInvalidField)
+
+	dev, err := f.d.RenameDevice(ctx, onLaptop, laptop.id(), denproto.DeviceLabelRequest{Label: " Bob's‮ laptop (Linux) "})
+	if err != nil || dev.Label != "Bob's laptop (Linux)" || !denproto.Equal(dev.KeyID, laptop.id()) || !dev.Current {
+		t.Fatalf("renaming: %+v %v", dev, err)
+	}
+	e := <-sub.Events
+	var updated denproto.DeviceUpdated
+	if e.T != denproto.EventDeviceUpdated || json.Unmarshal(e.D, &updated) != nil || !denproto.Equal(updated.KeyID, laptop.id()) ||
+		updated.Label != "Bob's laptop (Linux)" || e.Seq == 0 {
+		t.Fatalf("event %+v", e)
+	}
+	list, err := f.d.Devices(ctx, member)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if i := slices.IndexFunc(list.Devices, func(d denproto.Device) bool { return denproto.Equal(d.KeyID, laptop.id()) }); i < 0 ||
+		list.Devices[i].Label != "Bob's laptop (Linux)" {
+		t.Fatalf("devices: %+v", list.Devices)
+	}
+
+	// The same label again changes nothing, and tells nobody.
+	if dev, err = f.d.RenameDevice(ctx, onLaptop, laptop.id(), denproto.DeviceLabelRequest{Label: "Bob's laptop (Linux)"}); err != nil || dev.Label != "Bob's laptop (Linux)" {
+		t.Fatalf("the same label: %+v %v", dev, err)
+	}
+	select {
+	case e := <-sub.Events:
+		t.Fatalf("the same label told %s", e.T)
+	case e := <-others.Events:
+		t.Fatalf("another member heard %s", e.T)
+	default:
+	}
 }
 
 func (dev device) id() denproto.Bytes { return denproto.ID(dev.key.Public().(ed25519.PublicKey)) }

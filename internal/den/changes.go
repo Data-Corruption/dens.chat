@@ -331,6 +331,9 @@ func (d *Den) prune() {
 	if err := d.pruneChanges(context.Background()); err != nil {
 		d.log.Errorf("forget old changes: %v", err)
 	}
+	if err := d.pruneStatuses(context.Background()); err != nil {
+		d.log.Errorf("remove statuses past their end: %v", err)
+	}
 	p := &d.pruner
 	p.mu.Lock()
 	defer p.mu.Unlock()

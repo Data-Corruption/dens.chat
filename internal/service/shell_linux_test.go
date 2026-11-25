@@ -255,7 +255,7 @@ func TestTheShellPostsNotifications(t *testing.T) {
 
 // The phone's name and its model, which the shell gives Dens, name its
 // device on the dens it joins, where its hostname would say only
-// localhost.
+// localhost, until the member gives it a name.
 func TestThePhonesNameAndModelAreItsDevicesLabel(t *testing.T) {
 	androidHome(t, bytes.Repeat([]byte{3}, host.HostKeySize))
 	t.Setenv(app.DeviceNameEnv, "Galaxy S24 Ultra")
@@ -264,8 +264,12 @@ func TestThePhonesNameAndModelAreItsDevicesLabel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the service didn't start: %v", err)
 	}
-	if a.Dens.Label != "Galaxy S24 Ultra (SM-S928U1)" {
-		t.Fatalf("the device's label is %q, want the phone's name and model", a.Dens.Label)
+	if a.Dens.Label() != "Galaxy S24 Ultra (SM-S928U1)" {
+		t.Fatalf("the device's label is %q, want the phone's name and model", a.Dens.Label())
+	}
+	// A name the member gives takes the phone's, its model kept.
+	if err := a.SetDeviceName("Matt's phone"); err != nil || a.Dens.Label() != "Matt's phone (SM-S928U1)" {
+		t.Fatalf("named, the device's label is %q, %v", a.Dens.Label(), err)
 	}
 }
 

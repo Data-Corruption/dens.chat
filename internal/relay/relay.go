@@ -120,6 +120,7 @@ type Relay struct {
 
 	mu      sync.Mutex
 	ctx     context.Context
+	name    string
 	keysOn  bool
 	soundOn bool
 	devices map[ID]*device
@@ -281,7 +282,7 @@ func New(cfg Config) *Relay {
 		cfg.Addrs = func() []netip.Addr { return localAddrs(loopback) }
 	}
 	return &Relay{cfg: cfg, boxes: make(chan inbox, 64), wake: make(chan struct{}, 1), asks: make(chan struct{}, 1),
-		heres: make(chan struct{}, 1), out: newKeysOut(cfg.Now), keysOn: cfg.Keys, soundOn: cfg.Sound, devices: map[ID]*device{},
+		heres: make(chan struct{}, 1), out: newKeysOut(cfg.Now), name: cfg.Name, keysOn: cfg.Keys, soundOn: cfg.Sound, devices: map[ID]*device{},
 		peers: map[ID]*peer{}, watchers: map[chan Status]struct{}{}, local: !cfg.AsksLocal}
 }
 
@@ -354,6 +355,15 @@ func (r *Relay) SetKeys(on bool) {
 	}
 	poke(r.heres)
 	poke(r.wake)
+}
+
+// SetName names this install anew, as the member renamed it, and tells
+// the member's other devices.
+func (r *Relay) SetName(name string) {
+	r.mu.Lock()
+	r.name = name
+	r.mu.Unlock()
+	poke(r.heres)
 }
 
 // SetSound turns Share this computer's sound on or off, as the settings
@@ -461,8 +471,9 @@ func (r *Relay) note(kind string) note {
 	r.mu.Lock()
 	keys := r.keysOn
 	sound := r.sharesLocked()
+	name := r.name
 	r.mu.Unlock()
-	n := note{Kind: kind, ID: append(denproto.Bytes{}, r.cfg.ID[:]...), Name: r.cfg.Name, At: r.cfg.Now().UnixMilli()}
+	n := note{Kind: kind, ID: append(denproto.Bytes{}, r.cfg.ID[:]...), Name: name, At: r.cfg.Now().UnixMilli()}
 	if keys {
 		n.Offers = append(n.Offers, offerKeys)
 	}

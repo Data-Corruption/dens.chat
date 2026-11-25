@@ -114,6 +114,32 @@ func (m *Manager) UpdateProfile(ctx context.Context, denID string, req denproto.
 	return member, nil
 }
 
+// SetStatus sets this member's status in a den until its end, or with
+// none until they clear it, or clears it.
+func (m *Manager) SetStatus(ctx context.Context, denID string, req denproto.StatusRequest) (denproto.Member, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return denproto.Member{}, err
+	}
+	if req.Status != "" {
+		if req.Status, err = denproto.CleanStatus(req.Status); err != nil {
+			return denproto.Member{}, inputError(err)
+		}
+	}
+	if req.Until < 0 || (req.Status == "" && req.Until != 0) {
+		return denproto.Member{}, inputError(errors.New("a status ends after now, and only a status has an end"))
+	}
+	var member denproto.Member
+	if err := c.call(ctx, http.MethodPut, "/api/me/status", req, &member); err != nil {
+		return denproto.Member{}, err
+	}
+	member, ok := cleanMember(member)
+	if !ok {
+		return denproto.Member{}, errors.New("the den's answer is malformed")
+	}
+	return member, nil
+}
+
 // SetRole makes a member a moderator, or a member again.
 func (m *Manager) SetRole(ctx context.Context, denID, memberID, role string) error {
 	c, err := m.find(denID)

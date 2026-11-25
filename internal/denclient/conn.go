@@ -149,6 +149,8 @@ type conn struct {
 	verdicts map[string]string
 	copies   map[string]denproto.Bytes
 	idDue    chan struct{}
+	// labelDue wakes labelWork.
+	labelDue chan struct{}
 	// speaking is the protocol's version the socket was opened at, which
 	// only the run goroutine touches.
 	speaking int
@@ -624,12 +626,14 @@ func (c *conn) stream(ctx context.Context) (connectedAt time.Time, code websocke
 				fresh = true
 			}
 		}
-		// The den forgets focus with each connection and snapshot.
+		// The den forgets focus with each connection and snapshot, and a
+		// rename made while the socket was down reached no den.
 		if fresh {
 			c.mu.Lock()
 			focus := c.focus
 			c.mu.Unlock()
 			c.send(ws, denproto.EventFocus, denproto.Focus{Channels: append([]string{}, focus...)})
+			c.wakeLabel()
 		}
 		var reads []denproto.ReadState
 		remarked := false
@@ -757,6 +761,13 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		}
 		c.relayBox(b)
 		return e, false, nil
+	case denproto.EventDeviceUpdated:
+		var d denproto.DeviceUpdated
+		if err := json.Unmarshal(e.D, &d); err != nil || denproto.CheckDevice(denproto.Device{KeyID: d.KeyID, Label: d.Label}) != nil {
+			return e, false, errors.New("malformed device.updated")
+		}
+		out, err := denproto.NewEvent(e.T, e.Seq, d)
+		return out, err == nil, err
 	case denproto.EventDeviceConnected:
 		var d denproto.DeviceConnected
 		if err := json.Unmarshal(e.D, &d); err != nil || len(d.KeyID) != denproto.IDSize {
@@ -1084,8 +1095,15 @@ func cleanMember(m denproto.Member) (denproto.Member, bool) {
 	username, err := denproto.NormalizeUsername(m.Username)
 	if err != nil || !validID(m.ID) || m.JoinedAt < 0 || m.LeftAt < 0 || denproto.CheckBio(m.Bio) != nil ||
 		denproto.CheckImage(m.Avatar) != nil || denproto.CheckImage(m.Banner) != nil || (m.Identity != "" && m.IdentityHash() == nil) ||
-		denproto.CheckSentNameStyle(m.NameStyle) != nil {
+		denproto.CheckSentNameStyle(m.NameStyle) != nil || m.StatusUntil < 0 || (m.Status == "" && m.StatusUntil != 0) {
 		return m, false
+	}
+	if m.Status != "" {
+		status, err := denproto.CleanStatus(m.Status)
+		if err != nil {
+			return m, false
+		}
+		m.Status = status
 	}
 	display, err := denproto.CleanName(m.DisplayName, denproto.MaxNameRunes)
 	if err != nil {

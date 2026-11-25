@@ -6,6 +6,7 @@
 package app
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"errors"
@@ -441,9 +442,6 @@ func (a *App) unlock(key []byte) error {
 		// in moments, not within the hour.
 		a.Dens.RecordEvery = devRecordEvery
 	}
-	if l.Form == layout.Android {
-		a.Dens.Label = denclient.PhoneLabel(os.Getenv(DeviceNameEnv), os.Getenv(DeviceModelEnv))
-	}
 	a.Shortcuts = shortcuts.NewHub(a.buildInfo.Version, guard.PageOrigin(a.Instance.ClientPort), cfg.VoiceKeys, a.Log)
 	a.Shortcuts.UseDesktop(cfg.DesktopKeys, func(on bool) {
 		if _, err := config.Update(a.DB, func(c *types.Configuration) error {
@@ -486,13 +484,18 @@ func (a *App) unlock(key []byte) error {
 }
 
 // newRelay makes the install's Relay, with its Relay ID, which the
-// first start of a version with Relay makes, and a restore makes afresh:
-// it names the computer, which a backup restored elsewhere isn't.
+// first start of a version with Relay makes, and gives the dens and Relay
+// the install's label. A restore makes the ID afresh and forgets the name
+// the member gave the install: both name the computer, which a backup
+// restored elsewhere isn't.
 func (a *App) newRelay(cfg *types.Configuration, restoring bool) (*relay.Relay, error) {
 	if cfg.RelayID == "" || restoring {
 		var err error
 		if cfg, err = config.Update(a.DB, func(c *types.Configuration) error {
 			c.RelayID = relay.NewID().String()
+			if restoring {
+				c.DeviceName = ""
+			}
 			return nil
 		}); err != nil {
 			return nil, err
@@ -502,9 +505,36 @@ func (a *App) newRelay(cfg *types.Configuration, restoring bool) (*relay.Relay, 
 	if err != nil {
 		return nil, err
 	}
-	return relay.New(relay.Config{ID: id, Name: a.Dens.Label, Keys: cfg.RelayKeys, Sound: cfg.RelaySound, CanSound: a.CanShareSound(),
+	label := a.DeviceLabel(cfg.DeviceName)
+	a.Dens.SetLabel(label)
+	return relay.New(relay.Config{ID: id, Name: label, Keys: cfg.RelayKeys, Sound: cfg.RelaySound, CanSound: a.CanShareSound(),
 		AsksLocal: a.Layout.Form == layout.Android, Loopback: a.Layout.Form == layout.Development, Dens: a.Dens, Hub: a.Shortcuts,
 		Log: a.Log, Wants: a.relayWants}), nil
+}
+
+// DeviceLabel is this install's label on dens and in Relay with the name
+// the member gave it, or with "" the computer's name, or the phone's, which
+// the shell gives: the name, then what the device is in parentheses.
+func (a *App) DeviceLabel(name string) string {
+	if a.Layout.Form == layout.Android {
+		return denclient.PhoneLabel(cmp.Or(name, os.Getenv(DeviceNameEnv)), os.Getenv(DeviceModelEnv))
+	}
+	return denclient.ComputerLabel(name)
+}
+
+// SetDeviceName gives this install the name the member chose, or with ""
+// the computer's or the phone's again, and tells the dens and Relay.
+func (a *App) SetDeviceName(name string) error {
+	if _, err := config.Update(a.DB, func(c *types.Configuration) error {
+		c.DeviceName = name
+		return nil
+	}); err != nil {
+		return err
+	}
+	label := a.DeviceLabel(name)
+	a.Dens.SetLabel(label)
+	a.Relay.SetName(label)
+	return nil
 }
 
 // CanShareSound reports whether the install shares its computer's sound

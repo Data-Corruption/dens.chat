@@ -81,10 +81,11 @@ type Manager struct {
 	own   OwnDen
 	agent string
 
-	// Label names this device among the member's on the dens it joins or
+	// label names this device among the member's on the dens it joins or
 	// signs in to: the computer, by its name, unless the app names it
-	// otherwise, as the Android app does by the phone's model.
-	Label string
+	// otherwise, as by the name the member gave it. labelMu guards it.
+	labelMu sync.Mutex
+	label   string
 
 	// HTTP reaches dens; it trusts the system's certificate authorities.
 	HTTP *http.Client
@@ -232,7 +233,7 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	// itself at, which the protocol's moves go through.
 	stay := func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 	return &Manager{
-		db: db, v: v, log: log, own: own, agent: userAgent, Label: computerLabel(), epoch: denproto.Random(8).String(),
+		db: db, v: v, log: log, own: own, agent: userAgent, label: ComputerLabel(""), epoch: denproto.Random(8).String(),
 		HTTP:          &http.Client{Timeout: requestTimeout, Transport: transport, CheckRedirect: stay},
 		Transfer:      &http.Client{Transport: transport, CheckRedirect: stay},
 		files:         newFileCache(),
@@ -257,12 +258,15 @@ func New(db *sql.DB, v *vault.Vault, log *xlog.Logger, userAgent string, own Own
 	}
 }
 
-// computerLabel names this computer on dens by its hostname, such as
-// "Pearl (Windows)".
-func computerLabel() string {
-	host, err := os.Hostname()
-	if err != nil {
-		host = ""
+// ComputerLabel names this computer on dens by name, or by its hostname
+// with none, and its system, such as "Pearl (Windows)".
+func ComputerLabel(name string) string {
+	host := name
+	if host == "" {
+		var err error
+		if host, err = os.Hostname(); err != nil {
+			host = ""
+		}
 	}
 	system := map[string]string{"linux": "Linux", "windows": "Windows", "android": "Android"}[runtime.GOOS]
 	if system == "" {
@@ -375,7 +379,7 @@ func (m *Manager) newConn(j *joined, token denproto.Bytes, expires time.Time) *c
 	c := &conn{m: m, j: j, profile: j.profile, state: StateConnecting, since: time.Now(), token: token, expires: expires,
 		done: make(chan struct{}), wake: make(chan struct{}, 1),
 		ids: ids, verdicts: map[string]string{}, copies: map[string]denproto.Bytes{}, idDue: make(chan struct{}, 1),
-		dmFiles: map[string]map[int64]dmFile{},
+		labelDue: make(chan struct{}, 1), dmFiles: map[string]map[int64]dmFile{},
 		uploads: map[string]dmUpload{}, approvals: map[string]*approval{}, approved: map[string]RequestView{},
 		kept: map[string]*kept{}, owners: map[string]fileOwner{}, syncDue: make(chan struct{}, 1),
 		fillDue: make(chan struct{}, 1)}
@@ -400,6 +404,11 @@ func (m *Manager) runLocked(c *conn) {
 			defer close(work)
 			c.idWork(ctx)
 		}()
+		labeling := make(chan struct{})
+		go func() {
+			defer close(labeling)
+			c.labelWork(ctx)
+		}()
 		syncing := make(chan struct{})
 		go func() {
 			defer close(syncing)
@@ -407,6 +416,7 @@ func (m *Manager) runLocked(c *conn) {
 		}()
 		c.run(ctx)
 		<-work
+		<-labeling
 		<-syncing
 	}()
 }
@@ -703,7 +713,7 @@ func (m *Manager) join(ctx context.Context, denID, code []byte, url string, req 
 	err = a.call(ctx, http.MethodPost, "/api/join", nil, denproto.JoinRequest{
 		Invite: code, Username: username, DisplayName: displayName,
 		Verifier:  denproto.Verifier(req.Password, denID, username),
-		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.Label,
+		PublicKey: denproto.Bytes(key.Public()), DeviceLabel: m.Label(),
 		Nonce: nonce, Proof: key.Sign(denproto.ProofMessage(denID, keyID, nonce)), SealCheck: sealCheck,
 	}, &resp)
 	if err != nil {

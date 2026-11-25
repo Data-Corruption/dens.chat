@@ -86,7 +86,7 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 		return r, err
 	}
 	for rows.Next() {
-		m, err := scanMember(rows.Scan)
+		m, err := d.scanMember(rows.Scan)
 		if err != nil {
 			rows.Close()
 			return r, err

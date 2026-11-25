@@ -870,6 +870,18 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// A member's status, sealed with the data key as the bio is, and its
+	// end in unix milliseconds, NULL for one they clear themselves.
+	m.Add("Statuses", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_members ADD COLUMN status BLOB;
+			ALTER TABLE den_members ADD COLUMN status_until INTEGER CHECK (status_until IS NULL OR status IS NOT NULL);
+		`); err != nil {
+			return fmt.Errorf("add statuses: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

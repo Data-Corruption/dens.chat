@@ -8,11 +8,12 @@ import (
 // Events about a member's own devices, which only their sessions get.
 // device.connected is a device the den let in by approval opening its
 // first socket, which the device that approved it stops showing
-// its digits on.
+// its digits on; device.updated a device's new label.
 const (
 	EventDeviceAdded     = "device.added"
 	EventDeviceRemoved   = "device.removed"
 	EventDeviceConnected = "device.connected"
+	EventDeviceUpdated   = "device.updated"
 )
 
 // PasswordLoginRequest signs in on a new device with the den password: the
@@ -92,6 +93,16 @@ type Device struct {
 type DeviceList struct {
 	Devices           []Device `json:"devices"`
 	RecoveryCodesLeft int      `json:"recovery_codes_left"`
+}
+
+// DeviceLabelRequest changes the label of the device making it.
+type DeviceLabelRequest struct {
+	Label string `json:"label"`
+}
+
+type DeviceUpdated struct {
+	KeyID Bytes  `json:"key_id"`
+	Label string `json:"label"`
 }
 
 type DeviceRemoved struct {
