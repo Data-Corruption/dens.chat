@@ -29,23 +29,21 @@ const home = {
         { id: '95', kind: 'notes', members: ['1'] },
     ],
     read_states: [],
-    group_dms: {},
 };
 const other = {
     state: 'connected', seal: true, forward: true, has_notes: true,
     me: { id: '7' },
     members: [{ id: '7', username: 'alice', display_name: 'Alice' }, { id: '8', username: 'gabe', display_name: 'Gabe' }, { id: '9', username: 'zed', display_name: 'Zed' }],
     groups: [],
-    channels: [{ id: '20', kind: 'text', name: 'general', position: 0 }, { id: '30', kind: 'group_dm', members: ['7', '8', '9'] }],
+    channels: [{ id: '20', kind: 'text', name: 'general', position: 0 }, { id: '30', kind: 'dm', members: ['7', '8'] }],
     read_states: [],
-    group_dms: { 30: { name: '', members: ['7', '8', '9'] } },
 };
 const names = (list) => list.map((e) => `${e.den === HOME ? 'home' : 'other'}:${e.kind}:${e.name}:${e.id}`);
 
 test("Forward lists every place a message can go, the open den's first, and no voice channel, den or DM with someone gone", () => {
     const views = new Map([[HOME, home], [OTHER, other]]);
     assert.deepEqual(names(forwardList(dens, views, OTHER, '')),
-        ['other:text:general:20', 'other:group:Gabe, Zed:30', 'other:notes:Notes:', 'home:text:general:10', 'home:dm:Bob Stone:90', 'home:notes:Notes:95']);
+        ['other:text:general:20', 'other:dm:Gabe:30', 'other:notes:Notes:', 'home:text:general:10', 'home:dm:Bob Stone:90', 'home:notes:Notes:95']);
     assert.deepEqual(names(forwardList(dens, views, HOME, 'gen')), ['home:text:general:10', 'other:text:general:20']);
     assert.deepEqual(names(forwardList(dens, views, HOME, 'lou')), []);
     assert.deepEqual(names(forwardList(dens, views, HOME, 'cy')), []);

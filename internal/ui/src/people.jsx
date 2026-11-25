@@ -273,18 +273,11 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
 // what this member's Dens kept of their identity, null on a den that keeps
 // none. expiry is the DM, whose time either member sets, where the
 // den keeps one.
-export function ProfilePanel({ denID, member, me, online, kept, onCompare, onAddPeople, expiry }) {
+export function ProfilePanel({ denID, member, me, online, kept, onCompare, expiry }) {
     return (
         <div class="flex flex-col">
             <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified}>
                 <CompareCodes member={member} kept={kept} onCompare={onCompare} />
-                {/* A group of the two and those added, which leaves the DM as it
-                    is. */}
-                {onAddPeople && (
-                    <div>
-                        <Button data-add-people onClick={onAddPeople}>Add people</Button>
-                    </div>
-                )}
                 {expiry && <ExpirySetting denID={denID} channel={expiry} />}
             </Profile>
         </div>

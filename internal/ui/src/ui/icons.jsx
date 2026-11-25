@@ -44,8 +44,8 @@ export function AwayIcon({ size = 'h-[18px] w-[18px]' }) {
     );
 }
 
-// LockIcon marks end-to-end encryption: a DM's, a group's and a call's;
-// open, a call that isn't.
+// LockIcon marks end-to-end encryption: a DM's and a call's; open, a call
+// that isn't.
 export function LockIcon({ size = 'h-3.5 w-3.5', open = false }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>
@@ -157,8 +157,8 @@ export function SmileyIcon({ size = 'h-5 w-5' }) {
     );
 }
 
-// TimerIcon marks messages that disappear: a DM's or a group's
-// time, its line, and each message sent under one.
+// TimerIcon marks messages that disappear: a DM's time, its line, and each
+// message sent under one.
 export function TimerIcon({ size = 'h-3.5 w-3.5' }) {
     return (
         <svg class={`${size} shrink-0`} {...ICON}>

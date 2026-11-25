@@ -3,8 +3,8 @@
 
 import { isPrivate } from '../private/private.js';
 
-// listed arranges a den's channels, DMs and group DMs aside, as its
-// channel list shows them: those in no group, then each group's, each by
+// listed arranges a den's channels, DMs aside, as its channel list shows
+// them: those in no group, then each group's, each by
 // position.
 export function listed(view) {
     const byPosition = (a, b) => a.position - b.position;

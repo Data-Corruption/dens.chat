@@ -1,5 +1,5 @@
-// The quick switcher's list: the channels, DMs and groups of every den
-// this install is in, and the dens, matched as completion matches a
+// The quick switcher's list: the channels and DMs of every den this
+// install is in, and the dens, matched as completion matches a
 // member, by the start of a name or of a word in it. What has something
 // unread comes first, the open den's before the others', and before
 // anything is typed the list is the unread alone. The open den's come from
@@ -10,7 +10,7 @@
 import { unread } from './ids.js';
 import { nameRank } from '../chat/emoji.js';
 import { inOrder } from '../chat/lists.js';
-import { groupTitle, ownNotes } from '../private/private.js';
+import { ownNotes } from '../private/private.js';
 
 // MOST is how many entries the list shows.
 const MOST = 50;
@@ -29,8 +29,7 @@ export function shownDen() {
 }
 
 // entriesOf lists what a den offers: itself, then its text and voice
-// channels in the list's order, its DMs, and its groups. Each holds where
-// it opens, its name and the words that match it, and what waits in it.
+// channels in the list's order, and its DMs. Each holds where it opens, its name and the words that match it, and what waits in it.
 function entriesOf(den, view) {
     const base = { den: den.den_id, denName: den.name };
     const out = [{ ...base, kind: 'den', id: '', name: den.name, words: [den.name], unread: den.unread > 0, mentions: den.mentions || 0 }];
@@ -48,9 +47,6 @@ function entriesOf(den, view) {
             const name = other?.display_name || 'Unknown member';
             out.push({ ...base, kind: 'dm', id: c.id, name, detail: other ? `@${other.username}` : '', words: other ? [name, other.username] : [name], ...waits(c),
                 left: !other || !!other.left_at });
-        } else if (c.kind === 'group_dm') {
-            const name = groupTitle(view.group_dms?.[c.id], members, view.me.id);
-            out.push({ ...base, kind: 'group', id: c.id, name, words: [name], ...waits(c) });
         }
     }
     return out;
@@ -58,11 +54,11 @@ function entriesOf(den, view) {
 
 // placesOf lists where a message can be forwarded in a den connected now:
 // its text channels, where the den keeps a forward's mark, and where this
-// device holds the member's seal, their DMs with members still in the den,
-// their groups and their notes, whose ID is empty until the den makes them.
+// device holds the member's seal, their DMs with members still in the den
+// and their notes, whose ID is empty until the den makes them.
 function placesOf(den, view) {
     if (view?.state !== 'connected') return [];
-    const out = entriesOf(den, view).filter((e) => e.kind === 'text' ? !!view.forward : view.seal && (e.kind === 'group' || (e.kind === 'dm' && !e.left)));
+    const out = entriesOf(den, view).filter((e) => e.kind === 'text' ? !!view.forward : view.seal && e.kind === 'dm' && !e.left);
     if (view.seal && view.has_notes) out.push({ den: den.den_id, denName: den.name, kind: 'notes', id: ownNotes(view)?.id || '', name: 'Notes', words: ['Notes'] });
     return out;
 }
