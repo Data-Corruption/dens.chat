@@ -12,7 +12,7 @@ The design Dens builds toward, and how it works now. This part is the overview: 
 - [Notifications and sounds](design/notifications.md).
 - [Players and cards](design/embeds.md): link previews, YouTube's players and Steam's cards.
 - [Files](design/files.md), and [the media module](design/media.md), which strips, previews and makes smaller copies of videos.
-- [End-to-end encryption](design/e2ee.md): the DM seal, identities and codes, DM keys, group DMs, notes to self and sealed calls.
+- [End-to-end encryption](design/e2ee.md): the DM seal, identities and codes, DM keys, notes to self and sealed calls.
 - [Calls](design/calls.md), and [shares, the soundboard and the SFU](design/sfu.md).
 - [The helper and Relay](design/helper.md): global shortcuts, and a member's own devices working together.
 - [Security hardening](design/security.md): the checklist, by area.
@@ -34,7 +34,7 @@ Dens is a self-hosted chat app with text, voice and screen share, for Linux and 
 
 ### Non-goals
 
-- End-to-end encryption for channels. The den, and so its owner, can read channel messages and files, and the docs say so. The exceptions are end-to-end encrypted: DMs, group DMs, notes to self, and calls and screen shares (see [End-to-end encryption](design/e2ee.md)).
+- End-to-end encryption for channels. The den, and so its owner, can read channel messages and files, and the docs say so. The exceptions are end-to-end encrypted: DMs, notes to self, and calls and screen shares (see [End-to-end encryption](design/e2ee.md)).
 - Protection from targeted investigations or state actors.
 - macOS support, multi-tenancy, federation between dens.
 - Custom permission systems, forums, threads, bots or other feature rabbit holes in v1.
@@ -50,7 +50,7 @@ Dens offers living-room privacy: a closed door, not a bunker. The branding pilla
 | Bulk data requests to a large provider | A compromised device (client or den) |
 | History disappearing when a company changes its terms | A targeted investigation or state actor |
 | Casual filesystem scanners and backup snoopers (local encryption) | Traffic analysis: the den sees member IPs |
-| The den owner reading DMs, group DMs and notes to self and the files in them, or listening to calls and watching shares (all end-to-end encrypted) | Members who compare codes over a channel the den's owner controls, or with someone pretending to be the other member, and a den that hands out keys of its own to members who never compare |
+| The den owner reading DMs and notes to self and the files in them, or listening to calls and watching shares (all end-to-end encrypted) | Members who compare codes over a channel the den's owner controls, or with someone pretending to be the other member, and a den that hands out keys of its own to members who never compare |
 
 The public docs include a short philosophy section: being able to say dumb things, joke, vent and make art without a permanent searchable record is part of being human. They recommend Linux over Windows, Ungoogled Chromium, and not posting identifying details for low-stakes use, and point to Signal, Qubes OS and similar tools for higher-stakes threat models, noting that none of them are bulletproof.
 
@@ -200,8 +200,8 @@ Clients and dens negotiate an integer protocol version, separate from the releas
 
 - Each release speaks a range of versions, from `denproto.MinVersion` to `denproto.Version`, and serves a client that speaks any of them.
 - The client sends `Dens-Protocol` with its newest on every request and the WebSocket upgrade; the den replies with its own range (see [Versioning](protocol.md#versioning)).
-- If the ranges overlap, both use the highest shared version: a client whose request a den refuses as newer than it speaks asks again, once, at the den's newest, and goes at that until a response's range says the den speaks a newer one, as once it updates. A socket keeps the version it opened at, so one whose upgrade's answer shows another shared version, as a den's that updated since the client last heard from it, opens again at that one, once, rather than going without group DMs until it next reconnects. If not, the client says the den needs a newer or older Dens.
-- Version 2 added group DMs, and version 3 notes to self: each a kind of channel whose channels, messages and events an older client would take for the den breaking the protocol. Each kind of channel comes with a version, and a den gives a request or socket only the kinds its version has.
+- If the ranges overlap, both use the highest shared version: a client whose request a den refuses as newer than it speaks asks again, once, at the den's newest, and goes at that until a response's range says the den speaks a newer one, as once it updates. A socket keeps the version it opened at, so one whose upgrade's answer shows another shared version, as a den's that updated since the client last heard from it, opens again at that one, once, rather than going without notes until it next reconnects. If not, the client says the den needs a newer or older Dens.
+- Version 3 added notes to self, a kind of channel whose channels, messages and events an older client would take for the den breaking the protocol. Each kind of channel comes with a version, and a den gives a request or socket only the kinds its version has. Version 2 added group DMs, which are gone, so a den serves 1 and 2 alike.
 - Protocol bumps only for breaking changes; additive fields and message types don't bump it, and unknown message types are ignored.
 - Keep `MinVersion` at least one version behind `Version`, so a den can lag one breaking release without locking members out.
 
@@ -233,8 +233,9 @@ Installed copies hold data that every later version reads, so formats move forwa
   | 18 | The audit log, a table that starts empty, naming members alone | v1.15.0 |
   | 19 | A group's name's signature, by the maker of the key that carried it, a column that starts empty and that only a name takes | v1.16.0 |
   | 20 | A message's forwarded mark, whose default, unmarked, an older message takes | v1.16.0 |
+  | 21 | Nothing: it deletes every group DM, with all its channel holds, and the change log's rows of it first, and drops the group tables, step 19's column with them; `den_channels` keeps `group_dm` among its kinds, and the files' blobs go as the den next opens, which removes every blob no file's row names | v1.16.0 |
 
-  A test makes each released schema by running its steps alone, v1.6.0's, v1.7.0's, v1.8.0's, v1.9.0's, v1.10.1's, v1.12.0's, v1.14.0's and v1.15.0's, puts a row in every table, migrates it, and a backup made of it, and finds every row and table counter as it was, in every column the release had, the new columns at their defaults.
+  A test makes each released schema by running its steps alone, v1.6.0's, v1.7.0's, v1.8.0's, v1.9.0's, v1.10.1's, v1.12.0's, v1.14.0's and v1.15.0's, puts a row in every table, migrates it, and a backup made of it, and finds every row and table counter as it was, in every column the release had, the new columns at their defaults, but for the group DM's rows and tables, which are gone.
 - `instance.json` and `state.json` decode strictly, so every field a release wrote stays readable, and a change of meaning gets a new field rather than an old one's name. An older binary never meets a newer file, since downgrades are refused.
 - A backup from any release restores, and migrates as the service starts.
 - A change to one of these comes with a test that reads its released form.

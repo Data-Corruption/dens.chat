@@ -10,7 +10,7 @@ group   = {"id", "name", "position"}
 ```
 
 - `group_id` is null for a channel outside any group.
-- A channel's `kind` is its ID's for good: a den gives no ID out twice, and a client that held or opened an ID as one kind, deleted since or not, takes it as another as the den breaking the protocol, since a DM taken for a text channel would have its next message go unsealed.
+- A channel's `kind` is its ID's for good: a den gives no ID out twice, and a client that held or opened an ID as one kind, deleted since or not, takes it as another as the den breaking the protocol, since a DM taken for a text channel would have its next message go unsealed. An older den's `group_dm` channel keeps its kind too, though a client drops it unread (see [Group DMs on an older den](e2ee.md#group-dms-on-an-older-den)).
 - Names are 1 to 32 characters, with the same stripping as display names. A text channel's `description` is the markdown subset, up to 4,000 characters. Voice channels have none.
 - A voice channel's `bitrate` is what its call's Opus may send, in bits a second: 16000 to 128000, in steps of 8000, and 96000 unless set when it's created or changed. Text channels have none. A change reaches the call in progress with each member's next offer (see [Offers and answers](calls.md#offers-and-answers)).
 - A den has at most 500 channels and 100 groups.
@@ -84,7 +84,7 @@ POST /api/dms/{id}/close                   204
 - A DM is a channel of kind `dm` between two members: `{"id", "kind": "dm", "members": [lower ID, higher ID], "group_id": null, "name": "", "position": 0, "staff_only": false}`. Each pair has one; `POST /api/dms` returns it, creating it on first use and sending `channel.created` to both.
 - Only its two members see it, in `ready`, events, history and sends. Staff don't see or moderate DMs, and the den's owner can't read them either: their messages and files are end-to-end encrypted (see [Private DMs](e2ee.md#private-dms)).
 - Messages, edits, deletes, replies and read state work as in channels, their text sealed. Every message counts toward the other member's unread `mention_count`.
-- DMs aren't managed through `/api/channels`, and don't count toward the 500-channel limit. Nor are group DMs, which `POST /api/dms/{id}/close` closes as it does a DM (see [Group DMs](e2ee.md#group-dms)).
+- DMs aren't managed through `/api/channels`, and don't count toward the 500-channel limit.
 - A DM whose other member left keeps its history, but nothing more can be sent (`403 forbidden`), and no new DM starts with a former member.
 - Closing a DM takes it out of the member's list on all their devices: their read state for it gets `"closed": true`, sent as `read_state.updated`. A new message in it, from either member, or opening it again with `POST /api/dms`, reopens it the same way.
 

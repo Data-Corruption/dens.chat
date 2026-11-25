@@ -10,7 +10,7 @@ message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at
            "sealed"?, "key_id"?, "reactions"?, "dm_reactions"?, "poll"?, "everyone"?, "expires_at"?, "forwarded"?}
 ```
 
-A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](e2ee.md#private-dms)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls)). A DM's or a group's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](sync.md#disappearing-messages)). A channel's message its author forwarded carries `forwarded: true`, and nothing of where it came from; a sealed place's mark is inside the seal (see [DM messages](e2ee.md#dm-messages)).
+A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](e2ee.md#private-dms)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls)). A DM's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](sync.md#disappearing-messages)). A channel's message its author forwarded carries `forwarded: true`, and nothing of where it came from; a sealed place's mark is inside the seal (see [DM messages](e2ee.md#dm-messages)).
 
 `text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files, when it may be empty. It is the markdown subset in the design's [Text and replies](../design/messages.md#text-and-replies), which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links)).
 
@@ -61,7 +61,7 @@ GET /                                           200 text/plain: a line saying th
 - Rewriting links leaves the fragment as it is (see [Links](#links)), so a link to a message reads the same in a channel and in a DM.
 - Before opening one, the client checks that the channel is a text channel or DM the member can see, and that the message is there: `around` it with a `limit` of 1 answers it, or the message after it once it's gone (see [History](#history)).
 - A link to an event is the same with `/#e/`, `den_id`, `/` and the event's ID: `https://den.example.com/#e/<den ID>/12`. A client reads it as it reads a link to a message, and shows the event's card (see [Cards and badges](members.md#cards-and-badges)).
-- A link to a channel is the same with `/#c/`, `den_id`, `/` and the channel's ID: `https://den.example.com/#c/<den ID>/41`. A client opens it as a link to a message, at the channel's newest message, where it's a text channel, a DM, a group or the member's notes they can see; a voice channel's opens nothing.
+- A link to a channel is the same with `/#c/`, `den_id`, `/` and the channel's ID: `https://den.example.com/#c/<den ID>/41`. A client opens it as a link to a message, at the channel's newest message, where it's a text channel, a DM or the member's notes they can see; a voice channel's opens nothing.
 
 ### History
 
@@ -93,7 +93,7 @@ DELETE /api/messages/{id}                                                       
 - `forwarded: true` marks a forward, in a channel, where the den's info says `forward`: the den refuses it (`400 invalid_field`) on a sealed message, or with a poll, `reply_to` or `editors`, and refuses an edit or a tick of one with `403 forbidden`, but its author's edit that keeps its text, names no `editors` and lists only files already on it, which takes the others off.
 - The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's. In a DM only the author deletes a message.
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. An edit that takes files off a message lists them the same way, in `files` beside the message's own fields (see [Attachments](files.md#attachments)).
-- Each member a deleted message counted for, in a DM or a group each other member and in a channel each it mentioned, gets `read_state.updated` after its `message.deleted`: their `mention_count` without it, and where it was all that lay past their read position, the position moved past it. A client learns a channel's newest message only as messages come, so a DM whose last message went unread would otherwise stay unread until the next `ready`.
+- Each member a deleted message counted for, in a DM the other member and in a channel each it mentioned, gets `read_state.updated` after its `message.deleted`: their `mention_count` without it, and where it was all that lay past their read position, the position moved past it. A client learns a channel's newest message only as messages come, so a DM whose last message went unread would otherwise stay unread until the next `ready`.
 
 ### Read state
 
@@ -103,7 +103,7 @@ POST /api/read                                  204
 ```
 
 - The position only moves forward: a lower `message_id` is ignored.
-- `POST /api/read` moves the member's position in every channel, DM, group and note they see to its newest message, in one write, where `read_all` is in the den's info. It counts as one write against the member's limit.
+- `POST /api/read` moves the member's position in every channel and DM they see, and in their notes, to its newest message, in one write, where `read_all` is in the den's info. It counts as one write against the member's limit.
 - Clients send it once a message has been on screen, at most once every few seconds per channel.
 - The den tells all the member's sessions with `read_state.updated {channel_id, message_id, mention_count}`, one for each channel whose position moved.
 - `ready` carries `read_states`: for each channel, `channel_id`, its last message's ID as `last_message_id`, the member's read position as `message_id`, their unread mention count as `mention_count`, and for a DM, whether they closed it, as `closed`.
