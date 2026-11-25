@@ -1445,8 +1445,9 @@ export async function touching(h, ctx, d, report) {
         did(false, "the sheet didn't open again");
     }
     // The newest may be a poll, which doesn't forward, as an earlier
-    // mode's polls leave one.
-    s = await open(`[...document.querySelectorAll('[data-scroller] [data-id]')].find((r) => r.textContent.includes("Bob's last word"))`);
+    // mode's polls leave one; the Android e2e's den has no Bob, and no poll.
+    const lastWord = `[...document.querySelectorAll('[data-scroller] [data-id]')].find((r) => r.textContent.includes("Bob's last word"))`;
+    s = await open((await h.has(lastWord)) ? lastWord : NEWEST);
     if (s?.rows.includes('Forward')) {
         const FORWARD = `document.querySelector('[role=dialog][data-forward]')`;
         await d.tap(`[...${SHEET}.querySelectorAll('[role=menuitem]')].find((r) => r.textContent.trim() === 'Forward')`);

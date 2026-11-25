@@ -190,7 +190,7 @@
 #                               Hover in both browsers; and each section held to the one frame,
 #                               its groups cards, one toggle size, regular labels, every button one of the page's
 #                               kinds; Manage holding what staff manage; and her own sections of the den from the
-#                               cog on its page; and the code a block, a stranger's blocks read for
+#                               cog on its page, this device renamed in Devices; and the code a block, a stranger's blocks read for
 #                               what the page reads alone, and a v1.13.0 code read; and Appearance
 #                               as a page, Back to the section before, its preview following each setting, and
 #                               at 1900, 1100 and 390 pixels a built-in theme chosen against the page's, worn
@@ -204,12 +204,15 @@
 #                               the page's styles and the screen's pixels, no row taller, her font alone
 #                               fetched; a Cyrillic name in the page's font; bob's Name styles at Colors
 #                               only and Off; each font's letters inside a name's box; and alice
-#                               clearing her style
+#                               clearing her style; and her status set in Edit profile, its end picked with
+#                               the mouse or the keys, beside a card framed as a preview, read under her name and on her
+#                               card on bob's page, its end kept by a later save, and one a few seconds
+#                               long gone there at its end
 #   relay BROWSER               bob in a call on his first install, his laptop's install linked to it
 #                               through the den's introduction, its stand-in helper's push to talk ringing
 #                               him on alice's page, its toggle mute muting him once, the ring out within half
 #                               a second of the laptop's install stopping; his Relay settings listing the
-#                               laptop as linked; and the laptop, with its real helper, sharing the
+#                               laptop as linked, and by the name it's given; and the laptop, with its real helper, sharing the
 #                               container's sound, a tone, which his first page plays from Listen, at the tone's
 #                               level and never dry, behind another tab too, by the worklet's counts; the bars
 #                               on both ends; a second page taking over, the first told; the laptop's Stop; and
@@ -219,7 +222,7 @@
 #                               and his Home holding his bar and his call in one box
 #   signin BROWSER              bob's laptop signing in from its page, saying at once that it waits for
 #                               his other device; his first device, at a phone's width, showing the request on
-#                               each pane; the digits typed both ways, and the laptop signed in
+#                               each pane, by the name the laptop was given; the digits typed both ways, and the laptop signed in
 #   steam BROWSER               Steam's cards against a stand-in for Steam: off until bob turns them on,
 #                               asking nothing; each game once, three to a message, none in code or a
 #                               spoiler; a sale's card in full, held to its size as it loads, its arrows

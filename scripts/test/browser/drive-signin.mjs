@@ -4,7 +4,7 @@
 // his first device's screen, and in Firefox, which has no camera, by
 // typing what it shows; then his den password. The laptop says at once
 // that it waits for his other device, whose request opens as a dialog in
-// Add device's place. It's mine; his first device types the laptop's
+// Add device's place, naming the laptop by the name it was given. It's mine; his first device types the laptop's
 // digits and approves; the laptop scans his first device's digits from
 // their code, or types them; and once it connects, his first device's
 // dialog closes by itself, and his Devices mark the laptop as new.
@@ -121,6 +121,8 @@ try {
     }
     report(await B.b.eval(`${APPROVAL}.innerText.includes('Voice Den') && !!${button(APPROVAL, "It's mine")} && !!${button(APPROVAL, 'Refuse')}`),
         "it names the den, with It's mine and Refuse");
+    const asking = await B.b.eval(`${APPROVAL}.querySelector('[data-request-label]')?.textContent || ''`);
+    report(/^Bob's laptop \(.+\)$/.test(asking), `it names the laptop by the name it was given on itself: ${asking}`);
     await B.b.shot(`${HOME}/shot-signin-request-${which}.png`);
 
     step('each shows digits');
@@ -163,7 +165,7 @@ try {
     await B.b.eval(`${cog}.click(), true`);
     await waitFor(() => B.b.eval(`!!${devices}`), "the den's sections");
     await B.b.eval(`(${devices}.closest('button') || ${devices}.querySelector('button') || ${devices}).click(), true`);
-    const marked = await waitFor(() => B.b.eval(`[...document.querySelectorAll('li')].some((li) => li.textContent.includes('Linux') && !!li.querySelector('[data-new-device]'))`),
+    const marked = await waitFor(() => B.b.eval(`[...document.querySelectorAll('li')].some((li) => li.textContent.includes("Bob's laptop") && !!li.querySelector('[data-new-device]'))`),
         'the laptop marked').catch(() => false);
     report(marked, 'his Devices mark the laptop as new');
     await B.b.shot(`${HOME}/shot-signin-devices-${which}.png`);

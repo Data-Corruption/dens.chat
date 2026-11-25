@@ -581,6 +581,41 @@ text-of)
     api GET "/api/dens/$1/channels/$2/messages?limit=100" |
         json 'next(m["text"] for m in d["messages"] if m["id"] == "'"$3"'").replace("\n", "|")'
     ;;
+forward)
+    # forward DEN_ID CHANNEL_ID MESSAGE_ID TO_CHANNEL_ID: forward a message
+    # to a place in the same den; print the forward's ID.
+    nonce=$(python3 -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(16)).decode().rstrip("="))')
+    api POST "/api/dens/$1/messages/$3/forward?channel=$2" "{\"den\":\"$1\",\"channel\":\"$4\",\"nonce\":\"$nonce\"}" | json 'd["id"]'
+    ;;
+forwarded)
+    # forwarded DEN_ID CHANNEL_ID MESSAGE_ID: print whether a message reads
+    # as forwarded, true or false.
+    api GET "/api/dens/$1/channels/$2/messages?limit=100" |
+        json 'str(next(m.get("forwarded", False) for m in d["messages"] if m["id"] == "'"$3"'")).lower()'
+    ;;
+set-status)
+    # set-status DEN_ID TEXT: set this member's status, with no end.
+    api PUT "/api/dens/$1/me/status" "{\"status\":\"$2\"}" >/dev/null
+    ;;
+status-of)
+    # status-of DEN_ID USERNAME: print a member's status as this client
+    # holds it.
+    api GET "/api/dens/$1/state" | json 'next(m.get("status", "") for m in d["members"] if m["username"] == "'"$2"'")'
+    ;;
+device-name)
+    # device-name NAME: name this install.
+    api POST /api/settings "{\"deviceName\":\"$1\"}" >/dev/null
+    ;;
+wait-device-label)
+    # wait-device-label DEN_ID PREFIX: wait until the den lists this
+    # device under a label that starts with PREFIX; print it.
+    for _ in $(seq 1 40); do
+        label=$(api GET "/api/dens/$1/devices" | json 'next(x["label"] for x in d["devices"] if x.get("current"))')
+        case $label in "$2"*) printf '%s\n' "$label"; exit 0 ;; esac
+        sleep 0.25
+    done
+    fail "the den lists this device as $label"
+    ;;
 history)
     # history DEN_ID CHANNEL_ID: print the channel's messages, oldest first.
     api GET "/api/dens/$1/channels/$2/messages?limit=100" | json '"\n".join(m["text"] for m in d["messages"])'
