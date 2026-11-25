@@ -4,7 +4,9 @@ import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { avatarColor, avatarLetter } from '../src/ui/avatar.jsx';
 import { MessageRow, typingLine } from '../src/chat/messages.jsx';
-import { EditProfile, MARK, MemberList, ProfileCard, cardAt, cardMenu, memberMenu, rank, roleMark, shownBadges } from '../src/people.jsx';
+import {
+    EditProfile, MARK, MemberList, ProfileCard, STATUS_ENDS, cardAt, cardMenu, memberMenu, rank, roleMark, shownBadges, statusEnd, statusEndText, statusShown,
+} from '../src/people.jsx';
 import { CallMembers } from '../src/voice/voice.jsx';
 import { setStaffMarks, staffMarks } from '../src/ui/staffmarks.js';
 
@@ -358,4 +360,125 @@ test("a profile card opens beside what was clicked: to its right, or its left wh
     // No room either side: against the window's right edge, never past its left.
     assert.deepEqual(cardAt(box(100, 50, 300), size, 500, 800), { left: 140, top: 50 });
     assert.deepEqual(cardAt(box(0, 50, 380), size, 360, 800), { left: 8, top: 50 });
+});
+
+test("a status shows until its end, which Clear after picks: some minutes on, midnight by this device's clock, or none", () => {
+    const now = new Date(2026, 10, 25, 14, 30).getTime();
+    assert.equal(statusShown({ status: 'at lunch', status_until: now + 1 }, now), 'at lunch');
+    assert.equal(statusShown({ status: 'at lunch', status_until: now }, now), '', 'none at its end');
+    assert.equal(statusShown({ status: 'away for good' }, now), 'away for good', 'none with no end');
+    assert.equal(statusShown({}, now), '');
+    assert.equal(statusShown(null, now), '');
+    assert.deepEqual(STATUS_ENDS.map(([key]) => key), ['30m', '1h', '4h', 'today', 'never']);
+    assert.equal(statusEnd('30m', new Date(now)), now + 30 * 60000);
+    assert.equal(statusEnd('1h', new Date(now)), now + 60 * 60000);
+    assert.equal(statusEnd('4h', new Date(now)), now + 4 * 60 * 60000);
+    assert.equal(statusEnd('today', new Date(now)), new Date(2026, 10, 26).getTime());
+    assert.equal(statusEnd('never', new Date(now)), 0);
+});
+
+test("a status shows under its member's name in the list and on their card, as text, and goes from both at its end", async () => {
+    globalThis.fetch = async () => ({ ok: true, status: 200, headers: { get: () => null }, text: async () => JSON.stringify({ ...bob, id: '3' }) });
+    const root = document.createElement('div');
+    const statuses = () => findAll(root, byAttr('data-status')).map((n) => n.textContent);
+    const soon = Date.now() + 60;
+    const carol = { ...bob, id: '3', display_name: 'Carol', username: 'carol', status: 'back <b>soon</b>', status_until: soon };
+    const dan = { ...bob, id: '4', display_name: 'Dan', username: 'dan', status: 'long gone', status_until: Date.now() - 1 };
+    mount(h(MemberList, { members: [alice, { ...bob, status: '🎮 playing' }, carol, dan], online: new Set(['1']), onProfile() {} }), root);
+    assert.deepEqual(statuses(), ['🎮 playing', 'back <b>soon</b>'], 'one past its end shows nowhere, and markup is text');
+    assert.equal(findAll(root, (n) => n.localName === 'b').length, 0);
+    for (let i = 0; i < 50 && statuses().length > 1; i++) await settle();
+    assert.deepEqual(statuses(), ['🎮 playing'], 'gone from the list at its end');
+
+    mount(card({ member: { ...carol, status_until: Date.now() + 60 } }), root);
+    assert.deepEqual(statuses(), ['back <b>soon</b>']);
+    for (let i = 0; i < 50 && statuses().length; i++) await settle();
+    assert.deepEqual(statuses(), [], 'and from the card');
+    mount(null, root);
+});
+
+test("the profile's editor sets a status with its end where the den keeps them, leaves one untouched as it is, and clears it", async () => {
+    const asked = [];
+    globalThis.fetch = async (path, opts = {}) => {
+        asked.push({ method: opts.method || 'GET', path, body: opts.body ? JSON.parse(opts.body) : undefined });
+        const body = path.startsWith('/api/dens/d/members/') || path.startsWith('/api/dens/d/me') ? { ...alice } : path === '/api/dens/d/storage' ? { used: 0 } : null;
+        return { ok: true, status: body ? 200 : 204, headers: { get: () => null }, text: async () => (body ? JSON.stringify(body) : '') };
+    };
+    const root = document.createElement('div');
+    const field = () => findAll(root, byAttr('data-status-text'))[0];
+    const ends = () => findAll(root, byAttr('data-status-end'))[0];
+    const options = () => findAll(ends(), (n) => n.localName === 'option').map((o) => o.textContent);
+    const chosen = () => ends().value ?? ends().attributes.value;
+    let closed = 0;
+    const edit = (me, statuses = true) => {
+        asked.length = 0;
+        closed = 0;
+        mount(null, root);
+        mount(h(EditProfile, { denID: 'd', me, limits: null, statuses, onClose: () => closed++ }), root);
+    };
+    const save = async () => {
+        findAll(root, (n) => n.localName === 'form' && n.listeners.Submit)[0].dispatch('Submit', { preventDefault() {} });
+        for (let i = 0; i < 50 && !closed; i++) await settle();
+        return asked.filter((a) => a.path === '/api/dens/d/me/status');
+    };
+    const type = async (text) => {
+        field().value = text;
+        field().dispatch('input');
+        await settle();
+    };
+    const pick = async (end) => {
+        ends().value = end;
+        ends().dispatch('change');
+        await settle();
+    };
+
+    edit(alice, false);
+    assert.equal(field(), undefined, 'no status on a den that keeps none');
+    mount(card({ member: alice }), root);
+    assert.equal(findAll(root, buttonNamed('Set a status')).length, 0, 'and the card offers none');
+
+    // A new one: no end to pick until there are words, then Today unless another is picked.
+    edit(alice);
+    assert.equal(ends(), undefined);
+    await type('  out walking  ');
+    assert.equal(chosen(), 'today');
+    assert.deepEqual(options(), STATUS_ENDS.map(([, label]) => label));
+    await pick('1h');
+    const before = Date.now();
+    let puts = await save();
+    assert.equal(puts.length, 1);
+    assert.equal(puts[0].body.status, 'out walking');
+    assert.ok(puts[0].body.until >= before + 60 * 60000 && puts[0].body.until <= Date.now() + 60 * 60000, 'an hour on');
+
+    // One with an end opens at that end, and saving the profile leaves it as it is.
+    const until = Date.now() + 20 * 60000;
+    const out = { ...alice, status: 'out walking', status_until: until };
+    edit(out);
+    assert.equal(chosen(), 'keep');
+    assert.equal(options()[0], statusEndText(until));
+    assert.deepEqual(await save(), [], 'untouched, nothing is sent');
+    // Its words changed, it keeps its end; another end picked, it takes that.
+    edit(out);
+    await type('out running');
+    assert.deepEqual((await save()).map((a) => a.body), [{ status: 'out running', until }]);
+    edit(out);
+    await pick('never');
+    assert.deepEqual((await save()).map((a) => a.body), [{ status: 'out walking' }]);
+    // One with no end opens at Never, with no end of its own to keep.
+    edit({ ...alice, status: 'gone fishing' });
+    assert.equal(chosen(), 'never');
+    assert.deepEqual(options(), STATUS_ENDS.map(([, label]) => label));
+    assert.deepEqual(await save(), []);
+    // Emptied, it's cleared.
+    edit(out);
+    await type('');
+    assert.equal(ends(), undefined);
+    assert.deepEqual((await save()).map((a) => a.body), [{ status: '' }]);
+    mount(null, root);
+});
+
+test('an end a status has reads as its time of day, with its date on another day', () => {
+    const now = new Date(2026, 10, 25, 14, 0).getTime();
+    assert.equal(statusEndText(new Date(2026, 10, 25, 15, 45).getTime(), now, 'en-US'), '3:45 PM');
+    assert.equal(statusEndText(new Date(2026, 10, 26, 0, 0).getTime(), now, 'en-US'), 'Nov 26, 2026, 12:00 AM');
 });

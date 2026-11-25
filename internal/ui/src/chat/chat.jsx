@@ -808,7 +808,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                     />
                 )}
                 {dialog?.kind === 'codes' && <CodesDialog denID={denID} member={members.get(dialog.member.id) || dialog.member} onClose={() => setDialog(null)} />}
-                {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} nameStyles={!!view.name_styles}
+                {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} nameStyles={!!view.name_styles} statuses={!!view.statuses}
                     onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'remove' && <RemoveMember denID={denID} member={dialog.member} onClose={() => setDialog(null)} />}
             </LinkContext.Provider>

@@ -1,12 +1,13 @@
-// Members: the member list, profile cards, editing your own profile, and
-// staff removing someone.
+// Members: the member list, profile cards, editing your own profile and
+// status, and staff removing someone.
 
 import { useEffect, useLayoutEffect, useRef, useState } from 'preact/hooks';
 import { api } from './core/api.js';
 import { HoverRow, Picture, Shown, usePicture } from './appearance/animations.js';
 import { Avatar } from './ui/avatar.jsx';
 import {
-    Actions, Button, Choices, ColorField, ErrorText, Field, HoverTip, LongName, StatusText, SubmitButton, TextInput, Tip, buttonClass, day, useAction, useLater,
+    Actions, Button, Choices, ColorField, ErrorText, Field, HoverTip, LongName, PreviewFrame, StatusText, SubmitButton, TextInput, Tip, buttonClass, clock, day, dayTime,
+    useAction, useLater,
 } from './ui/components.jsx';
 import { CropDialog } from './ui/crop.jsx';
 import { fileURL, formatSize, thumbURL, upload, uploadAnimated } from './chat/files.jsx';
@@ -24,6 +25,55 @@ import { Sheet } from './ui/sheet.jsx';
 import { useCoarse } from './core/touch.js';
 
 const MAX_BIO = 300;
+const MAX_STATUS = 80;
+
+/** statusShown is a member's status as it shows at now: none once its
+    end has passed, which the den sends nothing to say */
+export function statusShown(member, now = Date.now()) {
+    if (!member?.status) return '';
+    return member.status_until && member.status_until <= now ? '' : member.status;
+}
+
+/** STATUS_ENDS are a status's ends, as the profile's Clear after lists
+    them */
+export const STATUS_ENDS = [['30m', '30 minutes'], ['1h', '1 hour'], ['4h', '4 hours'], ['today', 'Today'], ['never', 'Never']];
+
+/** statusEnd is when an end of STATUS_ENDS falls from now, in Unix
+    milliseconds: minutes on, the next midnight by this device's clock,
+    or 0 for none */
+export function statusEnd(key, now = new Date()) {
+    const minutes = { '30m': 30, '1h': 60, '4h': 240 }[key];
+    if (minutes) return now.getTime() + minutes * 60000;
+    if (key !== 'today') return 0;
+    const at = new Date(now);
+    at.setHours(24, 0, 0, 0);
+    return at.getTime();
+}
+
+/** statusEndText is an end a status already has, as Clear after lists
+    it: the time of day, with its date where that isn't today's */
+export function statusEndText(until, now = Date.now(), locale = undefined) {
+    return new Date(until).toDateString() === new Date(now).toDateString() ? clock(until, locale) : dayTime(until, locale);
+}
+
+// The longest a timer waits in a browser, about 24 days; a status that
+// ends later is looked at again then.
+const LONGEST_WAIT = 2 ** 31 - 1;
+
+/** useStatusClock renders again as the soonest of members' statuses
+    ends, so each goes at its time */
+function useStatusClock(members) {
+    const [ticks, tick] = useState(0);
+    const now = Date.now();
+    let next = Infinity;
+    for (const m of members) if (m?.status && m.status_until > now) next = Math.min(next, m.status_until);
+    useEffect(() => {
+        if (next === Infinity) return undefined;
+        const t = setTimeout(() => tick((n) => n + 1), Math.min(next - Date.now() + 20, LONGEST_WAIT));
+        return () => clearTimeout(t);
+    }, [next, ticks]);
+    return now;
+}
 
 // rank orders roles as the den does: staff act only on those below them.
 export function rank(role) {
@@ -111,6 +161,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
     const act = useAction();
     const [menu, setMenu] = useState(null);
     const here = members.filter((m) => !m.left_at);
+    const now = useStatusClock(here);
     const on = here.filter((m) => online.has(m.id)).sort(byName);
     const off = here.filter((m) => !online.has(m.id)).sort(byName);
     function items(m) {
@@ -157,9 +208,12 @@ export function MemberList({ denID, members, online, card, onProfile }) {
                                 {...rightClicks(m)}
                             >
                                 <Avatar member={m} size="sm" online={online.has(m.id)} />
-                                <span class="flex min-w-0 flex-1 items-center gap-1">
-                                    <LongName name={m.display_name} member={m} />
-                                    <RoleMark role={m.role} />
+                                <span class="flex min-w-0 flex-1 flex-col">
+                                    <span class="flex min-w-0 items-center gap-1">
+                                        <LongName name={m.display_name} member={m} />
+                                        <RoleMark role={m.role} />
+                                    </span>
+                                    {statusShown(m, now) && <span class="truncate text-xs text-base-content/70" data-status>{statusShown(m, now)}</span>}
                                 </span>
                             </HoverRow>
                             {opened?.id === m.id && !narrow && (
@@ -190,9 +244,9 @@ export function MemberList({ denID, members, online, card, onProfile }) {
 // so the two read as one, with actions to its right; under it their
 // names, with a crown or a shield for staff, and the badges they show,
 // beside the names on a card wide enough and under them on a narrow one;
-// then, under a thin line, their bio as text and how long they've been in
-// the den. The bio and the badges come as the den sends them with the
-// card. In a panel the bio runs its full length, which the panel
+// then their status, and under a thin line, their bio as text and how
+// long they've been in the den. The bio and the badges come as the den sends them with
+// the card. In a panel the bio runs its full length, which the panel
 // scrolls. Its pictures play while it shows, since the member opened it.
 function Profile({ denID, member, me, online, panel = false, verified = false, actions, fixed, children }) {
     const [fetched, setBio] = useState(null);
@@ -213,6 +267,7 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
     }, [member.id, member.display_name, !!fixed]);
     const left = !!member.left_at;
     const shown = shownBadges(badges);
+    const status = statusShown(member, useStatusClock([member]));
     const ring = panel ? 'bg-base-200' : 'bg-base-100';
     const at = panel ? '-panel' : '';
     return (
@@ -239,6 +294,7 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
                                 {verified && <VerifiedMark id={`profile-verified-${member.id}${at}`} name={member.display_name} />}
                             </p>
                             <p class="max-w-full truncate text-sm text-base-content/70">@{member.username}</p>
+                            {status && <p class="mt-1 max-w-full break-words text-sm" data-status>{status}</p>}
                         </div>
                         {shown.length > 0 && (
                             <div class="flex min-w-0 flex-col gap-1 @min-[26rem]:max-w-[55%]">
@@ -493,11 +549,17 @@ export function Banner({ denID, image, edge = false }) {
 // nameStyles, how their name shows to everyone. Save stays at its foot,
 // and a wide window shows the card beside the fields as others will see
 // it, changing as they do.
-export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) {
+export function EditProfile({ denID, me, limits, nameStyles = false, statuses = false, onClose }) {
     const narrow = useNarrow();
     const [name, setName] = useState(me.display_name);
     const [style, setStyle] = useState(() => cleanStyle(me.name_style) || {});
     const [bio, setBio] = useState(null);
+    // The status as the editor opened, and its end: kept, where it has
+    // one, until the member picks another.
+    const [had] = useState(() => ({ status: statusShown(me), until: me.status_until || 0 }));
+    const [status, setStatus] = useState(had.status);
+    const [end, setEnd] = useState(had.status ? (had.until ? 'keep' : 'never') : 'today');
+    const [ended] = useState(end);
     const [badges, setBadges] = useState([]);
     const [cropping, setCropping] = useState(null);
     const [storage, setStorage] = useState(null);
@@ -558,11 +620,19 @@ export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) 
         e.preventDefault();
         save.run(async () => {
             await api.patch(`/api/dens/${denID}/me`, { display_name: name, bio, ...(nameStyles ? { name_style: style } : {}) });
+            // A status untouched is left as it is, its end with it.
+            const line = status.trim();
+            if (statuses && (line !== had.status || (line && end !== ended))) {
+                // An end kept that has passed since is today's.
+                const until = end !== 'keep' ? statusEnd(end) : had.until > Date.now() ? had.until : statusEnd('today');
+                await api.put(`/api/dens/${denID}/me/status`, line ? { status: line, until: until || undefined } : { status: '' });
+            }
             onClose();
         });
     }
 
-    const card = { ...me, display_name: name.trim() || me.display_name, name_style: nameStyles ? style : me.name_style };
+    const card = { ...me, display_name: name.trim() || me.display_name, name_style: nameStyles ? style : me.name_style,
+        ...(statuses ? { status: status.trim(), status_until: 0 } : {}) };
     return (
         <Dialog title="Your profile in this den" onClose={onClose} wide foot={(
             <Actions>
@@ -611,6 +681,19 @@ export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) 
                             <TextInput value={name} onInput={setName} required maxlength="32" />
                         </Field>
                         {nameStyles && <NameStyleFields me={me} name={name} style={style} onChange={setStyle} />}
+                        {statuses && (
+                            <Field label="Status" hint="Everyone in this den sees it under your name.">
+                                <TextInput value={status} onInput={setStatus} maxlength={String(MAX_STATUS)} data-status-text />
+                            </Field>
+                        )}
+                        {statuses && status.trim() && (
+                            <Field label="Clear after">
+                                <select class="select w-full" value={end} data-status-end onChange={(e) => setEnd(e.currentTarget.value)}>
+                                    {ended === 'keep' && <option value="keep">{statusEndText(had.until)}</option>}
+                                    {STATUS_ENDS.map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                                </select>
+                            </Field>
+                        )}
                         <Field label="About you" hint={`Up to ${MAX_BIO} characters. The same formatting as messages works here.`}>
                             {/* The form shows at once; only the bio waits for the den. */}
                             <textarea class="textarea w-full" rows="4" value={bio ?? ''} disabled={bio === null}
@@ -630,8 +713,10 @@ export function EditProfile({ denID, me, limits, nameStyles = false, onClose }) 
                     </form>
                     {/* The card as others will see it, held in view while the fields scroll. */}
                     {!narrow && (
-                        <aside class="sticky top-0 w-80 shrink-0 overflow-hidden rounded-box border border-base-300" aria-label="Your profile, as others see it" data-profile-preview>
-                            <Profile denID={denID} member={card} me={me} fixed={{ bio: bio ?? '', badges }} />
+                        <aside class="sticky top-0 w-80 shrink-0" aria-label="Your profile, as others see it" data-profile-preview>
+                            <PreviewFrame>
+                                <Profile denID={denID} member={card} me={me} fixed={{ bio: bio ?? '', badges }} />
+                            </PreviewFrame>
                         </aside>
                     )}
                 </div>
