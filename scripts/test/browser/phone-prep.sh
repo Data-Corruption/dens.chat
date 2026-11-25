@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # The phone check's den: alice's install hosts it; bob and carol
 # join; dave's, which the driver starts new for each browser, shows the
-# screens before a den. Alice, bob and carol share a group DM, which
-# carol renames and sets to disappear after a week, as bob sets
-# the DM after a day. Its soundboard holds a sound, and it has
+# screens before a den. Bob sets the DM to disappear after a day. Its
+# soundboard holds a sound, and it has
 # an emoji of its own. general
 # has a description and every kind of message; random a few more; Projects
 # holds a channel with a long name and a voice channel; staff is staff
@@ -79,18 +78,6 @@ api alice POST "/api/dens/$DEN/seal/start-over" '{"password":"den password"}' >/
 open_dm alice bob >/dev/null
 say alice "$dm" "and one after starting over"
 
-bob_id=$(api bob GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
-carol_id=$(api carol GET "/api/dens/$DEN/state" | json 'd["me"]["id"]')
-group=$(api alice POST "/api/dens/$DEN/group-dms" "{\"members\":[\"$bob_id\",\"$carol_id\"],\"name\":\"Weekend plans\"}" | json 'd["id"]')
-for _ in $(seq 80); do
-    [[ $(api carol GET "/api/dens/$DEN/state" | json "len((d.get('group_dms') or {}).get('$group', {}).get('members', [])) == 3") == True ]] && break
-    sleep 0.25
-done
-say bob "$group" "who's bringing what on saturday?"
-say carol "$group" "I'll bring the board games, and something for the grill"
-api carol PUT "/api/dens/$DEN/group-dms/$group/name" '{"name":"Saturday at the lake"}' >/dev/null
-api carol PUT "/api/dens/$DEN/dms/$group/expiry" '{"expires_after":604800}' >/dev/null
-say carol "$group" "this one goes in a week"
 api bob PUT "/api/dens/$DEN/dms/$dm/expiry" '{"expires_after":86400}' >/dev/null
 say bob "$dm" "and this one goes tomorrow"
 
@@ -124,4 +111,3 @@ echo "GENERAL=$general"
 echo "RANDOM_ID=$random"
 echo "LOUNGE=$LOUNGE"
 echo "DM=$dm"
-echo "GROUP=$group"

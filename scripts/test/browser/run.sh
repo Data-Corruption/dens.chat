@@ -100,17 +100,11 @@
 #                               hour; and bob starting over: the line where his keys changed, his mark gone,
 #                               the hold, on alice's laptop too, signed in as it holds, Send anyway lifting
 #                               it on both, and his new code compared
-#   groups BROWSER              a group made from the DM tab's + and named, each change a line
-#                               in it; written in, a photo sent, read through its members' Dens; dave added from
-#                               its members, reading from his joining on; renamed, the name only sealed in the
-#                               den's database; bob removed by alice, who made it, his page reading nothing
-#                               after; and carol and alice leaving
 #   disappearing BROWSER        a DM's time set from the profile beside it, its line and its header;
 #                               messages a moment apart either side of a change of the time, each
 #                               with its clock;
 #                               a message under a time of seconds marked, then gone from both pages, bob's
-#                               cache and the den's database, into its change log; a group's time set from
-#                               its members, and its message gone from both pages; and with the den stopped,
+#                               cache and the den's database, into its change log; and with the den stopped,
 #                               a message gone from bob's page and cache all the same
 #   phone [MODE...] [-- PART...]  every screen at 390 pixels, its picture and an audit of its
 #                               layout, in Chromium as a phone, Firefox as a touch screen, and Firefox

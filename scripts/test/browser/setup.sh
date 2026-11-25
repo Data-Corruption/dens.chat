@@ -2,9 +2,9 @@
 # Sets up the browser checks' Incus container, or brings an existing one up
 # to date: Debian 13 with Chromium, Firefox ESR, Xvfb, PulseAudio, and dunst
 # for the desktop's notifications, a user tester, and in tester's
-# home this branch's development binary and v1.15.0's, the voice probe, the
-# pinned Node.js, the media the checks send, this directory, and the public
-# site's build. Then run a check with run.sh.
+# home this branch's development binary, the voice probe, the pinned
+# Node.js, the media the checks send, this directory, and the public site's
+# build. Then run a check with run.sh.
 #
 # The checks drive real browsers through the page's features, calls
 # among them. CI doesn't run them: they're the check before each
@@ -30,10 +30,6 @@ cd "$(dirname "$0")/../../.."
 source scripts/build/go.sh
 
 CONTAINER=${CONTAINER:-dens-browsers}
-# OLDER is the release whose development build runs carol in the groups
-# check, whose edits carry no editors signed by their author: one before
-# v1.16.0, whatever the latest release is.
-OLDER=v1.15.0
 build=true
 case ${1:-} in
     --no-build) build=false ;;
@@ -89,24 +85,12 @@ if $build; then
     ./scripts/build.sh
     mkdir -p out/browser
     go test -c -o out/browser/voice-probe ./internal/platform/http/client
-    # OLDER's tree, built with this one's tools, whose pins it shares.
-    older=$(mktemp -d)
-    # A build that fails leaves no worktree registered.
-    trap 'git worktree remove --force "$older/tree" 2>/dev/null; rm -rf "$older"' EXIT
-    git worktree add --quiet --detach "$older/tree" "$OLDER"
-    ln -s "$PWD/tools" "$older/tree/tools"
-    (cd "$older/tree" && ./scripts/build.sh >/dev/null)
-    cp "$older/tree/out/linux-amd64" out/browser/dens-dev-older
-    git worktree remove --force "$older/tree"
-    rmdir "$older"
-    trap - EXIT
 fi
 node=$(./scripts/vendor.sh node | sed -n 's/^node=//p')
 media=$(./scripts/vendor.sh browser-media | sed -n 's/^browser-media=//p')
 
 echo "Pushing to $CONTAINER ..."
 push out/linux-amd64 dens-dev 0755
-push out/browser/dens-dev-older dens-dev-older 0755
 push out/browser/voice-probe voice-probe 0755
 push "$node" node 0755
 as_tester mkdir -p photos videos sounds browser
