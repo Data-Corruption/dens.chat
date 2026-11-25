@@ -29,6 +29,7 @@ protect you from.
 | What staff do: removals and bans, roles, channels, someone's message deleted, the den's settings | Moderators, the owner and the den, for 90 days, in the den's audit log. Never what a message said, and nothing of DMs |
 | What your devices relay to each other: your voice keys and your computer's sound | Only your own devices. The den passes the notes that introduce them, which only they can open, and learns that two of your devices spoke, and when; the keys and the sound go straight between them on your network, encrypted ([Relay](../relay/)) |
 | Your profile | Members of that den. You have a separate one in each den, and no den can link it to your others |
+| Your devices' names | Each den you're in, and your own devices. A device goes by one name in all your dens, its computer's or phone's until you give it one, so the owners of two dens comparing notes could match you by it |
 | Your email or phone number | Nobody: Dens never asks for them |
 
 How DMs stay between the two of you, and the code you compare to be sure of it,

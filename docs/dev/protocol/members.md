@@ -33,13 +33,15 @@ Moderators and the owner are **staff**. Staff manage channels, groups and invite
 ```
 GET   /api/members/{id}                                     200 member, with "bio" and "badges"
 PATCH /api/me              {"display_name"?, "bio"?, "name_style"?}  200 member, with "bio"
+PUT   /api/me/status       {"status", "until"?}             200 member
 PATCH /api/members/{id}    {"role": "member" | "moderator"} 200 member          (owner only)
 PUT   /api/me/badges/{id}  {"hidden": bool}                 204
 ```
 
 - Any member may fetch anyone who has been in the den. `bio` is the markdown subset, up to 300 characters and 1,200 bytes, and an empty one clears it. It comes only in these two responses, never in `ready` or events, which keeps both small, as do the badges the member earned, in the first alone (see [Cards and badges](#cards-and-badges)).
 - `name_style` is how the member's name shows: `font`, one of `pacifico`, `fredoka`, `zilla-slab`, `space-mono`, `orbitron`, `pixelify-sans`, `bangers` and `cinzel`; `color`, `#rrggbb` in lowercase; and `color2`, the same, only with `color`, for a gradient from the name's start to its end. Each may be left out, and `{}` clears the style. Anything else is `400 invalid_field`. A member's record carries it wherever the member goes, in `ready` and events too, and leaves it out where there's none. A client takes a font it doesn't know, of lowercase letters, digits and hyphens, up to 32, as none, so a later den may add one; a color that isn't six hex digits makes the member malformed. A den that keeps styles says so in its info, `name_styles`; an older one ignores the field.
-- A profile or role change reaches everyone as `member.updated {member}`; a client showing a bio fetches it again.
+- `status` is a line of the member's, up to 80 characters, cleaned as a display name is but keeping each of Unicode's emoji whole, and shown as plain text; `until` is when it ends, in Unix milliseconds, after now, or left out for none. An empty `status` clears it, and takes no `until`. A member's record carries both wherever it goes, in `ready` and events too, as `status` and `status_until`, and the den leaves out one whose end has passed; a client stops showing it at its end by its own clock, and the den's hourly pass removes it, telling nobody. A client takes a record whose status doesn't clean as malformed. It's within the member's writes, and a den that keeps statuses says so in its info, `status`; an older one has no such route.
+- A profile, status or role change reaches everyone as `member.updated {member}`; a client showing a bio fetches it again.
 - A role change makes the member's sockets start over with a fresh `ready`, since what they can see changed, and their older resume points resync.
 - `PUT /api/me/badges/{id}` hides a badge the member earned from their profile card, named by its event's ID, or with `"hidden": false` shows it again. It answers 204 whether or not that changed anything, and tells nobody. A badge the member didn't earn, or whose event they don't see, as a staff-only event's once they aren't staff, is `404 not_found` (see [Cards and badges](#cards-and-badges)).
 
