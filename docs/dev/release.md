@@ -353,7 +353,8 @@ artifacts also verify when served from a mirror.
 |---|---|
 | `ci-gate` | Reads the `CI_ENABLED` repository variable; no other job runs unless it's `true` |
 | `release-plan` | Runs `ci.sh --plan` on pushes to `main`; on pull requests, `ci.sh --plan-pr`, which picks the test jobs by the files the PR changes and asks for no release |
-| `linux-tests` | `test.sh -lint` first, in a checkout nothing has written to; then, with the pinned rclone on `PATH`, the Linux Go tests, the third-party notices, the list of emoji, the page's tests, the release tests and the page's build |
+| `lint` | `test.sh -lint`, in a checkout nothing has written to, beside `linux-tests` |
+| `linux-tests` | With the pinned rclone on `PATH`, the Linux Go tests, the third-party notices, the list of emoji, the page's tests, the release tests and the page's build |
 | `linux-e2e` | The lifecycle e2e across the supported distros, in Incus containers, each installing through this tree's `install.sh` |
 | `linux-den-e2e` | A member joins a den through Caddy, chats, calls and is banned, in three Incus containers |
 | `windows-e2e` | Native Go tests, PowerShell parsing, and, on fixture releases, the lifecycle e2e through the exact installer a release would publish and the den e2e behind the pinned Caddy |
@@ -364,14 +365,23 @@ artifacts also verify when served from a mirror.
 | `release` | Runs `ci.sh --execute` on pushes to `main` when the plan asks for a release and all requested tests pass, in the `android` environment, whose key signs the APK |
 | `flatpak` | Runs `ci.sh --flatpak` in the `flatpak` environment once `release` succeeds |
 
+`lint` and `linux-tests` keep Go's build and module caches of their own:
+each restores the newest its pull request's runs saved, or else `main`'s, for
+`go.mod` and `go.sum` as they are or else as they were, and every run saves its
+own, which never fails the job. `main` runs them only for a release, so a pull
+request's first run builds from the last release's. A package whose code and
+dependencies are unchanged, and whose tests read no file, keeps its cached
+pass, as in a local run. The other jobs keep setup-go's cache, one entry for
+every Linux job, saved once for each `go.sum`.
+
 A pull request's plan reads the files it changes, its merge commit against
 the first parent, renames as both their paths. Docs alone, `docs/` and the
 root's `.md` files but `CHANGELOG.md`, run no test job; changes to the page's
 own sources, assets and templates (`internal/ui/src/`, `internal/ui/css/`,
 `internal/ui/templates/`, `internal/ui/test/`, workers/worklets, sounds and
 `emoji.json`) or to the browser and Android check drivers
-(`scripts/test/browser/`, `scripts/test/android/`) run `linux-tests` alone
-(`tests_required`); the media module's inputs (`internal/media/`,
+(`scripts/test/browser/`, `scripts/test/android/`) run `lint` and `linux-tests`
+alone (`tests_required`); the media module's inputs (`internal/media/`,
 `scripts/ffmpeg.sh`, `scripts/rnnoise.sh`, `internal/ui/rnnoise/`, RNNoise's
 module, `scripts/vendor.sh`, `scripts/build/common.sh` and
 `scripts/build/go.sh`) or CI's own files (`.github/`, `scripts/ci.sh` and
