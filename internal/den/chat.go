@@ -2128,12 +2128,16 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	// names the author, where the den keeps nothing else of them.
 	staffs := m.AuthorID != denproto.FormatID(s.MemberID)
 	var readers []reader
+	var last *string
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var err error
 		if readers, err = readersOf(ctx, tx, []int64{mid}); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM den_messages WHERE id = ?`, mid); err != nil {
+			return err
+		}
+		if last, err = channelLastMessage(ctx, tx, cid); err != nil {
 			return err
 		}
 		if err := passDeleted(ctx, tx, readers, map[int64][]int64{cid: {mid}}); err != nil {
@@ -2153,10 +2157,24 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 		d.audited()
 	}
 	d.files.remove(blobs)
-	if err := d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid]}, d.audienceOf(c)); err != nil {
+	if err := d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid], LastMessage: last}, d.audienceOf(c)); err != nil {
 		return err
 	}
 	return d.publishReaders(ctx, readers)
+}
+
+// channelLastMessage returns the newest message left in a channel, or ""
+// once none is left, for MessageDeleted.LastMessage.
+func channelLastMessage(ctx context.Context, q querier, channel int64) (*string, error) {
+	var maxID int64
+	if err := q.QueryRowContext(ctx, `SELECT coalesce(max(id), 0) FROM den_messages WHERE channel_id = ?`, channel).Scan(&maxID); err != nil {
+		return nil, err
+	}
+	var last string
+	if maxID > 0 {
+		last = denproto.FormatID(maxID)
+	}
+	return &last, nil
 }
 
 // reader is a member a message counted for in their unread count, in its

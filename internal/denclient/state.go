@@ -1142,7 +1142,25 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 				return e, false, errMalformed
 			}
 		}
+		if d.LastMessage != nil && *d.LastMessage != "" && !validID(*d.LastMessage) {
+			return e, false, errMalformed
+		}
 		s.gone = append(s.gone, d.Files...)
+		if d.LastMessage != nil {
+			r, ok := s.reads[d.ChannelID]
+			if !ok {
+				if c, known := s.channels[d.ChannelID]; known && hasMessages(c) {
+					r, ok = denproto.ReadState{ChannelID: d.ChannelID}, true
+				}
+			}
+			// Guard against an out-of-order delete regressing a newer message.
+			if ok && *d.LastMessage != r.LastMessage &&
+				(compareIDs(d.ID, r.LastMessage) >= 0 || compareIDs(*d.LastMessage, r.LastMessage) > 0) {
+				r.LastMessage = *d.LastMessage
+				s.reads[d.ChannelID] = r
+				s.touched[d.ChannelID] = true
+			}
+		}
 		data = d
 	case denproto.EventReactionAdded, denproto.EventReactionRemoved:
 		var ch denproto.ReactionChange

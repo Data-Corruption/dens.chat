@@ -529,6 +529,7 @@ func (d *Den) Remove(ctx context.Context, s *Session, id string, req denproto.Re
 type deletedMessage struct {
 	id, channel int64
 	files       []string
+	last        *string
 }
 
 // deleteRecent deletes a member's messages, in channels and DMs, from since
@@ -570,7 +571,16 @@ func deleteRecent(ctx context.Context, tx *sql.Tx, member, since int64, now time
 	if _, err = tx.ExecContext(ctx, `DELETE FROM den_messages AS m WHERE `+where, member, since); err != nil {
 		return nil, nil, nil, err
 	}
-	for _, m := range out {
+	lastByChannel := map[int64]*string{}
+	for ch := range byChannel {
+		last, err := channelLastMessage(ctx, tx, ch)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		lastByChannel[ch] = last
+	}
+	for i, m := range out {
+		out[i].last = lastByChannel[m.channel]
 		if err := logMessage(ctx, tx, m.id, m.channel, now); err != nil {
 			return nil, nil, nil, err
 		}
@@ -593,7 +603,7 @@ func (d *Den) publishDeleted(ctx context.Context, deleted []deletedMessage) erro
 			audience = d.audienceOf(c)
 			audiences[m.channel] = audience
 		}
-		event := denproto.MessageDeleted{ID: denproto.FormatID(m.id), ChannelID: denproto.FormatID(m.channel), Files: m.files}
+		event := denproto.MessageDeleted{ID: denproto.FormatID(m.id), ChannelID: denproto.FormatID(m.channel), Files: m.files, LastMessage: m.last}
 		if err := d.Hub.Publish(denproto.EventMessageDeleted, event, audience); err != nil {
 			return err
 		}

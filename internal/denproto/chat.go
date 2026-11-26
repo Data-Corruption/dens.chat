@@ -188,12 +188,15 @@ type ReadState struct {
 	Closed       bool   `json:"closed,omitempty"`
 }
 
-// MessageDeleted names a deleted message, and the files that went with
-// it, so clients drop them from their caches.
+// MessageDeleted names a deleted message, the files that went with it,
+// so clients drop them from their caches, and LastMessage, the newest
+// message left in its channel, or "" once none is left; an older den
+// omits LastMessage.
 type MessageDeleted struct {
-	ID        string   `json:"id"`
-	ChannelID string   `json:"channel_id"`
-	Files     []string `json:"files,omitempty"`
+	ID          string   `json:"id"`
+	ChannelID   string   `json:"channel_id"`
+	Files       []string `json:"files,omitempty"`
+	LastMessage *string  `json:"last_message_id,omitempty"`
 }
 
 type ChannelDeleted struct {
