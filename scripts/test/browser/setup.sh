@@ -102,6 +102,9 @@ push internal/media/ffmpeg/testdata/vp9.webm videos/vp9.webm
 push internal/media/ffmpeg/testdata/late-sound.mp4 videos/late-sound.mp4
 push internal/media/ffmpeg/testdata/with-gps.mp4 clip.mp4
 push internal/media/ffmpeg/testdata/tone.mp3 sounds/tone.mp3
+for file in trailer-init-0.m4s trailer-chunk-0-1.m4s trailer-chunk-0-2.m4s trailer-init-1.m4s trailer-chunk-1-1.m4s trailer-chunk-1-2.m4s; do
+    push "internal/steam/testdata/$file" "videos/$file"
+done
 for file in scripts/test/browser/*; do push "$file" "browser/$(basename "$file")" 0755; done
 
 # The public site, for the site check: built as the Docs workflow

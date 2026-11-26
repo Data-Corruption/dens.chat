@@ -18,7 +18,8 @@
 // its click opens the page at the message, paired as dens open pairs it;
 // read elsewhere, it's taken back from the desktop too. Then the
 // tab's icon: the mark, then with its dot while the DM waits behind
-// another tab, and the mark again once it's read.
+// another tab, and the mark again once it's read. Deleting a channel's
+// newest message before it opens clears its unread mark at once.
 //
 //   run.sh notify chromium|firefox
 import { execFileSync, spawn } from 'node:child_process';
@@ -335,6 +336,25 @@ try {
     // Firefox showing a page's there too.
     read(after);
     await waitFor(async () => (await notes())[had].shut, 'the DM read');
+
+    step('deleting the newest message in an unopened channel clears its unread mark');
+    const scratch = lib('channel', 'scratch');
+    const scratchRow = `document.querySelector('[data-channel-row="${scratch}"]')`;
+    await waitFor(() => b.eval(`!!${scratchRow}`), '#scratch in the list');
+    const firstScratch = lib('send', 'bob', scratch, 'soon gone');
+    const markedEmpty = await may(waitFor(() => b.eval(`!!${scratchRow}?.querySelector('[data-unread]')`), '#scratch marked unread', 5000));
+    lib('api', 'bob', 'DELETE', `/api/dens/${den}/messages/${firstScratch}`);
+    const clearedEmpty = await may(waitFor(() => b.eval(`!${scratchRow}?.querySelector('[data-unread]')`), '#scratch unread mark cleared', 5000));
+    const keptScratch = lib('send', 'bob', scratch, 'kept');
+    await waitFor(() => b.eval(`!!${scratchRow}?.querySelector('[data-unread]')`), '#scratch unread again', 5000);
+    lib('api', 'alice', 'PUT', `/api/dens/${den}/channels/${scratch}/read`, JSON.stringify({ message_id: keptScratch }));
+    await waitFor(() => b.eval(`!${scratchRow}?.querySelector('[data-unread]')`), '#scratch read', 5000);
+    const secondScratch = lib('send', 'bob', scratch, 'also gone');
+    const markedAgain = await may(waitFor(() => b.eval(`!!${scratchRow}?.querySelector('[data-unread]')`), '#scratch marked unread again', 5000));
+    lib('api', 'bob', 'DELETE', `/api/dens/${den}/messages/${secondScratch}`);
+    const clearedAgain = await may(waitFor(() => b.eval(`!${scratchRow}?.querySelector('[data-unread]')`), '#scratch unread mark cleared again', 5000));
+    c.report(markedEmpty && clearedEmpty && markedAgain && clearedAgain,
+        `deleting an unopened channel's only message cleared its unread mark (${markedEmpty}, ${clearedEmpty}), and deleting a newer one past a read message did too (${markedAgain}, ${clearedAgain})`);
 
     step("Dens's helper, with no tab open");
     helper = spawn(`${HOME}/dens-dev`, ['shortcuts'], {
