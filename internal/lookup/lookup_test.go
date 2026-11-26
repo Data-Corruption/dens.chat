@@ -28,6 +28,32 @@ func TestTheCacheStaysWithinItsBudget(t *testing.T) {
 	}
 }
 
+func TestCacheWithLimitEvictsLeastRecentlyUsed(t *testing.T) {
+	c := NewCacheWithLimit(errors.New("not found"), time.Now, 1024)
+	if c.maxBytes != 1024 {
+		t.Fatalf("maxBytes = %d, want 1024", c.maxBytes)
+	}
+	c.mu.Lock()
+	c.store(&entry{key: "a", until: time.Now().Add(time.Hour), size: 400})
+	c.store(&entry{key: "b", until: time.Now().Add(time.Hour), size: 400})
+	// Touch a so b becomes least recently used.
+	c.order.MoveToFront(c.entries["a"])
+	c.store(&entry{key: "c", until: time.Now().Add(time.Hour), size: 400})
+	_, hasA := c.entries["a"]
+	_, hasB := c.entries["b"]
+	_, hasC := c.entries["c"]
+	bytes := c.bytes
+	c.mu.Unlock()
+	if !hasA || hasB || !hasC || bytes != 800 {
+		t.Errorf("got a=%v b=%v c=%v bytes=%d; want a=true b=false c=true bytes=800", hasA, hasB, hasC, bytes)
+	}
+
+	def := NewCacheWithLimit(errors.New("not found"), time.Now, 0)
+	if def.maxBytes != maxBytes {
+		t.Errorf("non-positive limit gave %d, want %d", def.maxBytes, maxBytes)
+	}
+}
+
 func TestCleanTextIsANamesText(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
 		{"Never ‮gonna​  give", "Never gonna give"},

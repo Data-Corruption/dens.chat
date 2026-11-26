@@ -68,7 +68,7 @@ func (s *steamStandIn) times(path string) int {
 
 func (s *steamStandIn) lookup() *Lookup {
 	u := s.srv.URL
-	return newLookup(sites{items: u + "/items", price: u + "/price", players: u + "/players", tags: u + "/tags", assets: u + "/assets/"}, s.srv.Client().Transport)
+	return newLookup(sites{items: u + "/items", price: u + "/price", players: u + "/players", tags: u + "/tags", assets: u + "/assets/", video: u + "/video/"}, s.srv.Client().Transport)
 }
 
 // recorded answers with one of Steam's recorded answers.
@@ -155,11 +155,12 @@ func TestACardFromSteamsAnswers(t *testing.T) {
 	// The store is asked in English for the US, and the price for nowhere,
 	// which Steam takes to be where the member is.
 	var input struct {
-		IDs     []map[string]uint32 `json:"ids"`
-		Context map[string]string   `json:"context"`
+		IDs         []map[string]uint32 `json:"ids"`
+		Context     map[string]string   `json:"context"`
+		DataRequest map[string]any      `json:"data_request"`
 	}
 	q := s.queries["/items"][0]
-	if err := json.Unmarshal([]byte(must(t, q, "input_json")), &input); err != nil || input.IDs[0]["appid"] != 1771300 || input.Context["country_code"] != "US" || input.Context["language"] != "english" {
+	if err := json.Unmarshal([]byte(must(t, q, "input_json")), &input); err != nil || input.IDs[0]["appid"] != 1771300 || input.Context["country_code"] != "US" || input.Context["language"] != "english" || input.DataRequest["include_trailers"] != true {
 		t.Errorf("GetItems asked %q", q)
 	}
 	if p := s.queries["/price"][0]; must(t, p, "appids") != "1771300" || must(t, p, "filters") != "price_overview" || strings.Contains(p, "cc=") {
@@ -464,5 +465,338 @@ func TestTheCountIsKeptTenMinutesAndTheRestAnHour(t *testing.T) {
 	// most.
 	if n := s.times("/tags"); n != 4 {
 		t.Errorf("the tags asked %d times", n)
+	}
+}
+
+const sampleTrailerDir = "1771300/257095826/79504b378f1a2b3c4d5e6f708192a3b4c5d6e7f8/1738683276/"
+
+const sampleH264MPD = `<?xml version="1.0" encoding="utf-8"?>
+<MPD mediaPresentationDuration="PT6.0S">
+  <Period id="0">
+    <AdaptationSet id="0" contentType="video" mimeType="video/mp4">
+      <Representation id="2" codecs="avc1.640029" width="1280" height="720" bandwidth="2500000">
+        <SegmentTemplate timescale="1000000" duration="3000000" startNumber="1" initialization="dash_h264/init-stream$RepresentationID$.m4s" media="dash_h264/chunk-stream$RepresentationID$-$Number%05d$.m4s" />
+      </Representation>
+      <Representation id="0" codecs="avc1.640029" width="854" height="480" bandwidth="1200000">
+        <SegmentTemplate timescale="1000000" duration="3000000" startNumber="1" initialization="dash_h264/init-stream$RepresentationID$.m4s" media="dash_h264/chunk-stream$RepresentationID$-$Number%05d$.m4s" />
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet id="1" contentType="audio" mimeType="audio/mp4">
+      <Representation id="1" codecs="mp4a.40.2" bandwidth="192000">
+        <SegmentTemplate timescale="1000000" duration="3000000" startNumber="1" initialization="dash_h264/init-stream$RepresentationID$.m4s" media="dash_h264/chunk-stream$RepresentationID$-$Number%05d$.m4s" />
+      </Representation>
+    </AdaptationSet>
+    <AdaptationSet id="2" mimeType="image/avif">
+      <Representation id="9" width="160" height="90">
+        <SegmentTemplate timescale="1" duration="5" startNumber="1" media="thumbs/thumb-$Number$.avif" />
+      </Representation>
+    </AdaptationSet>
+  </Period>
+</MPD>`
+
+func withTrailer(t *testing.T, highlights []any) http.HandlerFunc {
+	return edited(t, "items-1771300.json", func(it map[string]any) {
+		it["trailers"] = map[string]any{"highlights": highlights}
+	})
+}
+
+func readTestdata(t *testing.T, name string) []byte {
+	t.Helper()
+	b, err := os.ReadFile("testdata/" + name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
+}
+
+func serveBytes(ct string, b []byte) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", ct)
+		_, _ = w.Write(b)
+	}
+}
+
+func TestTrailerSelectionSkipsAllAgesFalseAndCardFetchesNoTrailer(t *testing.T) {
+	s := newSteam(t)
+	s.answer("/items", withTrailer(t, []any{
+		map[string]any{
+			"all_ages": false,
+			"adaptive_trailers": []any{
+				map[string]any{"encoding": "dash_h264", "cdn_path": "1771300/1/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/1/dash_h264.mpd"},
+			},
+		},
+		map[string]any{
+			"all_ages": true,
+			"adaptive_trailers": []any{
+				map[string]any{"encoding": "dash_h264", "cdn_path": sampleTrailerDir + "dash_h264.mpd"},
+				map[string]any{"encoding": "dash_av1", "cdn_path": sampleTrailerDir + "dash_av1.mpd"},
+			},
+		},
+	}))
+	s.answer("/video/"+sampleTrailerDir+"dash_h264.mpd", serveBytes("application/dash+xml", []byte(sampleH264MPD)))
+	vInit := readTestdata(t, "trailer-init-0.m4s")
+	vSeg1 := readTestdata(t, "trailer-chunk-0-1.m4s")
+	aInit := readTestdata(t, "trailer-init-1.m4s")
+	aSeg1 := readTestdata(t, "trailer-chunk-1-1.m4s")
+	s.answer("/video/"+sampleTrailerDir+"dash_h264/init-stream0.m4s", serveBytes("video/mp4", vInit))
+	s.answer("/video/"+sampleTrailerDir+"dash_h264/chunk-stream0-00001.m4s", serveBytes("video/mp4", vSeg1))
+	s.answer("/video/"+sampleTrailerDir+"dash_h264/init-stream1.m4s", serveBytes("audio/mp4", aInit))
+	s.answer("/video/"+sampleTrailerDir+"dash_h264/chunk-stream1-00001.m4s", serveBytes("audio/mp4", aSeg1))
+
+	l := s.lookup()
+	c, err := l.Card(context.Background(), "1771300")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.Trailer {
+		t.Fatal("Card.Trailer = false, want true")
+	}
+	// Fetching a card must never touch the video CDN.
+	for path := range s.asked {
+		if strings.HasPrefix(path, "/video/") {
+			t.Errorf("Card fetched trailer path %s", path)
+		}
+	}
+
+	tr, err := l.Trailer(context.Background(), "1771300", "h264")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Encoding != "h264" || tr.Duration != 6 || len(tr.Video) != 2 || tr.Audio == nil {
+		t.Fatalf("unexpected trailer descriptor: %+v", tr)
+	}
+	if tr.Video[0].ID != "0" || tr.Video[0].Height != 480 || tr.Video[0].Segments != 2 || tr.Video[1].ID != "2" || tr.Video[1].Height != 720 {
+		t.Errorf("video tracks not sorted/parsed: %+v", tr.Video)
+	}
+	if tr.Audio.ID != "1" || tr.Audio.Mime != "audio/mp4" || tr.Audio.Codecs != "mp4a.40.2" || tr.Audio.Segments != 2 {
+		t.Errorf("audio track unexpected: %+v", tr.Audio)
+	}
+
+	gotInit, mime, err := l.TrailerInit(context.Background(), "1771300", "h264", "0")
+	if err != nil || mime != "video/mp4" || !bytes.Equal(gotInit, vInit) {
+		t.Fatalf("video init: err=%v mime=%q len=%d", err, mime, len(gotInit))
+	}
+	gotSeg, mime, err := l.TrailerSegment(context.Background(), "1771300", "h264", "0", 1)
+	if err != nil || mime != "video/mp4" || !bytes.Equal(gotSeg, vSeg1) {
+		t.Fatalf("video seg 1: err=%v mime=%q len=%d", err, mime, len(gotSeg))
+	}
+	gotAInit, mime, err := l.TrailerInit(context.Background(), "1771300", "h264", "1")
+	if err != nil || mime != "audio/mp4" || !bytes.Equal(gotAInit, aInit) {
+		t.Fatalf("audio init: err=%v mime=%q len=%d", err, mime, len(gotAInit))
+	}
+	gotASeg, mime, err := l.TrailerSegment(context.Background(), "1771300", "h264", "1", 1)
+	if err != nil || mime != "audio/mp4" || !bytes.Equal(gotASeg, aSeg1) {
+		t.Fatalf("audio seg 1: err=%v mime=%q len=%d", err, mime, len(gotASeg))
+	}
+
+	// Unknown rep, image rep, out-of-range segment, and bad encoding are rejected.
+	if _, _, err := l.TrailerInit(context.Background(), "1771300", "h264", "9"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("image rep: %v, want ErrNotFound", err)
+	}
+	if _, _, err := l.TrailerSegment(context.Background(), "1771300", "h264", "0", 3); !errors.Is(err, ErrNotFound) {
+		t.Errorf("seg 3: %v, want ErrNotFound", err)
+	}
+	if _, err := l.Trailer(context.Background(), "1771300", "vp9"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("unknown encoding: %v, want ErrNotFound", err)
+	}
+
+	// Only all_ages: false trailers => Card.Trailer is false.
+	s2 := newSteam(t)
+	s2.answer("/items", withTrailer(t, []any{
+		map[string]any{
+			"all_ages": false,
+			"adaptive_trailers": []any{
+				map[string]any{"encoding": "dash_h264", "cdn_path": sampleTrailerDir + "dash_h264.mpd"},
+			},
+		},
+	}))
+	l2 := s2.lookup()
+	c2, err := l2.Card(context.Background(), "1771300")
+	if err != nil || c2.Trailer {
+		t.Fatalf("adult-only trailer: err=%v trailer=%v", err, c2.Trailer)
+	}
+	if _, err := l2.Trailer(context.Background(), "1771300", "h264"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("adult-only Trailer(): %v, want ErrNotFound", err)
+	}
+}
+
+func TestTrailerCDNPathValidation(t *testing.T) {
+	hash := strings.Repeat("a", 40)
+	valid := "1771300/257095826/" + hash + "/1738683276/dash_h264.mpd"
+	if got := trailerPath("1771300", "h264", valid); got != valid {
+		t.Errorf("valid path rejected: %q", got)
+	}
+	for _, tc := range []struct{ app, enc, p string }{
+		{"1771300", "h264", "730/257095826/" + hash + "/1738683276/dash_h264.mpd"},
+		{"1771300", "h264", "1771300/257095826/" + hash + "/1738683276/dash_av1.mpd"},
+		{"1771300", "av1", "1771300/257095826/" + hash + "/1738683276/dash_h264.mpd"},
+		{"1771300", "h264", "1771300/257095826/" + hash + "/1738683276/dash_h264.mpd?t=1"},
+		{"1771300", "h264", "1771300/../730/" + hash + "/1/dash_h264.mpd"},
+		{"1771300", "h264", "1771300/1/" + strings.ToUpper(hash) + "/1/dash_h264.mpd"},
+		{"1771300", "h264", "1771300/1/" + hash[:39] + "/1/dash_h264.mpd"},
+		{"1771300", "h264", "https://evil.example/1771300/1/" + hash + "/1/dash_h264.mpd"},
+		{"1771300", "hls", "1771300/1/" + hash + "/1/hls.m3u8"},
+	} {
+		if got := trailerPath(tc.app, tc.enc, tc.p); got != "" {
+			t.Errorf("trailerPath(%q, %q, %q) = %q, want empty", tc.app, tc.enc, tc.p, got)
+		}
+	}
+}
+
+func TestTrailerManifestRejectionsAndTimeline(t *testing.T) {
+	timelineMPD := `<?xml version="1.0" encoding="utf-8"?>
+<MPD>
+  <Period>
+    <AdaptationSet contentType="video" mimeType="video/mp4">
+      <SegmentTemplate timescale="1000" startNumber="1" initialization="dash_av1/init-stream$RepresentationID$.m4s" media="dash_av1/chunk-stream$RepresentationID$-$Number%05d$.m4s">
+        <SegmentTimeline><S t="0" d="3000" r="2"/></SegmentTimeline>
+      </SegmentTemplate>
+      <Representation id="0" codecs="av01.0.05M.08" width="854" height="480" />
+    </AdaptationSet>
+  </Period>
+</MPD>`
+	m, err := parseMPD("av1", sampleTrailerDir, []byte(timelineMPD))
+	if err != nil {
+		t.Fatalf("timeline MPD: %v", err)
+	}
+	if m.trailer.Duration != 9 || m.trailer.Video[0].Segments != 3 || m.trailer.Video[0].SegmentDuration != 3 {
+		t.Errorf("timeline parsed: %+v", m.trailer)
+	}
+
+	badMPDs := map[string]string{
+		"invalid XML":   `<MPD><Period>`,
+		"DTD directive": `<?xml version="1.0"?><!DOCTYPE MPD [<!ENTITY x "y">]>` + sampleH264MPD,
+		"BaseURL":       `<MPD mediaPresentationDuration="PT6S"><BaseURL>https://evil.example/</BaseURL><Period><AdaptationSet contentType="video" mimeType="video/mp4"><Representation id="0" codecs="avc1.640029" width="640" height="360"><SegmentTemplate timescale="1000000" duration="3000000" startNumber="1" initialization="dash_h264/init-stream0.m4s" media="dash_h264/chunk-stream0-$Number%05d$.m4s"/></Representation></AdaptationSet></Period></MPD>`,
+		"traversal":     strings.ReplaceAll(sampleH264MPD, "dash_h264/init-stream", "../other/init-stream"),
+		"query":         strings.ReplaceAll(sampleH264MPD, ".m4s\"", ".m4s?sig=1\""),
+		"wrong folder":  strings.ReplaceAll(sampleH264MPD, "dash_h264/", "dash_av1/"),
+		"wrong codecs":  strings.ReplaceAll(sampleH264MPD, "avc1.640029", "vp09.00.10.08"),
+		"no video":      `<MPD mediaPresentationDuration="PT6S"><Period><AdaptationSet contentType="audio" mimeType="audio/mp4"><Representation id="1" codecs="mp4a.40.2"><SegmentTemplate timescale="1000000" duration="3000000" startNumber="1" initialization="dash_h264/init-stream1.m4s" media="dash_h264/chunk-stream1-$Number%05d$.m4s"/></Representation></AdaptationSet></Period></MPD>`,
+	}
+	for name, xmlText := range badMPDs {
+		t.Run(name, func(t *testing.T) {
+			if _, err := parseMPD("h264", sampleTrailerDir, []byte(xmlText)); !errors.Is(err, ErrUnavailable) {
+				t.Errorf("%s: got %v, want ErrUnavailable", name, err)
+			}
+		})
+	}
+
+	// Over 64 KiB manifest and redirects fail closed.
+	for name, h := range map[string]http.HandlerFunc{
+		"manifest too large": serveBytes("application/dash+xml", append([]byte(sampleH264MPD), bytes.Repeat([]byte(" "), maxManifest)...)),
+		"manifest redirect": func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://evil.example/dash_h264.mpd", http.StatusFound)
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSteam(t)
+			s.answer("/items", withTrailer(t, []any{
+				map[string]any{"all_ages": true, "adaptive_trailers": []any{
+					map[string]any{"encoding": "dash_h264", "cdn_path": sampleTrailerDir + "dash_h264.mpd"},
+				}},
+			}))
+			s.answer("/video/"+sampleTrailerDir+"dash_h264.mpd", h)
+			if _, err := s.lookup().Trailer(context.Background(), "1771300", "h264"); !errors.Is(err, ErrUnavailable) {
+				t.Errorf("%s: %v, want ErrUnavailable", name, err)
+			}
+		})
+	}
+}
+
+func TestTrailerSegmentSniffCapsAndCacheIsolation(t *testing.T) {
+	moof := []byte{0, 0, 0, 12, 'm', 'o', 'o', 'f', 0, 0, 0, 0}
+	ftyp := readTestdata(t, "trailer-init-0.m4s")
+	if !isInitMP4(ftyp) || isInitMP4(moof) || !isChunkMP4(moof) || isChunkMP4(ftyp) || isChunkMP4([]byte("<html>no</html>")) {
+		t.Fatal("ISO-BMFF sniff mismatch")
+	}
+
+	for name, tc := range map[string]struct {
+		init bool
+		h    http.HandlerFunc
+	}{
+		"init bad magic":  {true, serveBytes("video/mp4", []byte("<html>not mp4</html>"))},
+		"chunk bad magic": {false, serveBytes("video/mp4", ftyp)},
+		"chunk too large": {false, serveBytes("video/mp4", append(bytes.Clone(moof), make([]byte, maxSegment)...))},
+		"chunk redirect": {false, func(w http.ResponseWriter, r *http.Request) {
+			http.Redirect(w, r, "https://evil.example/c.m4s", http.StatusFound)
+		}},
+	} {
+		t.Run(name, func(t *testing.T) {
+			s := newSteam(t)
+			s.answer("/items", withTrailer(t, []any{
+				map[string]any{"all_ages": true, "adaptive_trailers": []any{
+					map[string]any{"encoding": "dash_h264", "cdn_path": sampleTrailerDir + "dash_h264.mpd"},
+				}},
+			}))
+			s.answer("/video/"+sampleTrailerDir+"dash_h264.mpd", serveBytes("application/dash+xml", []byte(sampleH264MPD)))
+			if tc.init {
+				s.answer("/video/"+sampleTrailerDir+"dash_h264/init-stream0.m4s", tc.h)
+				if _, _, err := s.lookup().TrailerInit(context.Background(), "1771300", "h264", "0"); !errors.Is(err, ErrUnavailable) {
+					t.Errorf("%v, want ErrUnavailable", err)
+				}
+			} else {
+				s.answer("/video/"+sampleTrailerDir+"dash_h264/chunk-stream0-00001.m4s", tc.h)
+				if _, _, err := s.lookup().TrailerSegment(context.Background(), "1771300", "h264", "0", 1); !errors.Is(err, ErrUnavailable) {
+					t.Errorf("%v, want ErrUnavailable", err)
+				}
+			}
+		})
+	}
+
+	// Trailer chunks use their own 32 MiB 10-minute cache and never evict
+	// cards or headers from the 16 MiB card cache.
+	s := newSteam(t)
+	s.answer("/items", withTrailer(t, []any{
+		map[string]any{"all_ages": true, "adaptive_trailers": []any{
+			map[string]any{"encoding": "dash_h264", "cdn_path": sampleTrailerDir + "dash_h264.mpd"},
+		}},
+	}))
+	s.answer("/assets/steam/apps/1771300/header.jpg", serve(picture(t, 460, 215)))
+	s.answer("/video/"+sampleTrailerDir+"dash_h264.mpd", serveBytes("application/dash+xml", []byte(sampleH264MPD)))
+	bigChunk := append(bytes.Clone(moof), make([]byte, (3<<20)-len(moof))...)
+	for i := range 12 {
+		// 12 * 3 MiB = 36 MiB > 32 MiB trailer budget and > 16 MiB card budget.
+		s.answer("/video/"+sampleTrailerDir+"dash_h264/chunk-stream0-00001.m4s", serveBytes("video/mp4", bigChunk))
+		_ = i
+	}
+	l := s.lookup()
+	now := time.Now()
+	l.now = func() time.Time { return now }
+	if _, err := l.Header(context.Background(), "1771300"); err != nil {
+		t.Fatal(err)
+	}
+	// Populate the trailer cache with 36 MiB across distinct keys.
+	for i := range 12 {
+		key := "fill " + strings.Repeat("x", i+1)
+		if _, err := l.trailers.Get(context.Background(), key, keepTrailer, func(context.Context) (any, int, error) {
+			return bigChunk, len(bigChunk), nil
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Card and header must still come from cache without re-fetching.
+	if _, err := l.Header(context.Background(), "1771300"); err != nil {
+		t.Fatal(err)
+	}
+	if s.times("/assets/steam/apps/1771300/header.jpg") != 1 || s.times("/items") != 1 {
+		t.Errorf("trailer cache evicted card cache: header=%d items=%d", s.times("/assets/steam/apps/1771300/header.jpg"), s.times("/items"))
+	}
+	// Manifest is kept 10 minutes, then re-fetched while item stays cached.
+	if _, err := l.Trailer(context.Background(), "1771300", "h264"); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(9 * time.Minute)
+	if _, err := l.Trailer(context.Background(), "1771300", "h264"); err != nil {
+		t.Fatal(err)
+	}
+	if s.times("/video/"+sampleTrailerDir+"dash_h264.mpd") != 1 {
+		t.Errorf("manifest refetched early: %d", s.times("/video/"+sampleTrailerDir+"dash_h264.mpd"))
+	}
+	now = now.Add(2 * time.Minute)
+	if _, err := l.Trailer(context.Background(), "1771300", "h264"); err != nil {
+		t.Fatal(err)
+	}
+	if s.times("/video/"+sampleTrailerDir+"dash_h264.mpd") != 2 || s.times("/items") != 1 {
+		t.Errorf("after 11m: manifest=%d items=%d", s.times("/video/"+sampleTrailerDir+"dash_h264.mpd"), s.times("/items"))
 	}
 }

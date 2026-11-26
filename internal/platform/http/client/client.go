@@ -54,7 +54,7 @@ type router struct {
 	// pageOrigin is where browsers load the page.
 	pageOrigin string
 	youTube    *youtube.Lookup
-	steam      *steam.Lookup
+	steam      steamClient
 	backups    backups
 	// sounds are the page's own sounds' addresses, by name, as JSON,
 	// and fonts those of the names' fonts.

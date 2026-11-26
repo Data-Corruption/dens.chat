@@ -105,6 +105,14 @@ func TestPageSecurityHeaders(t *testing.T) {
 	if den := csp(SecurityHeaders); strings.Contains(den, "frame-src") {
 		t.Errorf("the den's CSP allows frames: %q", den)
 	}
+	// The page plays Steam trailers through MediaSource object URLs, so
+	// its media-src allows blob:; the den's never does.
+	if !strings.Contains(page, "; media-src 'self' blob:;") {
+		t.Errorf("the page's CSP doesn't allow blob media: %q", page)
+	}
+	if den := csp(SecurityHeaders); !strings.Contains(den, "; media-src 'self';") || strings.Contains(den, "blob:") {
+		t.Errorf("the den's CSP changed media-src: %q", den)
+	}
 }
 
 func TestSecurityHeaders(t *testing.T) {
