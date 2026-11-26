@@ -84,7 +84,7 @@ prepare_release_context() {
 }
 
 # write_plan TESTS E2E MEDIA INSTALLER_TESTS RELEASE reports the plan in the
-# log and to the workflow. TESTS asks for linux-tests, E2E for the platform
+# log and to the workflow. TESTS asks for lint and linux-tests, E2E for the platform
 # and container suites (windows-e2e, linux-e2e, linux-den-e2e, flatpak-e2e
 # and android-build), and MEDIA for the two jobs that check the media module
 # alone (media-module and media-fuzz).
@@ -132,8 +132,8 @@ pr_changed_files() {
 # the PATHs needs. Docs alone need none: no test reads them but the site's
 # icon, which the Docs workflow's build checks (scripts/test.sh -docs). Changes
 # to the page's own sources, assets and templates, or to the developer-side
-# browser/Android check drivers, need only linux-tests (lint, Go tests, -js,
-# notices, emoji and the page's build). The media module's inputs, and CI's
+# browser/Android check drivers, need only lint and linux-tests (Go tests,
+# -js, notices, emoji and the page's build). The media module's inputs, and CI's
 # own files, which decide what runs, need every job. Anything else needs every
 # job but the two that check the media module alone. CHANGELOG.md isn't docs:
 # releases are cut from it. No paths at all prove nothing, so they get every

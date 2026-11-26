@@ -5,8 +5,8 @@ name: Release
 # attempt, in the android environment, whose key signs the Android app's APK,
 # and then ci.sh --flatpak publishes the promoted release's Flatpak, in the
 # flatpak environment. On PRs, ci.sh --plan-pr picks the test jobs by the
-# files the PR changes: none for docs alone, linux-tests only for changes to
-# the page or check drivers alone, every job for the media module's inputs or
+# files the PR changes: none for docs alone, lint and linux-tests only for
+# changes to the page or check drivers alone, every job for the media module's inputs or
 # CI's own files, and all but the media module's two for anything else. PRs
 # never publish. Before the first release (no CHANGELOG.md heading and no
 # version tag), pushes to main get every test job and publish nothing.
@@ -190,12 +190,64 @@ jobs:
         run: scripts/test-den-e2e.ps1 -ReleaseDir out/windows-e2e -CaddyZip $env:CADDY_ZIP
 
 
-  # The Linux checks that need no containers: lint, first, in a checkout
-  # nothing has written to, which also shows a clone builds as it comes; the
-  # Go suite, which the release job's build relies on rather than running it
-  # again; the third-party notices, the list of emoji, the page's tests, the
-  # release state machine, and building the page bundle (after Go tests, so
-  # the placeholder-page test still runs on an unbuilt checkout).
+  # Lint, in a checkout nothing has written to, which also shows a clone
+  # builds as it comes: gofmt, go vet for Linux, Windows and Android,
+  # shellcheck, the PowerShell, and the docs' links. It runs beside
+  # linux-tests, whenever linux-tests does.
+  lint:
+    needs: release-plan
+    if: ${{ needs.release-plan.outputs.tests_required == 'true' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          # setup-go's cache is one entry for every Linux job, saved by
+          # whichever ends first, and never again until go.sum changes;
+          # this job keeps its own.
+          cache: false
+
+      # The newest this pull request's runs saved, or else main's, for
+      # go.mod and go.sum as they are, or else as they were.
+      - name: Restore Go's caches
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-lint-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            go-lint-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-lint-
+
+      - name: Lint
+        run: ./scripts/test.sh -lint
+
+      # Every run saves what it built under a key of its own, since an entry
+      # is never written over; Go trims what goes unused for days. A cache
+      # that doesn't save never fails the job.
+      - name: Save Go's caches
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
+
+  # The Linux checks that need no containers but lint: the Go suite, which
+  # the release job's build relies on rather than running it again; the
+  # third-party notices, the list of emoji, the page's tests, the release
+  # state machine, and building the page bundle (after Go tests, so the
+  # placeholder-page test still runs on an unbuilt checkout).
   linux-tests:
     needs: release-plan
     if: ${{ needs.release-plan.outputs.tests_required == 'true' }}
@@ -211,9 +263,20 @@ jobs:
         uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
+          # Its own Go caches, as lint's.
+          cache: false
 
-      - name: Lint
-        run: ./scripts/test.sh -lint
+      - name: Restore Go's caches
+        id: go-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: go-tests-${{ hashFiles('go.mod', 'go.sum') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            go-tests-${{ hashFiles('go.mod', 'go.sum') }}-
+            go-tests-
 
       - name: Install pinned rclone
         run: |
@@ -249,6 +312,15 @@ jobs:
           detect_host_arch
           frontend_build
           frontend_hash_assets
+
+      - name: Save Go's caches
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cache/go-build
+            ~/go/pkg/mod
+          key: ${{ steps.go-cache.outputs.cache-primary-key }}
 
   # Runs the Linux lifecycle e2e in Incus system containers on every
   # supported distro, from unsigned fixture releases over file:// URLs.
@@ -472,6 +544,7 @@ jobs:
             needs.release-plan.outputs.e2e_required == 'true' &&
             !contains(needs.*.result, 'skipped') &&
             needs.windows-e2e.result == 'success' &&
+            needs.lint.result == 'success' &&
             needs.linux-tests.result == 'success' &&
             needs.linux-e2e.result == 'success' &&
             needs.linux-den-e2e.result == 'success' &&
@@ -482,6 +555,7 @@ jobs:
            (needs.release-plan.outputs.tests_required == 'false' &&
             needs.release-plan.outputs.e2e_required == 'false' &&
             needs.windows-e2e.result == 'skipped' &&
+            needs.lint.result == 'skipped' &&
             needs.linux-tests.result == 'skipped' &&
             needs.linux-e2e.result == 'skipped' &&
             needs.linux-den-e2e.result == 'skipped' &&
@@ -495,6 +569,7 @@ jobs:
       - ci-gate
       - release-plan
       - windows-e2e
+      - lint
       - linux-tests
       - linux-e2e
       - linux-den-e2e
