@@ -2,17 +2,31 @@
 
 Part of [Dens's design](../design.md): roles, handing the den on, leaving and bans, staff's tools, the den's structure, profiles, names and their styles, and events with their badges.
 
-Three fixed roles, one level of channel groups, text and voice channels, and DMs. Anything finer-grained is a second den.
+Three fixed rank roles, optional custom roles for channel visibility, one level of channel groups, text and voice channels, and DMs.
 
 ## Roles
 
 | Role | Can |
 | --- | --- |
 | Member | Read and post in visible channels, DM other members, join voice, upload within limits |
-| Moderator | Everything a member can, plus delete members' messages, remove and ban members, create invites, manage channels and groups, see staff-only channels, read the audit log |
+| Moderator | Everything a member can, plus delete members' messages, remove and ban members, create invites, manage custom roles, channels and groups, see every channel, read the audit log |
 | Owner | Everything a moderator can, plus manage moderators, den settings and limits |
 
-Channels can be marked staff-only (moderators and owner). There is no other visibility control. Staff act only on those of a lower rank, so moderators can't remove, ban or delete the messages of other moderators or the owner. Moving a member from one call to another is the exception: staff move anyone but the owner and themselves (see [Staff in calls](calls.md#staff-in-calls)). Their powers stop at DMs, whose text they can't see: in a DM, only a message's author deletes it.
+Staff act only on those of a lower rank, so moderators can't remove, ban or delete the messages of other moderators or the owner. Moving a member from one call to another is the exception: staff move anyone but the owner and themselves (see [Staff in calls](calls.md#staff-in-calls)). Their powers stop at DMs, whose text they can't see: in a DM, only a message's author deletes it.
+
+### Custom roles
+
+Custom roles control channel visibility alone — they carry no moderation powers, colors or hierarchy.
+
+- *Limits.* A den has at most 50 custom roles (`den_roles`, `den_member_roles`, `den_channel_roles` and `den_event_roles`, the twenty-third migration; see [Data across versions](../design.md#data-across-versions)). Names are 1 to 32 characters, cleaned like display names, and unique case-insensitively. Staff (moderators and the owner) create, rename and delete custom roles in Manage's Roles section, and assign them to active members from Manage's Members section, a profile card's ⋯, or the member list's right-click menu.
+- *Visibility modes.* A text or voice channel is visible to **Everyone** (`staff_only` false, no roles), **Staff only** (`staff_only` true, no roles), or **Selected roles** (`staff_only` false, one or more roles: visible to staff and any member holding at least one listed role). Staff always see every channel regardless of their custom roles. Role-restricted channels carry a tag mark (distinct from staff-only's shield and E2EE's lock) whose tip lists the allowed roles.
+- *Uniform enforcement.* Every channel operation applies the same visibility rule: snapshots, history, sends, edits, deletes, task ticks, reactions, polls (including voter/non-voter audiences), files, change-log sync, Mark all as read, `@everyone` and mention counts, co-editors, typing and focus, voice joins, moves, and events in voice channels. On the page, `@` mention completion, the co-editor picker, and staff's voice drag-and-drop / Move to filter candidates by the channel's visibility.
+- *Voice kicks.* Losing a role, deleting a role, being demoted from moderator, or narrowing a voice channel's roles disconnects affected non-staff callers immediately (`forbidden`), including held calls.
+- *Fail-closed deletion.* Deleting a role never opens a restricted channel to everyone: in the same database transaction, any channel whose only role was the deleted one flips to `staff_only = 1` (and the confirmation dialog lists those channels beforehand). Channels with other roles keep them. Ended events whose voice channel was deleted snapshot its roles into `den_event_roles`; if their sole role is deleted, those ended events flip to `staff_only = 1` too.
+- *Non-staff privacy.* Non-staff snapshots and profiles carry only roles referenced by channels the viewer can see, with each member's `role_ids` filtered to those roles. Hidden role names and memberships never reach non-staff over the socket or profile route.
+- *Targeted refreshes.* The event hub maps each custom role to a bit slot (`uint64`) so role audiences evaluate in O(1) without heap allocations, and channel/member visibility changes send a fresh `ready` only to affected non-staff rather than refreshing everyone. Retired slots stay quarantined until every event carrying them leaves the ring.
+- *Audit log.* Creating, renaming and deleting a role, changing a member's custom roles, and changing a channel's roles all write audit lines; `role.deleted` records any channels flipped to staff-only.
+- *Older dens.* A den announces custom roles with `roles: true` in its info. Against an older den, Manage hides Roles and channel settings keep the Staff only toggle.
 
 ## Handing the den on
 

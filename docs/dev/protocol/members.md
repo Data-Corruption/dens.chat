@@ -5,8 +5,9 @@ Channels and groups, members and roles, leaving and bans, DMs, presence, and eve
 ## Channels and groups
 
 ```
-channel = {"id", "group_id", "name", "description"?, "kind": "text" | "voice", "position", "staff_only", "bitrate"?}
+channel = {"id", "group_id", "name", "description"?, "kind": "text" | "voice", "position", "staff_only", "role_ids"?, "bitrate"?}
 group   = {"id", "name", "position"}
+role    = {"id", "name"}
 ```
 
 - `group_id` is null for a channel outside any group.
@@ -18,7 +19,7 @@ group   = {"id", "name", "position"}
 - Management is `POST /api/channels`, `PATCH /api/channels/{id}` and `DELETE /api/channels/{id}`, and the same for `/api/groups`. Requests carry the object's fields, and a `PATCH` changes only the ones it names. `"group_id": ""` moves a channel out of its group. Moderators and the owner manage them.
 - Deleting a channel deletes its messages. Deleting a group keeps its channels, which move to the end of the ungrouped list.
 
-**Staff-only channels.** Members who can't see a channel get none of its events, and reorder lists leave it out, so the positions they see can have gaps. When a channel becomes staff-only or stops being so, those members get a fresh `ready`.
+**Restricted channels.** A text or voice channel is open to everyone (`staff_only: false`, no `role_ids`), staff-only (`staff_only: true`, no `role_ids`), or role-restricted (`staff_only: false`, `role_ids` non-empty: visible to staff and members holding any listed role). Setting `staff_only: true` with non-empty `role_ids` gets `400 invalid_field`; switching a channel to `staff_only: true` clears its `role_ids`, and setting non-empty `role_ids` clears `staff_only`. Members who can't see a channel get none of its events, and reorder lists leave it out, so the positions they see can have gaps. When a channel's visibility changes, affected non-staff members get a fresh `ready`.
 
 **Ordering.** Positions are dense (0, 1, 2, …) among the channels of one group, among ungrouped channels, and among groups.
 
@@ -31,18 +32,23 @@ group   = {"id", "name", "position"}
 Moderators and the owner are **staff**. Staff manage channels, groups and invites, see staff-only channels, and delete the messages of, remove and ban members of a lower rank: moderators act on members, and the owner on anyone else. The owner alone changes the den and roles.
 
 ```
-GET   /api/members/{id}                                     200 member, with "bio" and "badges"
-PATCH /api/me              {"display_name"?, "bio"?, "name_style"?}  200 member, with "bio"
-PUT   /api/me/status       {"status", "until"?}             200 member
-PATCH /api/members/{id}    {"role": "member" | "moderator"} 200 member          (owner only)
-PUT   /api/me/badges/{id}  {"hidden": bool}                 204
+GET    /api/members/{id}                                     200 member, with "bio" and "badges"
+PATCH  /api/me              {"display_name"?, "bio"?, "name_style"?}  200 member, with "bio"
+PUT    /api/me/status       {"status", "until"?}             200 member
+PATCH  /api/members/{id}    {"role": "member" | "moderator"} 200 member          (owner only)
+PUT    /api/me/badges/{id}  {"hidden": bool}                 204
+POST   /api/roles           {"name"}                         201 role            (staff)
+PATCH  /api/roles/{id}      {"name"}                         200 role            (staff)
+DELETE /api/roles/{id}                                       204                 (staff)
+PUT    /api/members/{id}/roles  {"role_ids": [...]}          200 member          (staff)
 ```
 
 - Any member may fetch anyone who has been in the den. `bio` is the markdown subset, up to 300 characters and 1,200 bytes, and an empty one clears it. It comes only in these two responses, never in `ready` or events, which keeps both small, as do the badges the member earned, in the first alone (see [Cards and badges](#cards-and-badges)).
 - `name_style` is how the member's name shows: `font`, one of `pacifico`, `fredoka`, `zilla-slab`, `space-mono`, `orbitron`, `pixelify-sans`, `bangers` and `cinzel`; `color`, `#rrggbb` in lowercase; and `color2`, the same, only with `color`, for a gradient from the name's start to its end. Each may be left out, and `{}` clears the style. Anything else is `400 invalid_field`. A member's record carries it wherever the member goes, in `ready` and events too, and leaves it out where there's none. A client takes a font it doesn't know, of lowercase letters, digits and hyphens, up to 32, as none, so a later den may add one; a color that isn't six hex digits makes the member malformed. A den that keeps styles says so in its info, `name_styles`; an older one ignores the field.
 - `status` is a line of the member's, up to 80 characters, cleaned as a display name is but keeping each of Unicode's emoji whole, and shown as plain text; `until` is when it ends, in Unix milliseconds, after now, or left out for none. An empty `status` clears it, and takes no `until`. A member's record carries both wherever it goes, in `ready` and events too, as `status` and `status_until`, and the den leaves out one whose end has passed; a client stops showing it at its end by its own clock, and the den's hourly pass removes it, telling nobody. A client takes a record whose status doesn't clean as malformed. It's within the member's writes, and a den that keeps statuses says so in its info, `status`; an older one has no such route.
-- A profile, status or role change reaches everyone as `member.updated {member}`; a client showing a bio fetches it again.
-- A role change makes the member's sockets start over with a fresh `ready`, since what they can see changed, and their older resume points resync.
+- A profile, status or role change reaches everyone as `member.updated {member}` (without `role_ids`, which clients keep from their current state); a client showing a bio fetches it again.
+- A rank role change makes the member's sockets start over with a fresh `ready`, since what they can see changed, and their older resume points resync.
+- **Custom roles.** Staff create, rename and delete up to 50 custom roles (`name` 1 to 32 cleaned characters, unique case-insensitively; a taken name returns `409 role_name_taken`) and replace any active member's `role_ids` via `PUT /api/members/{id}/roles` (at most 50 unique existing role IDs). Deleting a role fails closed in one transaction: any channel or orphaned ended event whose sole role was deleted flips to `staff_only: true`, and affected callers disconnect (`forbidden`). Staff receive `role.created {role}`, `role.updated {role}`, `role.deleted {"id"}` and `member.roles {"member_id", "role_ids"}`; non-staff receive `role.updated` only for roles referenced by channels they see, and a fresh `ready` when their visible channels or roles change. Non-staff `ready` and `GET /api/members/{id}` expose only roles referenced by channels the viewer sees and filter every member's `role_ids` accordingly.
 - `PUT /api/me/badges/{id}` hides a badge the member earned from their profile card, named by its event's ID, or with `"hidden": false` shows it again. It answers 204 whether or not that changed anything, and tells nobody. A badge the member didn't earn, or whose event they don't see, as a staff-only event's once they aren't staff, is `404 not_found` (see [Cards and badges](#cards-and-badges)).
 
 ### Leaving, removal and bans
@@ -73,7 +79,7 @@ line = {"id", "at", "kind", "by"?, "member_id"?, "channel_id"?, "channel"?, "ref
 - Both are staff's, and a member gets `403 forbidden`; a den says it has them in its info, `members_seen` and `audit_log`.
 - `seen` lists each member in the den who has a device, once, by the latest time any of their devices signed in or renewed its session, as the start of that day in UTC, in milliseconds.
 - The log answers newest first, at most 50 lines a page; `next` is the line to give as `before` for the page after, until the last. A `before` that isn't an ID is `400 invalid_field`. A line goes 90 days after its `at`, and isn't read after that.
-- A line is one of staff's acts: `kind`, who acted (`by`, left out for the den's machine, as through its owner invite), on whom (`member_id`), the channel by ID and its name as it was, the ID of what else it was on (`ref`: an invite, a group, an emoji, a sound, an event or a message) and its name as it was, and what changed, each value as text, a description's with neither. A removal says whether it banned, the seconds of messages it deleted and whether it revoked the member's invite; a reactions' line names the Unicode `emoji`, or a den emoji by `name`; an event's change lists its name, place, channel and times, and its description, banner or badge with no values; a call's line holds the channel the member was in, where they were in one; and an owner invite's role change says who took over (`owner`). The kinds are `member.removed`, `ban.lifted`, `role.changed`, `invite.created`, `invite.revoked`, `channel.created`, `channel.updated`, `channel.deleted`, `group.created`, `group.updated`, `group.deleted`, `message.deleted`, `reactions.cleared`, `call.disconnected`, `call.muted`, `call.unmuted`, `call.moved`, `record.reset`, `emoji.added`, `emoji.renamed`, `emoji.deleted`, `sound.added`, `sound.renamed`, `sound.deleted`, `event.updated`, `event.canceled`, `event.ended` and `den.updated`. A later den may add kinds and fields, which a client shows as it can.
+- A line is one of staff's acts: `kind`, who acted (`by`, left out for the den's machine, as through its owner invite), on whom (`member_id`), the channel by ID and its name as it was, the ID of what else it was on (`ref`: an invite, a group, an emoji, a sound, an event or a message) and its name as it was, and what changed, each value as text, a description's with neither. A removal says whether it banned, the seconds of messages it deleted and whether it revoked the member's invite; a reactions' line names the Unicode `emoji`, or a den emoji by `name`; an event's change lists its name, place, channel and times, and its description, banner or badge with no values; a call's line holds the channel the member was in, where they were in one; and an owner invite's role change says who took over (`owner`). The kinds are `member.removed`, `ban.lifted`, `role.changed`, `invite.created`, `invite.revoked`, `channel.created`, `channel.updated`, `channel.deleted`, `group.created`, `group.updated`, `group.deleted`, `message.deleted`, `reactions.cleared`, `call.disconnected`, `call.muted`, `call.unmuted`, `call.moved`, `record.reset`, `emoji.added`, `emoji.renamed`, `emoji.deleted`, `sound.added`, `sound.renamed`, `sound.deleted`, `event.updated`, `event.canceled`, `event.ended`, `den.updated`, `role.created`, `role.renamed`, `role.deleted` and `member.roles`. A later den may add kinds and fields, which a client shows as it can.
 - A client checks each line: its IDs, a kind of up to 32 of a-z and `_` in dotted parts, a field of up to 32 of the same, names up to 100 characters and values up to 200, each as cleaning leaves an event's name, emoji whole, at most 32 changes, a window of 0 or more, and an emoji from the list. One that fails refuses the whole page.
 
 ### DMs

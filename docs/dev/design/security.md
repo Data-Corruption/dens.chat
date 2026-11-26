@@ -10,7 +10,7 @@ Before the first release an audit checked every item here against the code (2026
 
 ### Client page and listener
 
-- [x] CSP: `default-src 'none'`, with scripts, styles, images, media, fonts, connections and forms limited to `'self'`, images also from `data:`, scripts also compiling WebAssembly (below), no inline scripts, frames only from YouTube's player, `frame-ancestors 'none'` and `base-uri 'none'`.
+- [x] CSP: `default-src 'none'`, with scripts, styles, images, media, fonts, connections and forms limited to `'self'`, images also from `data:`, media on the page also from `blob:` (for Steam trailers via `URL.createObjectURL(MediaSource)`, while the den listener keeps `media-src 'self'`), scripts also compiling WebAssembly (below), no inline scripts, frames only from YouTube's player, `frame-ancestors 'none'` and `base-uri 'none'`.
 - [x] Messages rendered by an escaping markdown subset; names and channel descriptions treated as untrusted text.
 - [x] Filenames treated as untrusted text, and files shown inline only as the image type the local service found them to be, sandboxed and never cached by the browser.
 - [x] Exact `Host` check (`127.0.0.1:<port>`, `[::1]:<port>` or `localhost:<port>`) against DNS rebinding.
@@ -26,7 +26,7 @@ Before the first release an audit checked every item here against the code (2026
 - [x] The page's links to the public guides open in a new tab, with no opener and no referrer (v1).
 - [x] The page frames nothing but YouTube's player from `https://www.youtube-nocookie.com` (`frame-src`), only for a member with players on who clicked, sandboxed without top navigation, at an address the page built from an ID it checked; it takes no messages from the frame, and its popups can't reach the page.
 - [x] The local service fetches nothing from YouTube but the oEmbed and picture addresses it builds from a checked video ID, follows no redirects, caps what it reads, cleans titles as names, and serves a picture only as a JPEG it read and stripped, with a member's file's headers.
-- [x] The local service fetches nothing from Steam but the store's, price, players' and tags' addresses it builds from a checked app ID, and pictures from Steam's fixed host at a path checked against that ID; it follows no redirects, caps what it reads, cleans text as names, and serves a picture only as a JPEG it read and stripped, with a member's file's headers; and an app for adults only shows no picture until the member asks.
+- [x] The local service fetches nothing from Steam but the store's, price, players' and tags' addresses it builds from a checked app ID, pictures from Steam's fixed assets host at a path checked against that ID, and primary `all_ages: true` trailers from `video.akamai.steamstatic.com/store_trailers/` only on play click at paths checked against that ID; it follows no redirects, caps what it reads (64 KiB manifest, 4 MiB chunk), rejects XML directives and `BaseURL`, cleans text as names, serves pictures only as stripped JPEGs and trailer segments only after sniffing ISO-BMFF (`ftyp` init, `styp`/`moof` chunk) with `Cache-Control: no-store`, `Content-Security-Policy: default-src 'none'; sandbox` and `X-Content-Type-Options: nosniff`; and an app for adults only keeps its pictures and trailer covered and unasked until the member asks.
 
 ### Den listener
 
@@ -107,6 +107,14 @@ Before the first release an audit checked every item here against the code (2026
 - [x] A voice key bound over a page key takes its press, so the page acts on no key the member gave a voice action.
 
 ## Members
+
+### Custom roles
+
+- [x] Custom roles gate channel visibility only (no moderation powers), capped at 50 per den; names are 1 to 32 cleaned characters, unique case-insensitively, treated as untrusted text by clients and the page.
+- [x] Contradictory channel states (`staff_only` with non-empty `role_ids`) and `role_ids` on DMs or notes are rejected by both the den and clients; clients reject snapshots naming unknown role IDs.
+- [x] Deleting a role fails closed inside one transaction: any channel or orphaned ended event whose only role was deleted flips to `staff_only = 1` rather than opening to everyone, and affected callers disconnect at once.
+- [x] Non-staff never learn hidden role names or memberships: snapshots, profiles and live role events expose only roles referenced by channels the viewer can see, and channel/member role changes invalidate resume points for affected non-staff.
+- [x] Channel visibility is enforced uniformly across history, writes, reactions, polls, files, change sync, Mark all as read, `@everyone`, co-editors, typing/focus, voice joins/moves and voice-channel events.
 
 ### Name styles
 

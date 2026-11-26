@@ -205,8 +205,8 @@ soundboard work as you'd expect. What's different:
   den at the right that shows each change as you make it. Choosing a theme
   only shows it there; **Use** puts it on.
 - **Compact messages**, a line each, is under **Settings** → **Appearance**
-  → **Messages**. On a computer, the sizes of photos and videos and of
-  YouTube players are there too, up to **Largest**.
+  → **Messages**. On a computer, the sizes of photos and videos, YouTube
+  players and Steam cards are there too, up to **Largest**.
 - **Animations**, under **Settings** → **Appearance** → **Messages**:
   animated pictures, emoji and GIFs in messages play always, or only while
   your pointer is over them.
@@ -219,13 +219,16 @@ soundboard work as you'd expect. What's different:
   the same way: copy its CSS there. Your themes stay in the browser you made
   them in.
 - **Link previews**: YouTube videos play where they're linked, and Steam
-  games show as cards, with the price, reviews and who's playing. A browser
-  opening Dens for the first time asks whether to show them, and **Settings**
-  → **Chat** changes it for each. YouTube and Steam see your IP address as
-  each one loads.
+  games show as cards, with screenshots, trailers on click, the price,
+  reviews and who's playing. A browser opening Dens for the first time asks
+  whether to show them, and **Settings** → **Chat** changes it for each.
+  YouTube and Steam see your IP address as each one loads.
 - **Staff** make channels and groups from the **+** at the end of the **Den**
   tab, from the den's name, or with a right click on the channel list, and
-  move a channel from its **⋯** or by dragging it.
+  move a channel from its **⋯** or by dragging it. Under **Manage** → **Roles**,
+  staff can create custom roles to limit which members see specific channels
+  (staff always see every channel); deleting a role turns any channel that
+  relied on it alone staff-only rather than opening it to everyone.
 - **Chat background** puts a picture of yours behind your messages, as dim
   as you set it, and **Hover** sets how much of it a message under your
   pointer covers. Your Dens keeps it, so each browser you open Dens in shows
