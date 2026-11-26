@@ -12,7 +12,7 @@ import { CallLength } from './calltimer.jsx';
 import { CallLock } from './calllock.jsx';
 import { StatusText } from '../ui/components.jsx';
 import { Name } from '../appearance/names.jsx';
-import { AwayIcon, CogIcon, ShieldIcon, SpeakerIcon } from '../ui/icons.jsx';
+import { AwayIcon, CogIcon, ShieldIcon, SpeakerIcon, TagIcon } from '../ui/icons.jsx';
 import { ownsMenu, rightClick, underOf } from '../ui/menus.jsx';
 import { useNarrow } from '../core/nav.js';
 import { RoleMark } from '../people.jsx';
@@ -108,6 +108,7 @@ function Pane({ denID, view, members, channel, staffMuted, lead, onProfile, movi
                     <span class={call.status === 'connected' ? 'text-success' : 'text-warning'}><SpeakerIcon size="h-4 w-4" /></span>
                     <span class="truncate">{channel.name}</span>
                     {channel.staff_only && <ShieldIcon />}
+                    {channel.role_ids?.length > 0 && <TagIcon />}
                 </span>
                 {WORDS[call.status] && <span role="status" class="shrink-0 text-sm text-warning" data-call-pane-status>{WORDS[call.status]}</span>}
                 <CallLock call={call} den={den} />

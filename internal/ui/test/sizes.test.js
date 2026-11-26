@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { h, render as mount } from 'preact';
 import { Attachments, fitBox } from '../src/chat/files.jsx';
-import { MEDIA, PLAYERS, SIZES, mediaBox, playerClass, setSize, size } from '../src/appearance/sizes.js';
+import { MEDIA, PLAYERS, SIZES, STEAM, mediaBox, playerClass, setSize, size, steamCardClass, steamMediaClass } from '../src/appearance/sizes.js';
 import { pictureURL } from '../src/chat/youtube.jsx';
 
 // A wide window, or with wide false the phone layout.
@@ -21,18 +21,43 @@ function all(node, match, found = []) {
     return found;
 }
 
-test('photos and videos show at Medium and players at Small until the member chooses, each kept apart', () => {
+test('photos and videos show at Medium and players and Steam cards at Small until the member chooses, each kept apart', () => {
     assert.deepEqual(SIZES, ['small', 'medium', 'large', 'largest']);
     assert.equal(size(MEDIA), 'medium');
     assert.equal(size(PLAYERS), 'small');
+    assert.equal(size(STEAM), 'small');
     setSize(MEDIA, 'largest');
     assert.equal(size(MEDIA), 'largest');
     assert.equal(size(PLAYERS), 'small', "the players' choice is its own");
+    assert.equal(size(STEAM), 'small', "Steam cards' choice is its own");
     setSize(PLAYERS, 'large');
+    assert.equal(size(PLAYERS), 'large');
+    assert.equal(size(STEAM), 'small');
+    setSize(STEAM, 'medium');
+    assert.equal(size(STEAM), 'medium');
     assert.equal(size(PLAYERS), 'large');
     setSize(MEDIA, 'enormous');
     assert.equal(size(MEDIA), 'medium');
+    setSize(STEAM, 'enormous');
+    assert.equal(size(STEAM), 'small');
     setSize(PLAYERS, 'small');
+});
+
+test('Steam cards stack at Small and lay out side by side past Small, with fixed 16:9 media boxes', () => {
+    assert.deepEqual(SIZES.map(steamCardClass), [
+        'w-[400px] flex-col',
+        'w-[640px] flex-row',
+        'w-[960px] flex-row',
+        'w-[1280px] flex-row',
+    ]);
+    assert.deepEqual(SIZES.map(steamMediaClass), [
+        'aspect-video w-full',
+        'aspect-video w-[56.25%]',
+        'aspect-video w-[62.5%]',
+        'aspect-video w-[68.75%]',
+    ]);
+    assert.equal(steamCardClass('unknown'), 'w-[400px] flex-col');
+    assert.equal(steamMediaClass('unknown'), 'aspect-video w-full');
 });
 
 test('a photo fits a box four wide to three high, several a smaller one each, and never grows past its own pixels', () => {

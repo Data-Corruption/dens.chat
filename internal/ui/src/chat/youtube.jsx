@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { api } from '../core/api.js';
 import { onYouTubePlayers, youTubePlayers } from './links.js';
 import { videosIn } from './markdown.jsx';
+import { claimPlay, isPlaying, onPlayChange, releasePlay } from './playback.js';
 import { PLAYERS, playerClass, useShownSize } from '../appearance/sizes.js';
 
 const SANDBOX = 'allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox';
@@ -34,16 +35,6 @@ export function watchURL({ id, start, short }) {
 // which fetched it from YouTube, a larger one for a player past Small.
 export function pictureURL({ id, short }, size = 'small') {
     return `/api/youtube/${id}/${short ? 'portrait' : size === 'small' ? 'thumb' : 'large'}`;
-}
-
-// playing is the player whose video plays: an object only that player
-// holds, so a cover for the same video elsewhere in the list stays a cover.
-let playing = null;
-const playingListeners = new Set();
-
-function play(player) {
-    playing = player;
-    playingListeners.forEach((fn) => fn());
 }
 
 // Videos shows the covers of a message's YouTube links, after its files,
@@ -74,13 +65,12 @@ function Player({ video }) {
     const [about, setAbout] = useState(null);
 
     useEffect(() => {
-        const changed = () => rerender((n) => n + 1);
-        playingListeners.add(changed);
+        const stop = onPlayChange(() => rerender((n) => n + 1));
         return () => {
-            playingListeners.delete(changed);
+            stop();
             // A video stops with its message, when that leaves the list or
             // its channel closes, and doesn't start again when it's back.
-            if (playing === self.current) playing = null;
+            releasePlay(self.current);
         };
     }, []);
 
@@ -107,7 +97,7 @@ function Player({ video }) {
     }, [seen, video.id]);
 
     let inside;
-    if (playing === self.current) {
+    if (isPlaying(self.current)) {
         // The frame's referrer is the page's origin, which YouTube's player
         // needs; the page itself sends none.
         inside = (
@@ -135,7 +125,7 @@ function Player({ video }) {
             </>
         );
     } else {
-        inside = <Cover video={video} about={about} size={size} onPlay={() => play(self.current)} />;
+        inside = <Cover video={video} about={about} size={size} onPlay={() => claimPlay(self.current)} />;
     }
     return (
         <div ref={box} data-video={video.id} class={`relative ${playerClass(size, video.short)} max-w-full overflow-hidden rounded bg-black`}>

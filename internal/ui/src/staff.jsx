@@ -12,7 +12,8 @@ import { nameRank } from './chat/emoji.js';
 import { formatSize } from './chat/files.jsx';
 import { keptFor } from './core/retention.js';
 import { mbps } from './voice/share.js';
-import { RemoveMember, cardMenu, rank } from './people.jsx';
+import { RemoveMember, cardMenu, isStaff, rank } from './people.jsx';
+import { MemberRolesDialog, roleNames } from './roles.jsx';
 
 const ROLES = { owner: 'Owner', moderator: 'Moderator', member: 'Member' };
 
@@ -57,6 +58,7 @@ export function Members({ denID, view, role, onChanged }) {
     const [by, setBy] = useState('name');
     const [seen, setSeen] = useState({});
     const [removing, setRemoving] = useState(null);
+    const [editingRoles, setEditingRoles] = useState(null);
     const act = useAction();
     const load = useAction();
     useEffect(() => {
@@ -90,14 +92,23 @@ export function Members({ denID, view, role, onChanged }) {
             await api.put(`/api/dens/${denID}/members/${m.id}/role`, { role: next });
             await onChanged();
         });
-        const run = { promote: () => setRole('moderator'), demote: () => setRole('member'), remove: () => setRemoving(m) };
-        const items = cardMenu({ self: m.id === view.me.id, role, member: m, kept: null })
+        const run = {
+            roles: () => setEditingRoles(m),
+            promote: () => setRole('moderator'),
+            demote: () => setRole('member'),
+            remove: () => setRemoving(m),
+        };
+        const items = cardMenu({ self: m.id === view.me.id, role, member: m, kept: null, roles: !!view.has_roles })
             .map((item) => ({ ...item, disabled: act.busy, run: run[item.key] }));
+        if (m.id === view.me.id && view.has_roles && isStaff(role) && !m.left_at) {
+            items.unshift({ key: 'roles', label: 'Roles…', icon: 'roles', disabled: act.busy, run: run.roles });
+        }
         return items.length > 0 && (
             <MenuButton label={`Options for ${m.display_name}`} items={items}
                 button={{ class: `${buttonClass('quiet')} btn-square btn-sm`, title: 'More', 'data-member-menu': m.username, children: '⋯' }} />
         );
     }
+    const roleSummary = (m) => roleNames(m.role_ids, view.roles).join(', ');
     const names = (m) => (
         <span class="flex min-w-0 items-center gap-2">
             <Avatar member={m} size="sm" />
@@ -127,7 +138,7 @@ export function Members({ denID, view, role, onChanged }) {
                             <div class="flex min-w-0 flex-1 flex-col gap-1">
                                 {names(r.m)}
                                 <span class="text-xs text-base-content/70">
-                                    {ROLES[r.m.role]} · Joined {day(r.m.joined_at)}{view.members_seen && ` · ${seenOf(r)}`}
+                                    {ROLES[r.m.role]}{roleSummary(r.m) && ` · ${roleSummary(r.m)}`} · Joined {day(r.m.joined_at)}{view.members_seen && ` · ${seenOf(r)}`}
                                 </span>
                             </div>
                             {menu(r.m)}
@@ -153,7 +164,10 @@ export function Members({ denID, view, role, onChanged }) {
                         {sorted.map((r) => (
                             <tr key={r.m.id} data-member={r.m.username}>
                                 <td class="max-w-56">{names(r.m)}</td>
-                                <td>{ROLES[r.m.role]}</td>
+                                <td>
+                                    <span>{ROLES[r.m.role]}</span>
+                                    {roleSummary(r.m) && <div class="text-xs text-base-content/60" data-member-roles>{roleSummary(r.m)}</div>}
+                                </td>
                                 <td>{day(r.m.joined_at)}</td>
                                 {view.members_seen && <td>{seenOf(r)}</td>}
                                 <td class="w-10">{menu(r.m)}</td>
@@ -165,6 +179,10 @@ export function Members({ denID, view, role, onChanged }) {
             {removing && <RemoveMember denID={denID} member={removing} onClose={() => {
                 setRemoving(null);
                 onChanged();
+            }} />}
+            {editingRoles && <MemberRolesDialog denID={denID} member={editingRoles} roles={view.roles || []} stopEscape onClose={(saved) => {
+                setEditingRoles(null);
+                if (saved) onChanged();
             }} />}
         </Card>
     );
@@ -186,6 +204,10 @@ const FIELDS = {
     name: ['Name'],
     description: ['Description'],
     staff_only: ['Staff only', (v) => (v === 'true' ? 'Yes' : 'No')],
+    roles: ['Roles'],
+    channels_staff_only: ['Changed to staff only'],
+    roles_added: ['Added roles'],
+    roles_removed: ['Removed roles'],
     bitrate: ['Bitrate', (v) => `${Math.round(Number(v) / 1000)} kbps`],
     group: ['Group'],
     place: ['Place'],
@@ -213,6 +235,8 @@ const FIELDS = {
     member_events: ['Events per member', count],
 };
 
+const SUMMARY_FIELDS = new Set(['channels_staff_only', 'roles_added', 'roles_removed']);
+
 /** changeText says what one change did: "Name: general → chat", or for
     one the den keeps no values of, "Description changed". A setting this
     page doesn't know shows by its own name. The den's settings call their
@@ -221,13 +245,14 @@ export function changeText(c, kind, locale) {
     const [label, show = (v) => v] = FIELDS[c.field] || [c.field];
     const name = kind === 'den.updated' && c.field === 'name' ? 'Den name' : label;
     if (!c.from && !c.to) return `${name} changed`;
+    if (SUMMARY_FIELDS.has(c.field) && !c.from && c.to) return `${name}: ${show(c.to, locale)}`;
     const value = (v) => (v ? show(v, locale) : 'none');
     return `${name}: ${value(c.from)} → ${value(c.to)}`;
 }
 
 // LISTED are the kinds whose changes show under their sentence; the rest
 // say theirs in it.
-const LISTED = new Set(['channel.updated', 'group.updated', 'event.updated', 'den.updated']);
+const LISTED = new Set(['channel.updated', 'group.updated', 'event.updated', 'den.updated', 'role.deleted', 'member.roles']);
 
 /** auditText says a line in words: { text, changes }, its sentence and
     the changes listed under it. nameOf gives a member's @username by ID.
@@ -256,6 +281,10 @@ export function auditText(l, nameOf, locale) {
         'role.changed': () => (l.owner
             ? `An owner invite made ${nameOf(l.owner)} the owner, and ${on} a ${need(change('role').to)}`
             : `${by} made ${on} a ${need(change('role').to)}`),
+        'role.created': () => `${by} made the role ${name()}`,
+        'role.renamed': () => `${by} renamed the role ${need(change('name').from)} to ${name()}`,
+        'role.deleted': () => `${by} deleted the role ${name()}`,
+        'member.roles': () => `${by} changed ${on}'s roles`,
         'invite.created': () => `${by} made an invite`,
         'invite.revoked': () => `${by} revoked an invite`,
         'channel.created': () => `${by} made ${channel()}`,

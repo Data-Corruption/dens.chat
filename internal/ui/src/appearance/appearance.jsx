@@ -25,7 +25,7 @@ import { EyeIcon, MenuIcon, StatusIcon } from '../ui/icons.jsx';
 import { STYLES_ALL, STYLES_COLORS, STYLES_OFF, setNameStyles, useNameStyles } from './names.js';
 import { useNarrow } from '../core/nav.js';
 import { DenPreview } from '../ui/preview.jsx';
-import { MEDIA, PLAYERS, SIZES, setSize, useSize } from './sizes.js';
+import { MEDIA, PLAYERS, SIZES, STEAM, setSize, useSize } from './sizes.js';
 import { setStaffMarks, useStaffMarks } from '../ui/staffmarks.js';
 import {
     THEMES, builtInTheme, forgetTheme, keepTheme, onTheme, ownChoice, ownThemes, setTheme, shownTheme, systemTheme, themeChoice, themeName,
@@ -548,6 +548,7 @@ function MessagesPane() {
     const marks = useStaffMarks();
     const media = useSize(MEDIA);
     const players = useSize(PLAYERS);
+    const steam = useSize(STEAM);
     const styles = useNameStyles();
     const animations = useAnimations();
     const verified = useVerifiedMarks();
@@ -563,6 +564,7 @@ function MessagesPane() {
                 <>
                     <Steps label="Photos and videos" data="data-media-size" choice={media} onPick={(s) => setSize(MEDIA, s)} choices={sizes} />
                     <Steps label="YouTube players" data="data-player-size" choice={players} onPick={(s) => setSize(PLAYERS, s)} choices={sizes} />
+                    <Steps label="Steam cards" data="data-steam-size" choice={steam} onPick={(s) => setSize(STEAM, s)} choices={sizes} />
                 </>
             )}
             <Choices label="Name styles" name="name-styles" data="data-name-styles" choice={styles} onPick={setNameStyles}

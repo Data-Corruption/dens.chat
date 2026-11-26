@@ -23,6 +23,7 @@ import { ExpirySetting } from './chat/disappearing.jsx';
 import { badgeTip, zone } from './chat/denevents.js';
 import { Sheet } from './ui/sheet.jsx';
 import { useCoarse } from './core/touch.js';
+import { roleNames } from './core/roles.js';
 
 const MAX_BIO = 300;
 const MAX_STATUS = 80;
@@ -124,11 +125,12 @@ export function shownBadges(badges) {
     owner's promoting a member or demoting a moderator; and removing
     someone of a lower rank, or banning one who left. One's own card offers
     none of them */
-export function cardMenu({ self, role, member, kept }) {
+export function cardMenu({ self, role, member, kept, roles = false }) {
     if (self) return [];
     const left = !!member.left_at;
     const out = [];
     if (kept && member.identity && !left) out.push({ key: 'compare', label: kept.verified ? 'Compare codes again' : 'Compare codes', icon: 'compare' });
+    if (roles && !left && isStaff(role)) out.push({ key: 'roles', label: 'Roles…', icon: 'roles' });
     if (role === 'owner' && !left && member.role === 'member') out.push({ key: 'promote', label: 'Promote to moderator', icon: 'up' });
     if (role === 'owner' && !left && member.role === 'moderator') out.push({ key: 'demote', label: 'Demote to member', icon: 'down' });
     if (rank(role) > rank(member.role)) out.push({ key: 'remove', label: left ? 'Ban…' : 'Remove from den…', icon: 'ban', danger: true });
@@ -138,14 +140,14 @@ export function cardMenu({ self, role, member, kept }) {
 /** memberMenu lists what a right click on a member's row in the list
     offers: their profile, then what their card does, Message, or
     on one's own Edit profile and Notes, and what its ⋯ holds */
-export function memberMenu({ self, role, member, kept, notes }) {
+export function memberMenu({ self, role, member, kept, notes, roles = false }) {
     const left = !!member.left_at;
     return [
         { key: 'profile', label: 'Profile', icon: 'profile' },
         self && { key: 'edit', label: 'Edit profile', icon: 'edit' },
         self && notes && { key: 'notes', label: 'Notes', icon: 'notes' },
         !self && !left && { key: 'message', label: 'Message', icon: 'message' },
-        ...cardMenu({ self, role, member, kept }),
+        ...cardMenu({ self, role, member, kept, roles }),
     ].filter(Boolean);
 }
 
@@ -172,13 +174,14 @@ export function MemberList({ denID, members, online, card, onProfile }) {
             notes: () => act.run(card.onNotes),
             message: () => act.run(() => card.onMessage(m)),
             compare: () => card.onCompare(m),
+            roles: () => card.onRoles?.(m),
             promote: () => setRole('moderator'),
             demote: () => setRole('member'),
             remove: () => card.onRemove(m),
         };
         const self = m.id === card.me.id;
         const kept = card.identities ? card.identities[m.id] || {} : null;
-        return memberMenu({ self, role: card.role, member: m, kept, notes: !!card.onNotes })
+        return memberMenu({ self, role: card.role, member: m, kept, notes: !!card.onNotes, roles: !!card.hasRoles })
             .map((item) => ({ ...item, disabled: act.busy && ['message', 'notes', 'promote', 'demote'].includes(item.key), run: run[item.key] }));
     }
     const rightClicks = (m) => (card && !touch ? {
@@ -248,7 +251,7 @@ export function MemberList({ denID, members, online, card, onProfile }) {
 // long they've been in the den. The bio and the badges come as the den sends them with
 // the card. In a panel the bio runs its full length, which the panel
 // scrolls. Its pictures play while it shows, since the member opened it.
-function Profile({ denID, member, me, online, panel = false, verified = false, actions, fixed, children }) {
+function Profile({ denID, member, me, online, panel = false, verified = false, roles = null, actions, fixed, children }) {
     const [fetched, setBio] = useState(null);
     const [badgesFetched, setBadges] = useState([]);
     const [error, setError] = useState('');
@@ -267,6 +270,7 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
     }, [member.id, member.display_name, !!fixed]);
     const left = !!member.left_at;
     const shown = shownBadges(badges);
+    const customRoles = roleNames(member.role_ids, roles);
     const status = statusShown(member, useStatusClock([member]));
     const ring = panel ? 'bg-base-200' : 'bg-base-100';
     const at = panel ? '-panel' : '';
@@ -295,6 +299,13 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
                             </p>
                             <p class="max-w-full truncate text-sm text-base-content/70">@{member.username}</p>
                             {status && <p class="mt-1 max-w-full break-words text-sm" data-status>{status}</p>}
+                            {customRoles.length > 0 && (
+                                <ul class="mt-1.5 flex max-w-full flex-wrap gap-1" aria-label="Roles" data-member-roles>
+                                    {customRoles.map((name) => (
+                                        <li key={name} class="rounded border border-base-300 bg-base-200 px-1.5 py-0.5 text-xs">{name}</li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                         {shown.length > 0 && (
                             <div class="flex min-w-0 flex-col gap-1 @min-[26rem]:max-w-[55%]">
@@ -329,10 +340,10 @@ function Profile({ denID, member, me, online, panel = false, verified = false, a
 // what this member's Dens kept of their identity, null on a den that keeps
 // none. expiry is the DM, whose time either member sets, where the
 // den keeps one.
-export function ProfilePanel({ denID, member, me, online, kept, onCompare, expiry }) {
+export function ProfilePanel({ denID, member, me, online, kept, roles, onCompare, expiry }) {
     return (
         <div class="flex flex-col">
-            <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified}>
+            <Profile denID={denID} member={member} me={me} online={online} panel verified={!!kept?.verified} roles={roles}>
                 <CompareCodes member={member} kept={kept} onCompare={onCompare} />
                 {expiry && <ExpirySetting denID={denID} channel={expiry} />}
             </Profile>
@@ -359,7 +370,7 @@ function CompareCodes({ member, kept, onCompare }) {
 // the den has them for this Dens. The rest is under ⋯. On a wide window it
 // opens beside from, the name or picture clicked, with nothing dimmed;
 // a phone, or a card with nothing to open beside, keeps a dialog.
-export function ProfileCard({ denID, member, me, role, online, kept, from, onClose, onMessage, onNotes, onCompare, onEdit, onRemove }) {
+export function ProfileCard({ denID, member, me, role, online, kept, roles, hasRoles = false, from, onClose, onMessage, onNotes, onCompare, onEdit, onRemove, onRoles }) {
     const narrow = useNarrow();
     const act = useAction();
     const self = member.id === me.id;
@@ -371,11 +382,16 @@ export function ProfileCard({ denID, member, me, role, online, kept, from, onClo
 
     const run = {
         compare: () => onCompare(member),
+        roles: () => onRoles?.(member),
         promote: () => setRole('moderator'),
         demote: () => setRole('member'),
         remove: () => onRemove(member),
     };
-    const more = cardMenu({ self, role, member, kept }).map((item) => ({ ...item, disabled: act.busy && item.key !== 'compare', run: run[item.key] }));
+    const more = cardMenu({ self, role, member, kept, roles: hasRoles }).map((item) => ({
+        ...item,
+        disabled: act.busy && item.key !== 'compare' && item.key !== 'roles',
+        run: run[item.key],
+    }));
     const actions = self ? (
         <>
             <Button kind="primary" onClick={onEdit}>Edit profile</Button>
@@ -391,7 +407,7 @@ export function ProfileCard({ denID, member, me, role, online, kept, from, onClo
     );
 
     const card = (
-        <Profile denID={denID} member={member} me={me} online={online} verified={!self && !!kept?.verified} actions={actions}>
+        <Profile denID={denID} member={member} me={me} online={online} verified={!self && !!kept?.verified} roles={roles} actions={actions}>
             <ErrorText message={act.error} />
         </Profile>
     );

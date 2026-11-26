@@ -178,6 +178,17 @@ export function ShieldIcon({ size = 'h-3.5 w-3.5' }) {
     );
 }
 
+// TagIcon marks a role-restricted channel, which staff and members holding
+// any listed role see: the lock is end-to-end encryption's.
+export function TagIcon({ size = 'h-3.5 w-3.5' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M2.5 8.25V3.5a1 1 0 0 1 1-1h4.75l5.5 5.5a1 1 0 0 1 0 1.4l-4.35 4.35a1 1 0 0 1-1.4 0z" />
+            <circle cx="5.75" cy="5.75" r="0.75" fill="currentColor" stroke="none" />
+        </svg>
+    );
+}
+
 // CrownIcon marks the den's owner, beside their name in their
 // profile and the member list, where a shield marks a moderator.
 export function CrownIcon({ size = 'h-3.5 w-3.5' }) {
@@ -227,6 +238,7 @@ export const MENU_ICONS = {
     message: 'M2.5 3.25h11v7.5H7.25l-3.25 2.5v-2.5H2.5z',
     notes: 'M3.5 2h6l3 3v9h-9zM9.5 2v3h3M6 8.5h4M6 11h4',
     compare: 'M8 1.75 13 3.5v4c0 3.1-2.1 5.45-5 6.75C5.1 12.95 3 10.6 3 7.5v-4zM5.75 8l1.5 1.5 3-3',
+    roles: 'M2.5 8.25V3.5a1 1 0 0 1 1-1h4.75l5.5 5.5a1 1 0 0 1 0 1.4l-4.35 4.35a1 1 0 0 1-1.4 0zM5.75 5.75h.01',
     up: 'M8 13.25V2.75M3.75 7 8 2.75 12.25 7',
     down: 'M8 2.75v10.5M3.75 9 8 13.25 12.25 9',
     ban: 'M14.5 8a6.5 6.5 0 1 1-13 0 6.5 6.5 0 0 1 13 0zM3.4 3.4l9.2 9.2',

@@ -1,19 +1,23 @@
 // Steam's cards. With them on, a message's links to games on Steam get
 // cards under it: the game's picture, with its first screenshots a step
-// away, its name linking to its store page, who made it, its tags and a
-// line on it; its reviews and how many play it now; the systems it runs
-// on, Steam Deck's rating among them; and its price where the member is,
-// with a sale's end. The member's Dens fetches all of it from Steam once
-// a card comes on screen, and the page shows it from its own origin. A
-// card takes its whole box before anything in it loads, so the message
-// list never moves, and a game Steam marks for adults only keeps its
-// pictures covered until the member shows them.
+// away and its primary trailer on click, its name linking to its store
+// page, who made it, its tags and a line on it; its reviews and how many
+// play it now; the systems it runs on, Steam Deck's rating among them; and
+// its price where the member is, with a sale's end. The member's Dens
+// fetches all of it from Steam once a card comes on screen, and the page
+// shows it from its own origin. A card takes its whole box before anything
+// in it loads, so the message list never moves, and a game Steam marks for
+// adults only keeps its pictures and trailer covered until the member shows
+// them.
 
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { api } from '../core/api.js';
-import { MenuIcon } from '../ui/icons.jsx';
+import { MenuIcon, PlayIcon } from '../ui/icons.jsx';
 import { onSteamCards, steamCards } from './links.js';
 import { gamesIn } from './markdown.jsx';
+import { claimPlay, isPlaying, onPlayChange, releasePlay } from './playback.js';
+import { STEAM, steamCardClass, steamMediaClass, useShownSize } from '../appearance/sizes.js';
+import { startTrailer } from './trailer.js';
 import { useCoarse } from '../core/touch.js';
 
 // REVIEWS are Steam's names for its reviews' scores, from 1 to 9.
@@ -85,6 +89,7 @@ export function Games({ text }) {
 // since Steam hears of each game asked about, and its rows keep their
 // heights whatever comes, so it never changes size.
 function Card({ app }) {
+    const size = useShownSize(STEAM);
     const box = useRef(null);
     const [seen, setSeen] = useState(false);
     const [about, setAbout] = useState(null);
@@ -115,10 +120,12 @@ function Card({ app }) {
     const date = card ? when(card) : '';
     const link = 'link link-hover';
     return (
-        <div ref={box} data-steam={app} data-state={card ? 'found' : about?.missing ? 'missing' : about?.failed ? 'failed' : 'loading'}
-            class="flex w-[460px] max-w-full flex-col overflow-hidden rounded-box border border-base-300 bg-base-200 text-sm">
-            <Pictures app={app} card={card} notice={about?.missing ? "Steam doesn't have this game." : about?.failed ? "Steam couldn't be reached." : ''} />
-            <div class="flex flex-col gap-1.5 p-3">
+        <div ref={box} data-steam={app} data-steam-size={size}
+            data-state={card ? 'found' : about?.missing ? 'missing' : about?.failed ? 'failed' : 'loading'}
+            class={`flex ${steamCardClass(size)} max-w-full overflow-hidden rounded-box border border-base-300 bg-base-200 text-sm`}>
+            <Pictures app={app} card={card} size={size}
+                notice={about?.missing ? "Steam doesn't have this game." : about?.failed ? "Steam couldn't be reached." : ''} />
+            <div class="flex min-w-0 flex-1 flex-col gap-1.5 p-3">
                 <div class="flex h-6 items-center gap-2">
                     <a href={storeURL(app)} target="_blank" rel="noopener noreferrer nofollow" class={`${link} min-w-0 flex-1 truncate text-base font-semibold`}
                         data-steam-name>
@@ -156,7 +163,7 @@ function Card({ app }) {
                         </span>
                     )}
                 </div>
-                <div class="flex h-7 items-center gap-2 whitespace-nowrap">
+                <div class="mt-auto flex h-7 items-center gap-2 whitespace-nowrap">
                     <Price card={card} />
                     <span class="ml-auto truncate text-xs text-base-content/60" data-steam-when>{date}</span>
                 </div>
@@ -181,45 +188,120 @@ function Price({ card }) {
     );
 }
 
-// Pictures is a card's picture, Steam's header for the game, and the
-// screenshots its arrows step through, each fetched once it's shown. A
-// game for adults only shows none until the member asks. notice says why a
-// card has nothing to show.
-function Pictures({ app, card, notice }) {
+// Pictures is a card's picture, Steam's header for the game, the
+// screenshots its arrows step through, each fetched once it's shown, and
+// its primary trailer on click. A game for adults only shows none until
+// the member asks. notice says why a card has nothing to show.
+function Pictures({ app, card, size, notice }) {
     const touch = useCoarse();
+    const token = useRef(null);
+    if (!token.current) token.current = {};
+    const videoRef = useRef(null);
     const [at, setAt] = useState(0);
     const [shown, setShown] = useState(false);
     const [broken, setBroken] = useState(-1);
+    const [playing, setPlaying] = useState(false);
+    const [loading, setLoading] = useState(false);
+    const [trailerError, setTrailerError] = useState('');
+
+    useEffect(() => {
+        const stop = onPlayChange(() => setPlaying(isPlaying(token.current)));
+        return () => {
+            stop();
+            releasePlay(token.current);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!playing || !videoRef.current) return undefined;
+        setLoading(true);
+        setTrailerError('');
+        const stop = startTrailer({
+            app,
+            size,
+            video: videoRef.current,
+            onReady: () => setLoading(false),
+            onError: () => {
+                setLoading(false);
+                setTrailerError("Trailer couldn't be played.");
+                releasePlay(token.current);
+            },
+        });
+        return () => {
+            setLoading(false);
+            stop();
+        };
+    }, [playing, app, size]);
+
     const all = 1 + (card?.shots || 0);
     const src = at === 0 ? `/api/steam/${app}/header` : `/api/steam/${app}/shots/${at}`;
     const covered = card?.adult && !shown;
-    const step = (by) => setAt((i) => (i + by + all) % all);
+    const step = (by) => {
+        releasePlay(token.current);
+        setTrailerError('');
+        setAt((i) => (i + by + all) % all);
+    };
+    const play = () => {
+        setTrailerError('');
+        claimPlay(token.current);
+    };
     const arrow = `absolute top-1/2 flex size-8 -translate-y-1/2 items-center justify-center rounded-full bg-black/60 text-white hover:bg-black/80 focus-visible:opacity-100 ${touch ? '' : 'opacity-0 group-hover/pics:opacity-100'}`;
     return (
-        <div class="group/pics relative aspect-[460/215] w-full shrink-0 overflow-hidden bg-base-300" data-steam-picture={at}>
-            {card && !covered && broken !== at && (
-                <img key={src} src={src} alt="" class="size-full object-cover" onError={() => setBroken(at)} />
-            )}
-            {covered && (
-                <button type="button" class="absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm" data-steam-cover onClick={() => setShown(true)}>
-                    <span class="font-semibold">For adults only</span>
-                    <span class="text-xs text-base-content/70">Show the pictures</span>
-                </button>
-            )}
-            {notice && <span class="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-base-content/70">{notice}</span>}
-            {card && !covered && all > 1 && (
+        <div class={`group/pics relative ${steamMediaClass(size)} shrink-0 overflow-hidden bg-base-300`} data-steam-picture={at}>
+            {playing && !covered ? (
                 <>
-                    <button type="button" class={`${arrow} left-2`} aria-label="Previous picture" onClick={() => step(-1)}>
-                        <MenuIcon name="back" size="h-4 w-4" />
+                    <video ref={videoRef} controls playsinline class="size-full bg-black object-contain" data-steam-video />
+                    {loading && (
+                        <span class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30">
+                            <span class="loading loading-spinner loading-md text-white"></span>
+                        </span>
+                    )}
+                    <button type="button"
+                        class="absolute right-2 top-2 flex size-8 cursor-pointer items-center justify-center rounded-full bg-black/70 text-sm text-white hover:bg-black/90"
+                        aria-label="Close trailer" data-steam-close onClick={() => releasePlay(token.current)}>
+                        ✕
                     </button>
-                    <button type="button" class={`${arrow} right-2`} aria-label="Next picture" onClick={() => step(1)}>
-                        <MenuIcon name="onward" size="h-4 w-4" />
-                    </button>
-                    <span class="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1" aria-hidden="true">
-                        {Array.from({ length: all }, (_, i) => (
-                            <span key={i} class={`size-1.5 rounded-full ${i === at ? 'bg-white' : 'bg-white/50'}`}></span>
-                        ))}
-                    </span>
+                </>
+            ) : (
+                <>
+                    {card && !covered && broken !== at && (
+                        <img key={src} src={src} alt="" class="size-full object-cover" onError={() => setBroken(at)} />
+                    )}
+                    {covered && (
+                        <button type="button" class="absolute inset-0 flex flex-col items-center justify-center gap-1 text-sm" data-steam-cover onClick={() => setShown(true)}>
+                            <span class="font-semibold">For adults only</span>
+                            <span class="text-xs text-base-content/70">Show the pictures</span>
+                        </button>
+                    )}
+                    {notice && <span class="absolute inset-0 flex items-center justify-center p-4 text-center text-sm text-base-content/70">{notice}</span>}
+                    {card && !covered && card.trailer && (
+                        <button type="button"
+                            class="absolute left-1/2 top-1/2 flex size-12 -translate-x-1/2 -translate-y-1/2 cursor-pointer items-center justify-center rounded-full bg-black/70 text-white transition-colors hover:bg-primary focus-visible:bg-primary"
+                            aria-label={`Play ${card.name || 'game'} trailer`} data-steam-play onClick={play}>
+                            <PlayIcon size="h-5 w-5" />
+                        </button>
+                    )}
+                    {trailerError && !covered && (
+                        <span role="status" data-steam-trailer-error
+                            class="absolute inset-x-2 bottom-7 rounded bg-black/80 px-2 py-1 text-center text-xs text-white">
+                            {trailerError}
+                        </span>
+                    )}
+                    {card && !covered && all > 1 && (
+                        <>
+                            <button type="button" class={`${arrow} left-2`} aria-label="Previous picture" onClick={() => step(-1)}>
+                                <MenuIcon name="back" size="h-4 w-4" />
+                            </button>
+                            <button type="button" class={`${arrow} right-2`} aria-label="Next picture" onClick={() => step(1)}>
+                                <MenuIcon name="onward" size="h-4 w-4" />
+                            </button>
+                            <span class="absolute bottom-2 left-1/2 flex -translate-x-1/2 gap-1" aria-hidden="true">
+                                {Array.from({ length: all }, (_, i) => (
+                                    <span key={i} class={`size-1.5 rounded-full ${i === at ? 'bg-white' : 'bg-white/50'}`}></span>
+                                ))}
+                            </span>
+                        </>
+                    )}
                 </>
             )}
         </div>
