@@ -23,23 +23,25 @@ var releasedSchema = []struct {
 }{
 	// v1.0.0 through v1.6.0 shipped the initial step alone.
 	{"v1.6.0", 1, slices.Concat([]string{"sounds", "den_named_files", "den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"},
-		m16Tables, m17Tables, m19Tables, m23Tables)},
+		m16Tables, m17Tables, m19Tables, m23Tables, m25Tables)},
 	// v1.7.0 added own sounds and the soundboard.
-	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables, m19Tables, m23Tables)},
+	{"v1.7.0", 3, slices.Concat([]string{"den_reactions", "den_dm_reactions", "den_polls", "den_poll_votes"}, m16Tables, m17Tables, m19Tables, m23Tables, m25Tables)},
 	// v1.8.0 added emoji, reactions and polls.
-	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables, m19Tables, m23Tables)},
+	{"v1.8.0", 6, slices.Concat(m16Tables, m17Tables, m19Tables, m23Tables, m25Tables)},
 	// v1.9.0 added identities, group DMs and disappearing messages.
-	{"v1.9.0", 9, slices.Concat(m17Tables, m19Tables, m23Tables)},
+	{"v1.9.0", 9, slices.Concat(m17Tables, m19Tables, m23Tables, m25Tables)},
 	// v1.10.0 added spoilers, notes, events, badges and hidden ones, and
 	// v1.10.1 nothing more.
-	{"v1.10.1", 14, slices.Concat(m19Tables, m23Tables)},
+	{"v1.10.1", 14, slices.Concat(m19Tables, m23Tables, m25Tables)},
 	// v1.11.0 added the chat background and name styles, and v1.12.0
 	// nothing more.
-	{"v1.12.0", 16, m23Tables},
+	{"v1.12.0", 16, slices.Concat(m23Tables, m25Tables)},
 	// v1.13.0 added call records, and v1.14.0 nothing more.
-	{"v1.14.0", 17, m23Tables},
+	{"v1.14.0", 17, slices.Concat(m23Tables, m25Tables)},
 	// v1.15.0 added the audit log.
-	{"v1.15.0", 18, nil},
+	{"v1.15.0", 18, m25Tables},
+	// v1.16.0 added forwards and statuses, and removed group DMs.
+	{"v1.16.0", 22, m25Tables},
 }
 
 // m16Tables are the tables v1.9.0's steps add that stay: identities and
@@ -76,6 +78,10 @@ var m19Tables = []string{"background"}
 
 // m23Tables are the tables v1.15.0's steps add: the audit log.
 var m23Tables = []string{"den_audit"}
+
+// m25Tables are the tables Channel roles adds: roles and their links to
+// members, channels and ended events.
+var m25Tables = []string{"den_roles", "den_member_roles", "den_channel_roles", "den_event_roles"}
 
 // retiredKeys are the tables of DM keys, which Identities changes for a
 // release before it: an exchange still running, or checked by one member
@@ -375,7 +381,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				// No message is forwarded until a member forwards one,
 				// and a mark is 0 or 1.
 				var forwarded int
-				if err := db.QueryRow(`SELECT count(*) FROM den_messages WHERE forwarded != 0`).Scan(&forwarded); err != nil || forwarded != 0 {
+				if err := db.QueryRow(`SELECT count(*) FROM den_messages WHERE forwarded != 0`).Scan(&forwarded); err != nil ||
+					(released.version < 20 && forwarded != 0) {
 					t.Errorf("%s holds %d forwarded messages after the migration, %v", what, forwarded, err)
 				}
 				if _, err := db.Exec(`UPDATE den_messages SET forwarded = 1 WHERE id = 1`); err != nil {
@@ -387,7 +394,8 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				// No member has a status until they set one, and an end
 				// comes with a status.
 				var statuses int
-				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE status IS NOT NULL OR status_until IS NOT NULL`).Scan(&statuses); err != nil || statuses != 0 {
+				if err := db.QueryRow(`SELECT count(*) FROM den_members WHERE status IS NOT NULL OR status_until IS NOT NULL`).Scan(&statuses); err != nil ||
+					(released.version < 22 && statuses != 0) {
 					t.Errorf("%s holds %d statuses after the migration, %v", what, statuses, err)
 				}
 				if _, err := db.Exec(`UPDATE den_members SET status = x'00', status_until = 9 WHERE id = 1`); err != nil {
@@ -395,6 +403,40 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				}
 				if _, err := db.Exec(`UPDATE den_members SET status = NULL WHERE id = 1`); err == nil {
 					t.Errorf("%s takes a status's end with no status", what)
+				}
+				// Roles are unique case-insensitively, link to members,
+				// channels and events, and cascade on delete.
+				if _, err := db.Exec(`INSERT INTO den_roles (id, name, created_at) VALUES (1, 'Raiders', 15)`); err != nil {
+					t.Errorf("%s takes no role after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`INSERT INTO den_roles (name, created_at) VALUES ('raiders', 16)`); err == nil {
+					t.Errorf("%s took a duplicate role name in another case", what)
+				}
+				for _, q := range []string{
+					`INSERT INTO den_member_roles (member_id, role_id) VALUES (1, 1)`,
+					`INSERT INTO den_channel_roles (channel_id, role_id) VALUES (1, 1)`,
+					`INSERT INTO den_event_roles (event_id, role_id) VALUES (` + fmt.Sprint(event) + `, 1)`,
+				} {
+					if _, err := db.Exec(q); err != nil {
+						t.Errorf("%s failed %s: %v", what, q, err)
+					}
+				}
+				for _, q := range []string{
+					`INSERT INTO den_member_roles (member_id, role_id) VALUES (99, 1)`,
+					`INSERT INTO den_channel_roles (channel_id, role_id) VALUES (99, 1)`,
+					`INSERT INTO den_event_roles (event_id, role_id) VALUES (99999, 1)`,
+					`INSERT INTO den_member_roles (member_id, role_id) VALUES (1, 99)`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
+				}
+				if _, err := db.Exec(`DELETE FROM den_roles WHERE id = 1`); err != nil {
+					t.Errorf("%s failed deleting role: %v", what, err)
+				}
+				var leftovers int
+				if err := db.QueryRow(`SELECT (SELECT count(*) FROM den_member_roles) + (SELECT count(*) FROM den_channel_roles) + (SELECT count(*) FROM den_event_roles)`).Scan(&leftovers); err != nil || leftovers != 0 {
+					t.Errorf("%s kept %d role links after role delete, %v", what, leftovers, err)
 				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
@@ -548,13 +590,17 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 			`UPDATE den_dm_keys SET statement = x'74', signature = x'75' WHERE id = 2`,
 			`INSERT INTO den_records (member_id, revision, sealed, updated_at) VALUES (1, 1, x'76', 7)`,
 			`UPDATE joined_dens SET identities = x'77'`,
-			`INSERT INTO den_channels (id, name, kind, position, created_at) VALUES (5, '', 'group_dm', 0, 7)`,
-			`INSERT INTO den_group_dms (channel_id, made_by, made_at, name, name_kid) VALUES (5, 1, 7, x'78', x'79')`,
-			`INSERT INTO den_group_members (channel_id, member_id, position, joined, since) VALUES (5, 1, 0, 1, 0), (5, 3, 1, 1, 0)`,
-			`INSERT INTO den_group_changes (channel_id, n, made_by, made_at, statement) VALUES (5, 1, 1, 7, x'7a')`,
 			`UPDATE den_channels SET expires_after = 3600, expires_by = 1, expires_set_at = 7 WHERE id = 4`,
 			`INSERT INTO den_messages (id, channel_id, author_id, created_at, text, nonce, key_id, expires_at) VALUES (4, 4, 1, 8, x'37', x'38', 2, 3600008)`,
 		)
+		if version < 21 {
+			rows = append(rows,
+				`INSERT INTO den_channels (id, name, kind, position, created_at) VALUES (5, '', 'group_dm', 0, 7)`,
+				`INSERT INTO den_group_dms (channel_id, made_by, made_at, name, name_kid) VALUES (5, 1, 7, x'78', x'79')`,
+				`INSERT INTO den_group_members (channel_id, member_id, position, joined, since) VALUES (5, 1, 0, 1, 0), (5, 3, 1, 1, 0)`,
+				`INSERT INTO den_group_changes (channel_id, n, made_by, made_at, statement) VALUES (5, 1, 1, 7, x'7a')`,
+			)
+		}
 	}
 	if version >= 14 {
 		rows = append(rows,
@@ -581,6 +627,12 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	}
 	if version >= 18 {
 		rows = append(rows, `INSERT INTO den_audit (at, kind, done_by, member_id, details) VALUES (11, 'member.banned', 1, 2, x'a0')`)
+	}
+	if version >= 20 {
+		rows = append(rows, `UPDATE den_messages SET forwarded = 1 WHERE id = 1`)
+	}
+	if version >= 22 {
+		rows = append(rows, `UPDATE den_members SET status = x'a5', status_until = 99 WHERE id = 1`)
 	}
 	for _, q := range rows {
 		if _, err := db.Exec(q); err != nil {

@@ -89,6 +89,7 @@ func (d *Den) online() []string {
 // see; typing in those reaches it.
 func (d *Den) focus(ctx context.Context, sub *Sub, channels []string) {
 	staff := d.Hub.Staff(sub)
+	roles := d.Hub.Roles(sub)
 	shown := map[string]bool{}
 	for _, id := range channels {
 		cid, err := denproto.ParseID(id)
@@ -99,7 +100,7 @@ func (d *Den) focus(ctx context.Context, sub *Sub, channels []string) {
 		// A socket speaking a version before notes shows none; and
 		// nobody else is typing in a member's notes, nor does anyone
 		// see them typing there.
-		if err == nil && visible(c, sub.member, staff) && sub.version >= kindVersion(c.Kind) && c.Kind != denproto.KindNotes {
+		if err == nil && d.visibleMask(c, sub.member, staff, roles) && sub.version >= kindVersion(c.Kind) && c.Kind != denproto.KindNotes {
 			shown[id] = true
 		}
 	}

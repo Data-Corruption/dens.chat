@@ -277,8 +277,15 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	if e, v, ok := denproto.ParseMembersCursor(r.URL.Query().Get("members")); ok {
 		members = &membersCursor{epoch: e, version: v}
 	}
+	rolesMask, err := d.memberRoleMask(ctx, d.db, s.MemberID)
+	if err != nil {
+		d.log.Errorf("den socket roles: %v", err)
+		end("role lookup failed")
+		c.Close(websocket.StatusInternalError, "")
+		return
+	}
 	// A Dens speaking a version before notes gets nothing of them.
-	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(s.Role), s.Version, epoch, after)
+	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(s.Role), rolesMask, s.Version, epoch, after)
 	defer d.Hub.Unsubscribe(sub)
 	d.sockets.subscribed(sock, sub)
 	d.deviceConnected(s.MemberID, s.KeyID)
@@ -317,10 +324,10 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	// nothing published after the snapshot is lost; an event racing it may
 	// repeat state the snapshot already has, and applying one twice is
 	// harmless.
-	sendReady := func(seq uint64) bool {
-		// The role can change while the socket is open; the hub knows the
-		// current one.
-		snap, err := d.snapshotAt(ctx, s.MemberID, d.Hub.Staff(sub), s.Version, seq, members)
+	sendReady := func(seq uint64, mc *membersCursor) bool {
+		// Staff rank and custom roles can change while the socket is open; the
+		// hub knows the current ones.
+		snap, err := d.snapshotAt(ctx, s.MemberID, d.Hub.Staff(sub), d.Hub.Roles(sub), s.Version, seq, mc)
 		if err != nil {
 			d.log.Errorf("den snapshot: %v", err)
 			end("its snapshot failed")
@@ -336,7 +343,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		// online and in calls now.
 		first, _ := denproto.NewEvent(denproto.EventResumed, 0, nil)
 		online, _ := denproto.NewEvent(denproto.EventPresence, 0, denproto.Presence{Online: d.online(), Full: true})
-		calls, _ := denproto.NewEvent(denproto.EventVoiceState, 0, denproto.VoiceState{Calls: d.visibleCalls(d.Hub.Staff(sub)), Full: true})
+		calls, _ := denproto.NewEvent(denproto.EventVoiceState, 0, denproto.VoiceState{Calls: d.visibleCalls(d.Hub.Staff(sub), d.Hub.Roles(sub)), Full: true})
 		batch := []denproto.Event{first, online, calls}
 		size := eventSize(first) + eventSize(online) + eventSize(calls)
 		for _, e := range missed {
@@ -352,7 +359,7 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 		if len(batch) > 0 && !write(batch...) {
 			return
 		}
-	} else if !sendReady(seq) {
+	} else if !sendReady(seq, members) {
 		return
 	}
 
@@ -413,9 +420,35 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 						return
 					}
 					batch, size = nil, 0
-					if !sendReady(e.Seq) {
+					// Collapse consecutive refreshes already queued.
+					refreshSeq := e.Seq
+					var next denproto.Event
+					hasNext := false
+					for {
+						select {
+						case ev, more := <-sub.Events:
+							if !more {
+								goto doRefresh
+							}
+							if ev.T == eventRefresh {
+								refreshSeq = ev.Seq
+								continue
+							}
+							next, hasNext = ev, true
+							goto doRefresh
+						default:
+							goto doRefresh
+						}
+					}
+				doRefresh:
+					if !sendReady(refreshSeq, nil) {
 						return
 					}
+					if hasNext {
+						e = next
+						continue
+					}
+					break
 				} else {
 					if len(batch) > 0 && size+eventSize(e) > frameBudget {
 						if !write(batch...) {

@@ -126,16 +126,16 @@ func TestHubPollAudiences(t *testing.T) {
 	sub1, _, _, _ := h.Subscribe(1, false, "", 0)
 	sub2, _, _, _ := h.Subscribe(2, false, "", 0)
 	sub3, _, _, _ := h.Subscribe(3, true, "", 0)
-	if err := h.Publish("in", nil, Voters(voters, false)); err != nil {
+	if err := h.Publish("in", nil, Voters(voters, false, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.Publish("out", nil, NonVoters(voters, false)); err != nil {
+	if err := h.Publish("out", nil, NonVoters(voters, false, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.Publish("staff in", nil, Voters(voters, true)); err != nil {
+	if err := h.Publish("staff in", nil, Voters(voters, true, 0)); err != nil {
 		t.Fatal(err)
 	}
-	if err := h.Publish("staff out", nil, NonVoters(voters, true)); err != nil {
+	if err := h.Publish("staff out", nil, NonVoters(voters, true, 0)); err != nil {
 		t.Fatal(err)
 	}
 	got := func(sub *Sub) []string {

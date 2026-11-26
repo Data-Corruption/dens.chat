@@ -370,9 +370,9 @@ func (d *Den) SetBadgeHidden(ctx context.Context, s *Session, eventID string, hi
 	if err != nil {
 		return errBadgeNotFound
 	}
-	res, err := d.db.ExecContext(ctx, `UPDATE den_badge_awards SET hidden = ? WHERE event_id = ? AND member_id = ?
+	res, err := d.db.ExecContext(ctx, `UPDATE den_badge_awards SET hidden = ?1 WHERE event_id = ?2 AND member_id = ?3
 		AND event_id IN (SELECT e.id FROM den_events e LEFT JOIN den_channels c ON c.id = e.channel_id
-			WHERE e.id = ? AND (`+eventStaffOnly+` = 0 OR ?))`, hidden, event, s.MemberID, event, IsStaff(s.Role))
+			WHERE e.id = ?2 AND `+eventVisibleSQL("?4", "?3")+`)`, hidden, event, s.MemberID, IsStaff(s.Role))
 	if err != nil {
 		return err
 	}
@@ -388,13 +388,13 @@ func (d *Den) SetBadgeHidden(ctx context.Context, s *Session, eventID string, hi
 // profileBadges lists the badges a member earned whose events a viewer,
 // staff or not, sees, latest first, as many as a profile carries: those
 // the member hid alone for the member's own, each marked.
-func (d *Den) profileBadges(ctx context.Context, member int64, staff, own bool) ([]denproto.MemberBadge, error) {
+func (d *Den) profileBadges(ctx context.Context, member, viewer int64, staff, own bool) ([]denproto.MemberBadge, error) {
 	rows, err := d.db.QueryContext(ctx, `SELECT a.event_id, a.earned_at, a.hidden, b.title, f.id, f.width, f.height, f.animated, e.details, e.starts_at
 		FROM den_badge_awards a JOIN den_badges b ON b.event_id = a.event_id
 		JOIN den_named_files n ON n.id = b.named_id JOIN den_files f ON f.id = n.file_id
 		JOIN den_events e ON e.id = a.event_id LEFT JOIN den_channels c ON c.id = e.channel_id
-		WHERE a.member_id = ? AND (a.hidden = 0 OR ?) AND (`+eventStaffOnly+` = 0 OR ?)
-		ORDER BY a.earned_at DESC, a.event_id DESC LIMIT ?`, member, own, staff, denproto.MaxProfileBadges)
+		WHERE a.member_id = ?1 AND (a.hidden = 0 OR ?2) AND `+eventVisibleSQL("?3", "?4")+`
+		ORDER BY a.earned_at DESC, a.event_id DESC LIMIT ?5`, member, own, staff, viewer, denproto.MaxProfileBadges)
 	if err != nil {
 		return nil, err
 	}

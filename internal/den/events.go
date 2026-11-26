@@ -64,6 +64,7 @@ type eventRow struct {
 	bannerID   int64
 	channel    int64
 	staffOnly  bool
+	roleIDs    []int64
 	madeBy     int64
 	makerRole  string
 	startsAt   int64
@@ -96,14 +97,27 @@ func (e *eventRow) view(mine *bool) denproto.DenEvent {
 	return v
 }
 
-// sees reports whether a member sees the event: one in a staff-only
-// channel, staff alone.
-func (e *eventRow) sees(staff bool) bool { return !e.staffOnly || staff }
+// seesEvent reports whether session s sees event e.
+func (d *Den) seesEvent(ctx context.Context, q querier, e *eventRow, s *Session) (bool, error) {
+	if IsStaff(s.Role) {
+		return true, nil
+	}
+	if e.staffOnly {
+		return false, nil
+	}
+	if len(e.roleIDs) == 0 {
+		return true, nil
+	}
+	return memberHasAnyRole(ctx, q, s.MemberID, e.roleIDs)
+}
 
 // audience is who sees the event.
-func (e *eventRow) audience() Audience {
+func (e *eventRow) audience(d *Den) Audience {
 	if e.staffOnly {
 		return Staff
+	}
+	if len(e.roleIDs) > 0 {
+		return Roles(d.Hub.Mask(e.roleIDs))
 	}
 	return Everyone
 }
@@ -114,12 +128,12 @@ func (e *eventRow) audience() Audience {
 const eventStaffOnly = `coalesce(c.staff_only, e.staff_only)`
 
 // eventColumns read an event, its banner's size, its channel's visibility,
-// its maker's role, how many are interested of those who see it, in a
-// staff-only channel staff alone, and its badge's title and picture.
-const eventColumns = `e.id, e.details, e.banner_id, f.width, f.height, f.animated, e.channel_id, ` + eventStaffOnly + `,
+// its maker's role, how many are interested of those who see it, and its
+// badge's title and picture.
+var eventColumns = `e.id, e.details, e.banner_id, f.width, f.height, f.animated, e.channel_id, ` + eventStaffOnly + `,
 	e.made_by, mk.role, e.starts_at, e.ends_at, e.state,
 	(SELECT count(*) FROM den_event_interest i JOIN den_members m ON m.id = i.member_id
-		WHERE i.event_id = e.id AND (` + eventStaffOnly + ` = 0 OR m.role IN ('moderator', 'owner'))),
+		WHERE i.event_id = e.id AND ` + eventVisibleSQL("m.role IN ('moderator', 'owner')", "m.id") + `),
 	b.title, b.named_id, bf.id, bf.width, bf.height, bf.animated
 	FROM den_events e LEFT JOIN den_files f ON f.id = e.banner_id LEFT JOIN den_channels c ON c.id = e.channel_id
 	JOIN den_members mk ON mk.id = e.made_by
@@ -165,16 +179,78 @@ func (d *Den) queryEvents(ctx context.Context, q querier, where string, args ...
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	var out []*eventRow
+	var chanIDs, snapEventIDs []int64
 	for rows.Next() {
 		e, err := d.scanEvent(rows.Scan)
 		if err != nil {
+			rows.Close()
 			return nil, err
+		}
+		if e.channel != 0 {
+			if !slices.Contains(chanIDs, e.channel) {
+				chanIDs = append(chanIDs, e.channel)
+			}
+		} else {
+			snapEventIDs = append(snapEventIDs, e.id)
 		}
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(chanIDs) > 0 {
+		crows, err := q.QueryContext(ctx, `SELECT channel_id, role_id FROM den_channel_roles WHERE channel_id IN (?`+
+			strings.Repeat(", ?", len(chanIDs)-1)+`) ORDER BY channel_id, role_id`, anys(chanIDs)...)
+		if err != nil {
+			return nil, err
+		}
+		byChan := map[int64][]int64{}
+		for crows.Next() {
+			var cid, rid int64
+			if err := crows.Scan(&cid, &rid); err != nil {
+				crows.Close()
+				return nil, err
+			}
+			byChan[cid] = append(byChan[cid], rid)
+		}
+		crows.Close()
+		if err := crows.Err(); err != nil {
+			return nil, err
+		}
+		for _, e := range out {
+			if e.channel != 0 {
+				e.roleIDs = byChan[e.channel]
+			}
+		}
+	}
+	if len(snapEventIDs) > 0 {
+		erows, err := q.QueryContext(ctx, `SELECT event_id, role_id FROM den_event_roles WHERE event_id IN (?`+
+			strings.Repeat(", ?", len(snapEventIDs)-1)+`) ORDER BY event_id, role_id`, anys(snapEventIDs)...)
+		if err != nil {
+			return nil, err
+		}
+		byEvent := map[int64][]int64{}
+		for erows.Next() {
+			var eid, rid int64
+			if err := erows.Scan(&eid, &rid); err != nil {
+				erows.Close()
+				return nil, err
+			}
+			byEvent[eid] = append(byEvent[eid], rid)
+		}
+		erows.Close()
+		if err := erows.Err(); err != nil {
+			return nil, err
+		}
+		for _, e := range out {
+			if e.channel == 0 {
+				e.roleIDs = byEvent[e.id]
+			}
+		}
+	}
+	return out, nil
 }
 
 // event reads one event.
@@ -199,7 +275,14 @@ func (d *Den) visibleEvent(ctx context.Context, q querier, s *Session, id string
 	if err != nil {
 		return nil, err
 	}
-	if e.state == eventEnded || !e.sees(IsStaff(s.Role)) {
+	if e.state == eventEnded {
+		return nil, errEventNotFound
+	}
+	ok, err := d.seesEvent(ctx, q, e, s)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
 		return nil, errEventNotFound
 	}
 	return e, nil
@@ -208,7 +291,7 @@ func (d *Den) visibleEvent(ctx context.Context, q querier, s *Session, id string
 // eventsFor lists the events to come and live a member sees, each with
 // their own mark, for their snapshot.
 func (d *Den) eventsFor(ctx context.Context, q querier, member int64, staff bool) ([]denproto.DenEvent, error) {
-	events, err := d.queryEvents(ctx, q, `e.state != 'ended' AND (`+eventStaffOnly+` = 0 OR ?)`, staff)
+	events, err := d.queryEvents(ctx, q, `e.state != 'ended' AND `+eventVisibleSQL("?1", "?2"), staff, member)
 	if err != nil {
 		return nil, err
 	}
@@ -334,10 +417,20 @@ func (d *Den) eventChannel(ctx context.Context, s *Session, id string) (denproto
 		return denproto.Channel{}, 0, invalid("channel_id: no such voice channel")
 	}
 	c, err := d.channel(ctx, d.db, cid)
-	if errors.Is(err, errChannelNotFound) || err == nil && (c.Kind != denproto.KindVoice || !sees(c, s)) {
+	if errors.Is(err, errChannelNotFound) {
 		return c, 0, invalid("channel_id: no such voice channel")
 	}
-	return c, cid, err
+	if err != nil {
+		return c, 0, err
+	}
+	ok, err := d.sees(ctx, d.db, c, s)
+	if err != nil {
+		return c, 0, err
+	}
+	if c.Kind != denproto.KindVoice || !ok {
+		return c, 0, invalid("channel_id: no such voice channel")
+	}
+	return c, cid, nil
 }
 
 // checkEventBanner checks an upload an event's banner takes: the member's
@@ -474,7 +567,7 @@ func (d *Den) CreateEvent(ctx context.Context, s *Session, req denproto.EventReq
 		return none, err
 	}
 	d.log.Infof("Member %d made event %d", s.MemberID, e.id)
-	if err := d.Hub.Publish(denproto.EventEventCreated, e.view(nil), e.audience()); err != nil {
+	if err := d.Hub.Publish(denproto.EventEventCreated, e.view(nil), e.audience(d)); err != nil {
 		return none, err
 	}
 	d.dueAt(e.startsAt)
@@ -604,12 +697,14 @@ func (d *Den) UpdateEvent(ctx context.Context, s *Session, id string, req denpro
 		d.audited()
 	}
 	d.files.remove(blobs)
-	if before.staffOnly != after.staffOnly {
+	if before.staffOnly != after.staffOnly || !slices.Equal(before.roleIDs, after.roleIDs) {
 		if err := d.Hub.Publish(denproto.EventEventUpdated, after.view(nil), Staff); err != nil {
 			return none, err
 		}
-		d.Hub.RefreshNonStaff()
-	} else if err := d.Hub.Publish(denproto.EventEventUpdated, after.view(nil), after.audience()); err != nil {
+		oldEveryone := !before.staffOnly && len(before.roleIDs) == 0
+		newEveryone := !after.staffOnly && len(after.roleIDs) == 0
+		d.Hub.RefreshChannelVisibility(oldEveryone, newEveryone, d.Hub.Mask(before.roleIDs), d.Hub.Mask(after.roleIDs))
+	} else if err := d.Hub.Publish(denproto.EventEventUpdated, after.view(nil), after.audience(d)); err != nil {
 		return none, err
 	}
 	// A badge attached, or the event moved, may bring an award sooner.
@@ -634,7 +729,11 @@ func (d *Den) Event(ctx context.Context, s *Session, id string) (denproto.DenEve
 	if err != nil {
 		return denproto.DenEvent{}, err
 	}
-	if !e.sees(IsStaff(s.Role)) {
+	ok, err := d.seesEvent(ctx, d.db, e, s)
+	if err != nil {
+		return denproto.DenEvent{}, err
+	}
+	if !ok {
 		return denproto.DenEvent{}, errEventNotFound
 	}
 	mine := false
@@ -683,7 +782,7 @@ func (d *Den) CancelEvent(ctx context.Context, s *Session, id string) error {
 	}
 	d.files.remove(blobs)
 	d.log.Infof("Member %d canceled event %d", s.MemberID, gone.id)
-	if err := d.Hub.Publish(denproto.EventEventCanceled, denproto.EventID{ID: denproto.FormatID(gone.id)}, gone.audience()); err != nil {
+	if err := d.Hub.Publish(denproto.EventEventCanceled, denproto.EventID{ID: denproto.FormatID(gone.id)}, gone.audience(d)); err != nil {
 		return err
 	}
 	d.planTimer()
@@ -753,7 +852,11 @@ func (d *Den) EndEvent(ctx context.Context, s *Session, id string) error {
 		if err != nil {
 			return err
 		}
-		if !e.sees(IsStaff(s.Role)) {
+		ok, err := d.seesEvent(ctx, tx, e, s)
+		if err != nil {
+			return err
+		}
+		if !ok {
 			return errEventNotFound
 		}
 		if err := mayChange(e, s); err != nil {
@@ -775,7 +878,7 @@ func (d *Den) EndEvent(ctx context.Context, s *Session, id string) error {
 		return err
 	}
 	d.log.Infof("Member %d ended event %d", s.MemberID, ended.id)
-	if err := d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(ended.id)}, ended.audience()); err != nil {
+	if err := d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(ended.id)}, ended.audience(d)); err != nil {
 		return err
 	}
 	d.planTimer()
@@ -828,7 +931,7 @@ func (d *Den) SetInterest(ctx context.Context, s *Session, id string, on bool) (
 		return answer, nil
 	}
 	if err := d.Hub.Publish(denproto.EventEventInterest, denproto.EventInterest{EventID: answer.EventID, Interested: e.interested},
-		e.audience()); err != nil {
+		e.audience(d)); err != nil {
 		return answer, err
 	}
 	return answer, d.Hub.Publish(denproto.EventEventInterest, answer, OnlyMember(s.MemberID))
@@ -880,12 +983,13 @@ func (d *Den) startDue(ctx context.Context) error {
 	for _, st := range live {
 		d.log.Infof("Event %d started, with %d interested", st.e.id, st.e.interested)
 		v := st.e.view(nil)
-		errs = append(errs, d.Hub.Publish(denproto.EventEventStarted, v, Voters(st.interested, st.e.staffOnly)),
-			d.Hub.Publish(denproto.EventEventUpdated, v, NonVoters(st.interested, st.e.staffOnly)))
+		mask := d.Hub.Mask(st.e.roleIDs)
+		errs = append(errs, d.Hub.Publish(denproto.EventEventStarted, v, Voters(st.interested, st.e.staffOnly, mask)),
+			d.Hub.Publish(denproto.EventEventUpdated, v, NonVoters(st.interested, st.e.staffOnly, mask)))
 	}
 	for _, e := range over {
 		d.log.Infof("Event %d passed while the den was stopped", e.id)
-		errs = append(errs, d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience()))
+		errs = append(errs, d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience(d)))
 	}
 	return errors.Join(errs...)
 }
@@ -916,7 +1020,7 @@ func (d *Den) endDueEvents(ctx context.Context) error {
 	var errs []error
 	for _, e := range over {
 		d.log.Infof("Event %d ended", e.id)
-		errs = append(errs, d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience()))
+		errs = append(errs, d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience(d)))
 	}
 	return errors.Join(errs...)
 }
@@ -961,11 +1065,17 @@ func (d *Den) departEvents(ctx context.Context, tx *sql.Tx, member int64) (event
 
 // channelEvents takes a voice channel's events out of the den within tx,
 // as it's deleted: those to come go, with their banners, and the live one
-// ends. Those that stay, ended, keep whether the channel was staff's alone.
+// ends. Those that stay, ended, keep whether the channel was staff's alone
+// and snapshot its custom roles into den_event_roles.
 func (d *Den) channelEvents(ctx context.Context, tx *sql.Tx, channel int64) (eventsGone, [][]byte, error) {
 	var gone eventsGone
 	if _, err := tx.ExecContext(ctx, `UPDATE den_events SET staff_only = (SELECT staff_only FROM den_channels WHERE id = ?1)
 		WHERE channel_id = ?1`, channel); err != nil {
+		return gone, nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT OR IGNORE INTO den_event_roles (event_id, role_id)
+		SELECT e.id, cr.role_id FROM den_events e JOIN den_channel_roles cr ON cr.channel_id = e.channel_id
+		WHERE e.channel_id = ?1`, channel); err != nil {
 		return gone, nil, err
 	}
 	events, err := d.queryEvents(ctx, tx, `e.state != 'ended' AND e.channel_id = ?`, channel)
@@ -992,10 +1102,10 @@ func (d *Den) channelEvents(ctx context.Context, tx *sql.Tx, channel int64) (eve
 func (d *Den) publishGone(ctx context.Context, gone eventsGone) error {
 	var errs []error
 	for _, e := range gone.canceled {
-		errs = append(errs, d.Hub.Publish(denproto.EventEventCanceled, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience()))
+		errs = append(errs, d.Hub.Publish(denproto.EventEventCanceled, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience(d)))
 	}
 	for _, e := range gone.ended {
-		errs = append(errs, d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience()))
+		errs = append(errs, d.Hub.Publish(denproto.EventEventEnded, denproto.EventID{ID: denproto.FormatID(e.id)}, e.audience(d)))
 	}
 	slices.Sort(gone.recounted)
 	for _, id := range slices.Compact(gone.recounted) {
@@ -1005,7 +1115,7 @@ func (d *Den) publishGone(ctx context.Context, gone eventsGone) error {
 		}
 		if err == nil && e.state != eventEnded {
 			err = d.Hub.Publish(denproto.EventEventInterest, denproto.EventInterest{EventID: denproto.FormatID(e.id), Interested: e.interested},
-				e.audience())
+				e.audience(d))
 		}
 		errs = append(errs, err)
 	}

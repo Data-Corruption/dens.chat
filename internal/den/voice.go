@@ -39,7 +39,8 @@ type call struct {
 	// sock is the socket the call's signaling goes to, or nil while the
 	// call is held. The SFU's signal reads it without the registry's lock.
 	sock  atomic.Pointer[socket]
-	staff bool // whether the member is staff, which a held call can't ask its socket
+	staff bool   // whether the member is staff, which a held call can't ask its socket
+	roles uint64 // custom role bitmask, kept for held calls too
 	peer  *sfu.Peer
 	// The member's own marks: muted; deafened, hearing nothing; and away,
 	// which holds only while muted.
@@ -67,6 +68,7 @@ type call struct {
 // any.
 type callRoom struct {
 	staffOnly bool
+	roles     uint64
 	members   []*call // in the order they joined
 	sound     *sounding
 	// began is when the call's first member joined, and record its
@@ -262,7 +264,9 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		refuse(denproto.VoiceFailed)
 		return
 	}
-	if err != nil || c.Kind != denproto.KindVoice || !visible(c, s.MemberID, d.Hub.Staff(sub)) {
+	staff := d.Hub.Staff(sub)
+	roles := d.Hub.Roles(sub)
+	if err != nil || c.Kind != denproto.KindVoice || !d.visibleMask(c, s.MemberID, staff, roles) {
 		refuse(denproto.VoiceNotFound)
 		return
 	}
@@ -305,7 +309,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		}
 		changed = append(changed, old.channel)
 	}
-	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), muted: req.Muted, deafened: req.Deafened,
+	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), roles: d.Hub.Roles(sub), muted: req.Muted, deafened: req.Deafened,
 		away: req.Away && req.Muted, joined: d.now()}
 	nc.sock.Store(sock)
 	bitrate := c.Bitrate
@@ -328,7 +332,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		if v, ok := r.records[cid]; ok {
 			record = v
 		}
-		room = &callRoom{staffOnly: c.StaffOnly, began: nc.joined, record: record, kept: record, counts: true}
+		room = &callRoom{staffOnly: c.StaffOnly, roles: d.channelMask(c), began: nc.joined, record: record, kept: record, counts: true}
 		r.rooms[cid] = room
 		markAt = room.nextMark()
 	}
@@ -1006,13 +1010,20 @@ func (r *callRegistry) recall(key []byte, channel int64, now time.Time) string {
 	return e.reason
 }
 
+// roomVisible reports whether a member with staff flag and role mask sees room.
+func roomVisible(room *callRoom, staff bool, roles uint64) bool {
+	return staff || (!room.staffOnly && (room.roles == 0 || (room.roles&roles) != 0))
+}
+
 // channelChanged ends the calls a channel's change leaves out: everyone's
-// when it's deleted, and non-staff members' when it becomes staff-only.
+// when it's deleted, and members who can no longer see it when its visibility
+// narrows.
 func (d *Den) channelChanged(c denproto.Channel, deleted bool) {
 	cid, err := denproto.ParseID(c.ID)
 	if err != nil {
 		return
 	}
+	mask := d.channelMask(c)
 	r := &d.calls
 	r.mu.Lock()
 	defer d.unlockCalls()
@@ -1021,22 +1032,23 @@ func (d *Den) channelChanged(c denproto.Channel, deleted bool) {
 		return
 	}
 	// The call's audience changes with the channel's before anyone hears
-	// of it, so a call that became staff-only isn't shown to members.
+	// of it, so a restricted call isn't shown to members who lost access.
 	room.staffOnly = c.StaffOnly
+	room.roles = mask
 	for _, x := range slices.Clone(room.members) {
 		switch {
 		case deleted:
 			d.endCallLocked(x, denproto.VoiceDeleted)
-		case c.StaffOnly && !x.staff:
+		case !roomVisible(room, x.staff, x.roles):
 			d.endCallLocked(x, denproto.VoiceForbidden)
 		}
 	}
 	d.publishCallsLocked(cid)
 }
 
-// roleChanged ends a member's call in a staff-only channel once they're no
-// longer staff. A held call has no socket whose subscription knows the new
-// role, so the call keeps its own.
+// roleChanged ends a member's call in a restricted channel once they're no
+// longer staff and lack the channel's roles. A held call has no socket whose
+// subscription knows the new role, so the call keeps its own.
 func (d *Den) roleChanged(member int64, staff bool) {
 	r := &d.calls
 	r.mu.Lock()
@@ -1046,9 +1058,65 @@ func (d *Den) roleChanged(member int64, staff bool) {
 		return
 	}
 	c.staff = staff
-	if room := r.rooms[c.channel]; room != nil && room.staffOnly && !staff {
+	if room := r.rooms[c.channel]; room != nil && !roomVisible(room, staff, c.roles) {
 		d.endCallLocked(c, denproto.VoiceForbidden)
 		d.publishCallsLocked(c.channel)
+	}
+}
+
+// memberRolesChanged updates a member's custom role mask on any live or held
+// call and disconnects them if they can no longer see its channel.
+func (d *Den) memberRolesChanged(member int64, roles uint64) {
+	r := &d.calls
+	r.mu.Lock()
+	defer d.unlockCalls()
+	c := r.byMember[member]
+	if c == nil {
+		return
+	}
+	c.roles = roles
+	if room := r.rooms[c.channel]; room != nil && !roomVisible(room, c.staff, roles) {
+		d.endCallLocked(c, denproto.VoiceForbidden)
+		d.publishCallsLocked(c.channel)
+	}
+}
+
+// roleDeletedInCalls updates rooms and active callers after a role is deleted,
+// kicking any non-staff caller who can no longer see their voice channel.
+func (d *Den) roleDeletedInCalls(deletedBit uint64, affectedChannels []denproto.Channel) {
+	type chVis struct {
+		staffOnly bool
+		roles     uint64
+	}
+	vis := make(map[int64]chVis, len(affectedChannels))
+	for _, c := range affectedChannels {
+		if cid, err := denproto.ParseID(c.ID); err == nil {
+			vis[cid] = chVis{staffOnly: c.StaffOnly, roles: d.channelMask(c)}
+		}
+	}
+	r := &d.calls
+	r.mu.Lock()
+	defer d.unlockCalls()
+	for _, c := range r.byMember {
+		c.roles &^= deletedBit
+	}
+	var changed []int64
+	for cid, v := range vis {
+		room := r.rooms[cid]
+		if room == nil {
+			continue
+		}
+		room.staffOnly = v.staffOnly
+		room.roles = v.roles
+		for _, x := range slices.Clone(room.members) {
+			if !roomVisible(room, x.staff, x.roles) {
+				d.endCallLocked(x, denproto.VoiceForbidden)
+				changed = append(changed, cid)
+			}
+		}
+	}
+	if len(changed) > 0 {
+		d.publishCallsLocked(changed...)
 	}
 }
 
@@ -1173,7 +1241,11 @@ func (d *Den) MoveMember(ctx context.Context, s *Session, id string, req denprot
 	if err != nil {
 		return err
 	}
-	if c.Kind != denproto.KindVoice || !visible(c, s.MemberID, IsStaff(s.Role)) {
+	ok, err := d.sees(ctx, d.db, c, s)
+	if err != nil {
+		return err
+	}
+	if c.Kind != denproto.KindVoice || !ok {
 		return errChannelNotFound
 	}
 	from, err := d.moveLocked(s, mid, c, cid)
@@ -1194,7 +1266,7 @@ func (d *Den) moveLocked(s *Session, mid int64, c denproto.Channel, cid int64) (
 	if mc == nil || mc.channel == cid {
 		return 0, nil
 	}
-	if !visible(c, mid, mc.staff) {
+	if !d.visibleMask(c, mid, mc.staff, mc.roles) {
 		return 0, errChannelNotFound
 	}
 	sock := mc.sock.Load()
@@ -1285,8 +1357,10 @@ func (d *Den) publishCallsLocked(channels ...int64) {
 			continue
 		}
 		state := denproto.VoiceState{Calls: []denproto.Call{r.callOf(cid, room, now)}}
-		staffOnly := room.staffOnly
-		if err := d.Hub.Ephemeral(denproto.EventVoiceState, state, func(sub *Sub) bool { return !staffOnly || sub.staff }); err != nil {
+		staffOnly, roles := room.staffOnly, room.roles
+		if err := d.Hub.Ephemeral(denproto.EventVoiceState, state, func(sub *Sub) bool {
+			return sub.staff || (!staffOnly && (roles == 0 || (roles&sub.roles) != 0))
+		}); err != nil {
 			d.log.Errorf("announce call: %v", err)
 		}
 		if len(room.members) == 0 {
@@ -1313,14 +1387,14 @@ func (r *callRegistry) callOf(cid int64, room *callRoom, now time.Time) denproto
 
 // visibleCalls lists the calls a member can see that have someone in them,
 // for snapshots.
-func (d *Den) visibleCalls(staff bool) []denproto.Call {
+func (d *Den) visibleCalls(staff bool, roles uint64) []denproto.Call {
 	r := &d.calls
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	now := d.now()
 	out := []denproto.Call{}
 	for cid, room := range r.rooms {
-		if len(room.members) > 0 && (staff || !room.staffOnly) {
+		if len(room.members) > 0 && roomVisible(room, staff, roles) {
 			out = append(out, r.callOf(cid, room, now))
 		}
 	}

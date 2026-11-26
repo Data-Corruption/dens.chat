@@ -59,7 +59,7 @@ func (d *Den) SetExpiry(ctx context.Context, s *Session, channelID string, req d
 		return c, nil
 	}
 	d.log.Infof("Member %d set channel %d's messages to disappear after %d seconds", s.MemberID, cid, req.ExpiresAfter)
-	return c, d.Hub.Publish(denproto.EventChannelUpdated, c, audienceOf(c))
+	return c, d.Hub.Publish(denproto.EventChannelUpdated, c, d.audienceOf(c))
 }
 
 // disappeared is a message the timer deleted: its ID, its channel and its
@@ -170,7 +170,7 @@ func (d *Den) deleteBatch(ctx context.Context) (int, error) {
 			continue
 		}
 		errs = append(errs, d.Hub.Publish(denproto.EventMessageDeleted,
-			denproto.MessageDeleted{ID: denproto.FormatID(g.id), ChannelID: c.ID, Files: g.files}, audienceOf(*c)))
+			denproto.MessageDeleted{ID: denproto.FormatID(g.id), ChannelID: c.ID, Files: g.files}, d.audienceOf(*c)))
 	}
 	errs = append(errs, d.publishReaders(ctx, readers))
 	return len(gone), errors.Join(errs...)

@@ -734,7 +734,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
 			c.den.spoilers, c.den.moveMembers, c.den.eventLimits = d.Spoilers, d.MoveMembers, d.EventLimits
 			c.den.nameStyles, c.den.relay, c.den.away, c.den.readAll = d.NameStyles, d.Relay, d.Away, d.ReadAll
-			c.den.auditLog, c.den.membersSeen, c.den.forward = d.AuditLog, d.MembersSeen, d.Forward
+			c.den.auditLog, c.den.membersSeen, c.den.forward, c.den.hasRoles = d.AuditLog, d.MembersSeen, d.Forward, d.Roles
 		}
 		c.mu.Unlock()
 		c.m.relayChanged()
@@ -747,7 +747,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// The page shows the den's name, limits and retention; the address
 		// is this install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
-			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits, SealedCalls: d.SealedCalls})
+			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits, SealedCalls: d.SealedCalls, Roles: d.Roles})
 		return out, err == nil, err
 	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking,
 		denproto.EventVoiceSounding, denproto.EventVoiceKey, denproto.EventVoiceMove:
@@ -826,7 +826,8 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 	var tallied string
 	if err == nil && ok && e.Seq != 0 {
 		c.stateDirty = true
-		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft {
+		if e.T == denproto.EventMemberJoined || e.T == denproto.EventMemberUpdated || e.T == denproto.EventMemberLeft ||
+			e.T == denproto.EventMemberRolesUpdated || e.T == denproto.EventRoleDeleted {
 			c.membersDirty = true
 		}
 	}
@@ -956,10 +957,20 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		c.m.files.drop(c.j.denID.String())
 		c.cacheEvent(e)
 	}
-	if err == nil && ok && out.T == denproto.EventMemberUpdated {
-		var m denproto.Member
-		if json.Unmarshal(out.D, &m) == nil && m.ID == me {
-			return out, ok, c.updateMe(ctx, m)
+	if err == nil && ok {
+		switch out.T {
+		case denproto.EventMemberUpdated:
+			var m denproto.Member
+			if json.Unmarshal(out.D, &m) == nil && m.ID == me {
+				return out, ok, c.updateMe(ctx, m)
+			}
+		case denproto.EventMemberRolesUpdated, denproto.EventRoleDeleted:
+			c.mu.Lock()
+			m, has := c.den.members[me]
+			c.mu.Unlock()
+			if has {
+				return out, ok, c.updateMe(ctx, m)
+			}
 		}
 	}
 	return out, ok, err
@@ -971,7 +982,7 @@ func (c *conn) updateMe(ctx context.Context, m denproto.Member) error {
 	c.mu.Lock()
 	p := c.profile
 	p.Member = m
-	changed := p != c.profile
+	changed := !sameProfile(p, c.profile)
 	c.profile = p
 	c.mu.Unlock()
 	if !changed {
@@ -1067,7 +1078,7 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 			p.Member = m
 		}
 	}
-	changed := p != c.profile
+	changed := !sameProfile(p, c.profile)
 	c.profile = p
 	c.mu.Unlock()
 	if follow != "" && c.follows.take() {
@@ -1078,6 +1089,19 @@ func (c *conn) updateProfile(ctx context.Context, d denproto.Den, me *denproto.M
 	}
 	c.m.notify()
 	return updateProfile(ctx, c.m.db, c.m.v, c.j.denID, p)
+}
+
+func sameProfile(a, b Profile) bool {
+	return a.URL == b.URL && a.Name == b.Name && sameMember(a.Member, b.Member)
+}
+
+func sameMember(a, b denproto.Member) bool {
+	return a.ID == b.ID && a.Username == b.Username && a.DisplayName == b.DisplayName &&
+		a.Role == b.Role && a.JoinedAt == b.JoinedAt && a.LeftAt == b.LeftAt &&
+		a.Bio == b.Bio && a.Avatar == b.Avatar && a.Banner == b.Banner &&
+		a.Identity == b.Identity && a.NameStyle == b.NameStyle &&
+		a.Status == b.Status && a.StatusUntil == b.StatusUntil &&
+		slices.Equal(a.RoleIDs, b.RoleIDs)
 }
 
 // follow moves to the address the den announced once it proves itself
@@ -1113,6 +1137,14 @@ func cleanMember(m denproto.Member) (denproto.Member, bool) {
 	case denproto.RoleMember, denproto.RoleModerator, denproto.RoleOwner:
 	default:
 		return m, false
+	}
+	if denproto.CheckRoleIDs(m.RoleIDs) != nil {
+		return m, false
+	}
+	if len(m.RoleIDs) == 0 {
+		m.RoleIDs = nil
+	} else {
+		m.RoleIDs = slices.Clone(m.RoleIDs)
 	}
 	m.Username, m.DisplayName = username, display
 	return m, true

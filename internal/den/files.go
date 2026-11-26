@@ -580,19 +580,19 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	var thumbSize, channel sql.NullInt64
 	var profile bool
 	var named sql.NullString
-	// An event's banner: whether the file is one, and whether its event is
-	// staff's alone. A badge's picture, whether its event is.
-	var event, staffEvent, staffBadge bool
+	// An event's banner or badge: whether the file is one, and whether the
+	// viewer can see its event.
+	var event, seeEvent, seeBadge bool
 	err = d.db.QueryRowContext(ctx, `SELECT f.blob, f.size, f.thumb_size, f.uploader_id, m.channel_id,
 		EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id OR banner_id = f.id),
 		(SELECT kind FROM den_named_files WHERE file_id = f.id),
 		EXISTS (SELECT 1 FROM den_events WHERE banner_id = f.id),
 		EXISTS (SELECT 1 FROM den_events e LEFT JOIN den_channels c ON c.id = e.channel_id
-			WHERE e.banner_id = f.id AND `+eventStaffOnly+` = 1),
+			WHERE e.banner_id = f.id AND `+eventVisibleSQL("?2", "?3")+`),
 		EXISTS (SELECT 1 FROM den_named_files n JOIN den_badges b ON b.named_id = n.id JOIN den_events e ON e.id = b.event_id
-			LEFT JOIN den_channels c ON c.id = e.channel_id WHERE n.file_id = f.id AND `+eventStaffOnly+` = 1)
-		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id WHERE f.id = ?`, fid).
-		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &named, &event, &staffEvent, &staffBadge)
+			LEFT JOIN den_channels c ON c.id = e.channel_id WHERE n.file_id = f.id AND `+eventVisibleSQL("?2", "?3")+`)
+		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id WHERE f.id = ?1`, fid, IsStaff(s.Role), s.MemberID).
+		Scan(&blob, &size, &thumbSize, &uploader, &channel, &profile, &named, &event, &seeEvent, &seeBadge)
 	if errors.Is(err, sql.ErrNoRows) {
 		return none, errFileNotFound
 	}
@@ -601,21 +601,25 @@ func (d *Den) OpenFile(ctx context.Context, s *Session, id string, thumb bool) (
 	}
 	switch {
 	case named.Valid:
-		// An emoji's opens to everyone, as does a badge's, but for an event
-		// staff's alone; a sound's to staff.
+		// An emoji's opens to everyone, a badge's to whoever sees its event,
+		// and a sound's to staff.
 		switch {
 		case named.String == kindEmoji:
-		case named.String == kindBadge && (!staffBadge || IsStaff(s.Role)):
+		case named.String == kindBadge && seeBadge:
 		case !IsStaff(s.Role):
 			return none, errFileNotFound
 		}
 	case channel.Valid:
 		c, err := d.channel(ctx, d.db, channel.Int64)
-		if err != nil || !sees(c, s) {
+		if err != nil {
+			return none, errFileNotFound
+		}
+		ok, err := d.sees(ctx, d.db, c, s)
+		if err != nil || !ok {
 			return none, errFileNotFound
 		}
 	case event:
-		if staffEvent && !IsStaff(s.Role) {
+		if !seeEvent {
 			return none, errFileNotFound
 		}
 	case profile, uploader == s.MemberID:

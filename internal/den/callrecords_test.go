@@ -13,7 +13,7 @@ import (
 // callIn returns the call in a channel as a member's ready lists it, or
 // none.
 func (f *fixture) callIn(channel string) (denproto.Call, bool) {
-	for _, c := range f.d.visibleCalls(false) {
+	for _, c := range f.d.visibleCalls(false, 0) {
 		if c.ChannelID == channel {
 			return c, true
 		}

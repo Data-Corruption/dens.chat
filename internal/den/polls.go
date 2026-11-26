@@ -333,7 +333,7 @@ func (d *Den) EndPoll(ctx context.Context, s *Session, messageID string) (denpro
 // and who voted for what where it shows it then.
 func (d *Den) publishEnd(c denproto.Channel, p *pollRow) error {
 	return d.Hub.Publish(denproto.EventPollEnded, denproto.PollEnded{MessageID: denproto.FormatID(p.message), ChannelID: c.ID,
-		EndsAt: p.poll.EndsAt, Tally: p.poll.TallyFor(p.voterIDs(), true)}, audienceOf(c))
+		EndsAt: p.poll.EndsAt, Tally: p.poll.TallyFor(p.voterIDs(), true)}, d.audienceOf(c))
 }
 
 // pollBatch gathers the polls whose votes changed, for the next batch of
@@ -412,15 +412,16 @@ func (d *Den) publishTotals(c denproto.Channel, p *pollRow) error {
 	votes := p.voterIDs()
 	if p.poll.ShowTotals == denproto.TotalsLive {
 		update.Tally = p.poll.TallyFor(votes, false)
-		return d.Hub.Publish(denproto.EventPollUpdated, update, audienceOf(c))
+		return d.Hub.Publish(denproto.EventPollUpdated, update, d.audienceOf(c))
 	}
 	voters := p.voters()
+	mask := d.channelMask(c)
 	update.Tally = p.poll.TallyFor(votes, true)
-	if err := d.Hub.Publish(denproto.EventPollUpdated, update, Voters(voters, c.StaffOnly)); err != nil {
+	if err := d.Hub.Publish(denproto.EventPollUpdated, update, Voters(voters, c.StaffOnly, mask)); err != nil {
 		return err
 	}
 	update.Tally = p.poll.TallyFor(votes, false)
-	return d.Hub.Publish(denproto.EventPollUpdated, update, NonVoters(voters, c.StaffOnly))
+	return d.Hub.Publish(denproto.EventPollUpdated, update, NonVoters(voters, c.StaffOnly, mask))
 }
 
 // endDue ends every poll whose time came, records each in the change log

@@ -97,9 +97,21 @@ func (d *Den) Profile(ctx context.Context, s *Session, id string) (denproto.Memb
 	if err != nil {
 		return denproto.MemberProfile{}, err
 	}
-	p := denproto.MemberProfile{Member: m}
 	mid, _ := denproto.ParseID(m.ID)
-	p.Badges, err = d.profileBadges(ctx, mid, IsStaff(s.Role), mid == s.MemberID)
+	staff := IsStaff(s.Role)
+	rids, err := memberRoleIDs(ctx, d.db, mid)
+	if err != nil {
+		return denproto.MemberProfile{}, err
+	}
+	if len(rids) > 0 {
+		allowed, err := d.visibleRoleSet(ctx, d.db, s.MemberID, staff)
+		if err != nil {
+			return denproto.MemberProfile{}, err
+		}
+		m.RoleIDs = filterRoleIDs(formatIDs(rids), allowed)
+	}
+	p := denproto.MemberProfile{Member: m}
+	p.Badges, err = d.profileBadges(ctx, mid, s.MemberID, staff, mid == s.MemberID)
 	return p, err
 }
 
@@ -355,6 +367,7 @@ func (d *Den) depart(ctx context.Context, tx *sql.Tx, id, now int64) (departure,
 		`DELETE FROM den_recovery_codes WHERE member_id = ?2`,
 		`DELETE FROM den_read_states WHERE member_id = ?2`,
 		`DELETE FROM den_mentions WHERE member_id = ?2`,
+		`DELETE FROM den_member_roles WHERE member_id = ?2`,
 		`DELETE FROM den_invites WHERE created_by = ?2 AND role = 'member'`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, now, id); err != nil {
@@ -577,7 +590,7 @@ func (d *Den) publishDeleted(ctx context.Context, deleted []deletedMessage) erro
 			if err != nil {
 				return err
 			}
-			audience = audienceOf(c)
+			audience = d.audienceOf(c)
 			audiences[m.channel] = audience
 		}
 		event := denproto.MessageDeleted{ID: denproto.FormatID(m.id), ChannelID: denproto.FormatID(m.channel), Files: m.files}
