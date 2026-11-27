@@ -1122,7 +1122,7 @@ try {
     await B.b.eval(`([...${SETTINGS}.querySelectorAll('nav button')].find((t) => t.textContent.trim() === 'System').click(), true)`);
     const about = await waitFor(() => B.b.eval(`[...${SETTINGS}.querySelectorAll('section')].find((x) => x.querySelector('h2')?.textContent === 'About')?.innerText || ''`), `${B.browser} About`, 5000).catch(() => '');
     await closeSettings(B, 'close');
-    report(home.fixed !== 'fixed' && home.beside === 'Your dens|Add a den|Settings' && !home.header && home.title === 'Dens (m2b)' && home.label === ''
+    report(home.fixed !== 'fixed' && home.beside === 'Your dens|Add a den|Find a channel, DM, collection or den||Settings' && !home.header && home.title === 'Dens (m2b)' && home.label === ''
         && about.includes('instance m2b') && homeSettings === true,
         `${B.browser} home: ${JSON.stringify(home)}, settings ${homeSettings}, about ${JSON.stringify(about)}`);
 } catch (e) {

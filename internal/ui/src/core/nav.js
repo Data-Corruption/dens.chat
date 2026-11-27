@@ -26,11 +26,15 @@ export const HOME = { k: 'home' };
 const WIDE = '(min-width: 48rem)';
 
 // chatRoute reads /den/<den>[/<channel>] from a path, where the channel
-// may be dms, the Direct messages tab with no DM open, or events, the
-// den's events.
+// may be dms, events, collections, or channels/<id>/collections.
 export function chatRoute(path) {
-    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+|dms|events))?\/?$/);
+    const m = path.match(/^\/den\/([A-Za-z0-9_-]+)(?:\/([0-9]+|dms|events|collections|channels\/[0-9]+\/collections))?\/?$/);
     return m ? { denID: m[1], channelID: m[2] || '' } : null;
+}
+
+function channelCollectionsParent(ch) {
+    const m = typeof ch === 'string' && ch.match(/^channels\/([0-9]+)\/collections$/);
+    return m ? m[1] : '';
 }
 
 // pathOf is the address of a trail's screen: a layer keeps the one under
@@ -63,9 +67,11 @@ export function paneOf(trail) {
 // alone.
 export function denTrail(den, ch, pane, narrow, call = false) {
     const shown = call ? { k: 'chan', den, ch, call: true } : { k: 'chan', den, ch };
-    if (!narrow) return [HOME, shown];
+    const parentCh = !call ? channelCollectionsParent(ch) : '';
+    if (!narrow) return parentCh ? [HOME, { k: 'chan', den, ch: parentCh }, shown] : [HOME, shown];
     const trail = [HOME, { k: 'list', den }];
     if (pane === 'list') return trail;
+    if (parentCh) trail.push({ k: 'chan', den, ch: parentCh });
     trail.push(shown);
     if (pane === 'side') trail.push({ k: 'side', den, ch });
     return trail;

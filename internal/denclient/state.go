@@ -74,10 +74,11 @@ type denState struct {
 	nameStyles bool
 	// relay says the den passes boxes between the member's devices,
 	// auditLog that it keeps staff's acts for staff to read, membersSeen
-	// that it tells staff when each member was last seen, and forward that
-	// it keeps a channel's message's forwarded mark. The cache keeps none
+	// that it tells staff when each member was last seen, forward that
+	// it keeps a channel's message's forwarded mark, and forwardLinks that
+	// it also keeps a channel forward's source. The cache keeps none
 	// of them: they matter only while connected.
-	relay, auditLog, membersSeen, forward bool
+	relay, auditLog, membersSeen, forward, forwardLinks bool
 	// deviceNames says a device may change its label there, and statuses
 	// that members set a status.
 	deviceNames, statuses bool
@@ -93,6 +94,11 @@ type denState struct {
 	// hasRoles says the den supports custom roles at all.
 	roles    map[string]denproto.Role
 	hasRoles bool
+	// collections are this member's personal collections and the shared
+	// collections in channels they see, by ID, and hasCollections says the
+	// den supports collections at all.
+	collections    map[string]denproto.Collection
+	hasCollections bool
 }
 
 // View is a joined den as the page sees it.
@@ -149,8 +155,10 @@ type View struct {
 	AuditLog    bool `json:"audit_log"`
 	MembersSeen bool `json:"members_seen"`
 	// Forward says the den keeps a channel's message's forwarded mark,
-	// which Forward offers its channels only then.
-	Forward bool `json:"forward"`
+	// which Forward offers its channels only then; ForwardLinks says it
+	// also keeps a channel forward's source.
+	Forward      bool `json:"forward"`
+	ForwardLinks bool `json:"forward_links"`
 	// DeviceNames says a device may change its label, which Devices offers
 	// only then, and Statuses that members set a status, which their own
 	// card offers only then.
@@ -169,6 +177,11 @@ type View struct {
 	// HasRoles says the den supports custom roles at all.
 	Roles    []denproto.Role `json:"roles"`
 	HasRoles bool            `json:"has_roles"`
+	// Collections are this member's personal collections and the shared
+	// collections in channels they see, and HasCollections says the den
+	// supports collections at all.
+	Collections    []denproto.Collection `json:"collections"`
+	HasCollections bool                  `json:"has_collections"`
 }
 
 // PageCall is a call as the page sees it: the den's, its length given as
@@ -217,7 +230,8 @@ func newState() *denState {
 		channels: map[string]denproto.Channel{}, kinds: map[string]string{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
 		signed: map[string]denproto.SignedKey{}, calls: map[string]denproto.Call{}, starts: map[string]int64{}, sounds: map[string]denproto.Sound{},
-		emoji: map[string]denproto.Emoji{}, events: map[string]denproto.DenEvent{}, roles: map[string]denproto.Role{}}
+		emoji: map[string]denproto.Emoji{}, events: map[string]denproto.DenEvent{}, roles: map[string]denproto.Role{},
+		collections: map[string]denproto.Collection{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -239,8 +253,9 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
 		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
 		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Events: sortedEvents(s.events),
-		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen, Forward: s.forward,
-		DeviceNames: s.deviceNames, Statuses: s.statuses, Roles: sortedRoles(s.roles), HasRoles: s.hasRoles}
+		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen, Forward: s.forward, ForwardLinks: s.forwardLinks,
+		DeviceNames: s.deviceNames, Statuses: s.statuses, Roles: sortedRoles(s.roles), HasRoles: s.hasRoles,
+		Collections: sortedCollections(s.collections), HasCollections: s.hasCollections}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -306,10 +321,22 @@ func sortedEmoji(emoji map[string]denproto.Emoji) []denproto.Emoji {
 func sortedRoles(roles map[string]denproto.Role) []denproto.Role {
 	out := slices.Collect(maps.Values(roles))
 	slices.SortFunc(out, func(a, b denproto.Role) int {
-		return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), compareIDs(a.ID, b.ID))
+		return cmp.Or(strings.Compare(denproto.FoldName(a.Name), denproto.FoldName(b.Name)), compareIDs(a.ID, b.ID))
 	})
 	if out == nil {
 		out = []denproto.Role{}
+	}
+	return out
+}
+
+// sortedCollections lists collections in creation order, breaking ties by ID.
+func sortedCollections(cols map[string]denproto.Collection) []denproto.Collection {
+	out := slices.Collect(maps.Values(cols))
+	slices.SortFunc(out, func(a, b denproto.Collection) int {
+		return cmp.Or(cmp.Compare(a.CreatedAt, b.CreatedAt), compareIDs(a.ID, b.ID))
+	})
+	if out == nil {
+		out = []denproto.Collection{}
 	}
 	return out
 }
@@ -509,7 +536,7 @@ func cleanRoles(list []denproto.Role) (map[string]denproto.Role, bool) {
 		if denproto.CheckRole(r) != nil || out[r.ID] != (denproto.Role{}) {
 			return nil, false
 		}
-		key := strings.ToLower(r.Name)
+		key := denproto.FoldName(r.Name)
 		if names[key] {
 			return nil, false
 		}
@@ -540,6 +567,57 @@ func knownRoleIDs(ids []string, roles map[string]denproto.Role) bool {
 	return true
 }
 
+func maxCollectionsInScope(channelID string) int {
+	if channelID == "" {
+		return denproto.MaxPersonalCollections
+	}
+	return denproto.MaxChannelCollections
+}
+
+// cleanCollections checks a den's collections against its visible text
+// channels: valid fields, unique IDs, case-insensitively unique names per
+// scope and within per-scope caps.
+func cleanCollections(list []denproto.Collection, channels map[string]denproto.Channel) (map[string]denproto.Collection, bool) {
+	out := map[string]denproto.Collection{}
+	counts := map[string]int{}
+	names := map[string]map[string]bool{}
+	for _, c := range list {
+		if denproto.CheckCollection(c) != nil || out[c.ID].ID != "" {
+			return nil, false
+		}
+		if c.ChannelID != "" {
+			ch, ok := channels[c.ChannelID]
+			if !ok || ch.Kind != denproto.KindText {
+				return nil, false
+			}
+		}
+		counts[c.ChannelID]++
+		if counts[c.ChannelID] > maxCollectionsInScope(c.ChannelID) {
+			return nil, false
+		}
+		if names[c.ChannelID] == nil {
+			names[c.ChannelID] = map[string]bool{}
+		}
+		key := denproto.FoldName(c.Name)
+		if names[c.ChannelID][key] {
+			return nil, false
+		}
+		names[c.ChannelID][key] = true
+		out[c.ID] = c
+	}
+	return out, true
+}
+
+func (s *denState) collectionScopeCount(channelID string) int {
+	n := 0
+	for _, c := range s.collections {
+		if c.ChannelID == channelID {
+			n++
+		}
+	}
+	return n
+}
+
 // load replaces the state with a snapshot of the den with denID, which
 // arrived at now. Anything malformed in it is a protocol violation. A
 // snapshot that sends only the members changed since the client's list
@@ -564,9 +642,9 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.sealedCalls, next.disappearing = r.Den.SealedCalls, r.Den.Disappearing
 	next.spoilers, next.moveMembers, next.away, next.nameStyles = r.Den.Spoilers, r.Den.MoveMembers, r.Den.Away, r.Den.NameStyles
 	next.readAll = r.Den.ReadAll
-	next.relay, next.auditLog, next.membersSeen, next.forward = r.Den.Relay, r.Den.AuditLog, r.Den.MembersSeen, r.Den.Forward
+	next.relay, next.auditLog, next.membersSeen, next.forward, next.forwardLinks = r.Den.Relay, r.Den.AuditLog, r.Den.MembersSeen, r.Den.Forward, r.Den.ForwardLinks
 	next.deviceNames, next.statuses = r.Den.DeviceNames, r.Den.Status
-	next.hasRoles = r.Den.Roles
+	next.hasRoles, next.hasCollections = r.Den.Roles, r.Den.Collections
 	roles, ok := cleanRoles(r.Roles)
 	if !ok {
 		return errMalformed
@@ -619,6 +697,11 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 		}
 		next.channels[c.ID] = c
 	}
+	cols, ok := cleanCollections(r.Collections, next.channels)
+	if !ok {
+		return errMalformed
+	}
+	next.collections = cols
 	for _, rs := range r.ReadStates {
 		rs, ok := cleanRead(rs)
 		if !ok {
@@ -723,18 +806,21 @@ type keptState struct {
 	Events []denproto.DenEvent `json:"events,omitempty"`
 	// The custom roles visible to this member.
 	Roles []denproto.Role `json:"roles,omitempty"`
+	// This member's personal collections and shared collections in visible
+	// channels.
+	Collections []denproto.Collection `json:"collections,omitempty"`
 }
 
 // kept returns the state as the cache keeps it, and its members.
 func (s *denState) kept() (keptState, []denproto.Member) {
 	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits,
 		EmojiLimits: s.emojiLimits, EventLimits: s.eventLimits, SealedCalls: s.sealedCalls, Disappearing: s.disappearing, Spoilers: s.spoilers,
-		MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Roles: s.hasRoles},
+		MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Roles: s.hasRoles, Collections: s.hasCollections},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
 		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, Notes: s.notes,
-		Events: sortedEvents(s.events), Roles: sortedRoles(s.roles), Kinds: maps.Clone(s.kinds)}
+		Events: sortedEvents(s.events), Roles: sortedRoles(s.roles), Collections: sortedCollections(s.collections), Kinds: maps.Clone(s.kinds)}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
@@ -763,7 +849,7 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 	s.limits, s.callLimits, s.retention, s.sealCheck = k.Den.Limits, k.Den.CallLimits, k.Den.Retention, k.SealCheck
 	s.soundLimits, s.sealedCalls, s.disappearing = k.Den.SoundLimits, k.Den.SealedCalls, k.Den.Disappearing
 	s.spoilers, s.moveMembers, s.away, s.nameStyles = k.Den.Spoilers, k.Den.MoveMembers, k.Den.Away, k.Den.NameStyles
-	s.readAll, s.hasRoles = k.Den.ReadAll, k.Den.Roles
+	s.readAll, s.hasRoles, s.hasCollections = k.Den.ReadAll, k.Den.Roles, k.Den.Collections
 	roles, ok := cleanRoles(k.Roles)
 	if !ok {
 		return nil, errMalformed
@@ -819,6 +905,11 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 	if !ownNotes(s.channels, "") {
 		return nil, errMalformed
 	}
+	cols, ok := cleanCollections(k.Collections, s.channels)
+	if !ok {
+		return nil, errMalformed
+	}
+	s.collections = cols
 	for _, r := range k.Reads {
 		r, ok := cleanRead(r)
 		if !ok {
@@ -1065,6 +1156,11 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		if e.T == denproto.EventChannelDeleted {
 			delete(s.channels, d.ID)
 			delete(s.reads, d.ID)
+			for cid, col := range s.collections {
+				if col.ChannelID == d.ID {
+					delete(s.collections, cid)
+				}
+			}
 		} else {
 			delete(s.groups, d.ID)
 		}
@@ -1387,6 +1483,52 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 		}
 		s.events[in.EventID] = ev
 		data = in
+	case denproto.EventCollectionCreated, denproto.EventCollectionUpdated:
+		var col denproto.Collection
+		if json.Unmarshal(e.D, &col) != nil || denproto.CheckCollection(col) != nil {
+			return e, false, errMalformed
+		}
+		if col.ChannelID != "" {
+			if s.dropped(col.ChannelID) {
+				return e, false, nil
+			}
+			ch, known := s.channels[col.ChannelID]
+			if !known {
+				return e, false, nil
+			}
+			if ch.Kind != denproto.KindText {
+				return e, false, errMalformed
+			}
+		}
+		if old, known := s.collections[col.ID]; !known {
+			if s.collectionScopeCount(col.ChannelID) >= maxCollectionsInScope(col.ChannelID) {
+				return e, false, errMalformed
+			}
+		} else if old.ChannelID != col.ChannelID {
+			return e, false, errMalformed
+		}
+		s.collections[col.ID] = col
+		data = col
+	case denproto.EventCollectionDeleted:
+		var d denproto.CollectionDeleted
+		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) || (d.ChannelID != "" && !validID(d.ChannelID)) {
+			return e, false, errMalformed
+		}
+		delete(s.collections, d.ID)
+		data = d
+	case denproto.EventCollectionItemAdded, denproto.EventCollectionItemRemoved:
+		var ev denproto.CollectionItemEvent
+		if json.Unmarshal(e.D, &ev) != nil || denproto.CheckCollectionItemEvent(ev) != nil {
+			return e, false, errMalformed
+		}
+		if col, ok := s.collections[ev.CollectionID]; ok {
+			if ev.ChannelID != col.ChannelID {
+				return e, false, errMalformed
+			}
+			col.Count = ev.Count
+			s.collections[ev.CollectionID] = col
+		}
+		data = ev
 	case denproto.EventReadStateUpdated:
 		var r denproto.ReadState
 		if json.Unmarshal(e.D, &r) != nil {

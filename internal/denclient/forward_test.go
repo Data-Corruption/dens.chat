@@ -7,6 +7,7 @@ import (
 	"errors"
 	"maps"
 	"net"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -105,6 +106,23 @@ func newest(t *testing.T, m *denclient.Manager, denID, channel string) denclient
 	return got[len(got)-1]
 }
 
+// waitNewest polls history until the newest message in channel is wantID,
+// waiting for a live message.created event to update a cached channel.
+func waitNewest(t *testing.T, m *denclient.Manager, denID, channel, wantID string) denclient.PageMessage {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		got := history(t, m, denID, channel)
+		if len(got) > 0 && got[len(got)-1].ID == wantID {
+			return got[len(got)-1]
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("channel %s never showed %s (got %d messages)", channel, wantID, len(got))
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
 // sameFile checks that a forward's file opens for its reader as the
 // original does for its own, its preview too, under an ID of its own in
 // the same den.
@@ -153,24 +171,30 @@ func TestForwardWithItsFiles(t *testing.T) {
 	readyDM(t, bob, alice, denID, dm)
 	notes := openNotes(t, bob, denID)
 
+	denBytes, err := denproto.ParseBytes(denID, denproto.IDSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSrc := &denproto.ForwardSource{DenID: denBytes, ChannelID: general, MessageID: src.ID}
+
 	bobID := me(t, bob, denID).ID
 	for _, place := range []struct {
 		name, id string
 		reader   *denclient.Manager
 	}{{"the DM", dm, alice}, {"bob's notes", notes.ID, bob}} {
 		fwd := forward(t, bob, denID, general, src.ID, denID, place.id)
-		if !fwd.Forwarded || fwd.AuthorID != bobID || fwd.Text != src.Text || fwd.ReplyTo != "" || len(fwd.Attachments) != 2 {
+		if !fwd.Forwarded || !reflect.DeepEqual(fwd.ForwardSource, wantSrc) || fwd.AuthorID != bobID || fwd.Text != src.Text || fwd.ReplyTo != "" || len(fwd.Attachments) != 2 {
 			t.Fatalf("forwarded to %s: %+v", place.name, fwd)
 		}
 		if body, _ := lastSent(t, h); !slices.Equal(keysOf(body), []string{"attachments", "key_id", "nonce", "sealed", "text"}) {
 			t.Errorf("forwarded to %s, the den was sent %v", place.name, keysOf(body))
 		}
 		p, err := denclient.PayloadOf(place.reader, denID, place.id, fwd.ID)
-		if err != nil || !p.Forwarded || p.Text != src.Text || len(p.Files) != 2 {
+		if err != nil || !p.Forwarded || !reflect.DeepEqual(p.ForwardSource, wantSrc) || p.Text != src.Text || len(p.Files) != 2 {
 			t.Errorf("forwarded to %s, its seal holds %+v, %v", place.name, p, err)
 		}
 		got := newest(t, place.reader, denID, place.id)
-		if got.ID != fwd.ID || !got.Forwarded || got.Locked != "" || got.EditedBy != "" || len(got.Editors) != 0 || got.Text != src.Text {
+		if got.ID != fwd.ID || !got.Forwarded || !reflect.DeepEqual(got.ForwardSource, wantSrc) || got.Locked != "" || got.EditedBy != "" || len(got.Editors) != 0 || got.Text != src.Text {
 			t.Fatalf("%s reads %+v", place.name, got)
 		}
 		for i := range src.Attachments {
@@ -178,14 +202,15 @@ func TestForwardWithItsFiles(t *testing.T) {
 		}
 	}
 
-	// From the DM to a channel, its spoiler kept by the den.
+	// From the DM to a channel: spoiler kept by the den, and NEVER a forward_source
+	// even though inDM carried a sealed forward_source from general.
 	inDM := newest(t, bob, denID, dm)
 	back := forward(t, bob, denID, dm, inDM.ID, denID, general)
 	if body, _ := lastSent(t, h); !slices.Equal(keysOf(body), []string{"attachments", "forwarded", "nonce", "spoilers", "text"}) {
 		t.Errorf("forwarded to general, the den was sent %v", keysOf(body))
 	}
 	got := newest(t, alice, denID, general)
-	if got.ID != back.ID || !got.Forwarded || got.Text != src.Text || len(got.Attachments) != 2 {
+	if got.ID != back.ID || !got.Forwarded || got.ForwardSource != nil || got.Text != src.Text || len(got.Attachments) != 2 {
 		t.Fatalf("general reads %+v", got)
 	}
 	for i := range inDM.Attachments {
@@ -193,15 +218,15 @@ func TestForwardWithItsFiles(t *testing.T) {
 	}
 
 	// A sealed place's mark is its seal's alone, and only a forward
-	// marks a message.
+	// marks a message or carries a forward_source.
 	plain := sendDM(t, bob, denID, dm, "plain")
 	if _, err := h.s.db.Exec(`UPDATE den_messages SET forwarded = 1 WHERE id = ?`, plain.ID); err != nil {
 		t.Fatal(err)
 	}
-	if got := newest(t, alice, denID, dm); got.ID != plain.ID || got.Forwarded {
+	if got := newest(t, alice, denID, dm); got.ID != plain.ID || got.Forwarded || got.ForwardSource != nil {
 		t.Errorf("a DM's message the den marked reads %+v", got)
 	}
-	if m, err := bob.Send(ctx, denID, general, denproto.SendRequest{Nonce: denproto.Random(16), Text: "mine", Forwarded: true}); err != nil || m.Forwarded {
+	if m, err := bob.Send(ctx, denID, general, denproto.SendRequest{Nonce: denproto.Random(16), Text: "mine", Forwarded: true, ForwardSource: wantSrc}); err != nil || m.Forwarded || m.ForwardSource != nil {
 		t.Errorf("a send the page marked: %+v %v", m, err)
 	}
 
@@ -285,25 +310,37 @@ func TestForwardToAnotherDen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	denBytes, err := denproto.ParseBytes(denID, denproto.IDSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantSrc := &denproto.ForwardSource{DenID: denBytes, ChannelID: general, MessageID: src.ID}
 	fwd := forward(t, bob, denID, general, src.ID, den2, lobby)
 	got := newest(t, carol, den2, lobby)
-	if got.ID != fwd.ID || !got.Forwarded || got.Text != "look" || len(got.Attachments) != 1 {
+	if got.ID != fwd.ID || !got.Forwarded || !reflect.DeepEqual(got.ForwardSource, wantSrc) || got.Text != "look" || len(got.Attachments) != 1 {
 		t.Fatalf("lobby reads %+v", got)
 	}
 	sameFile(t, "lobby's photo", alice, denID, general, src.ID, src.Attachments[0], carol, den2, lobby, got.ID, got.Attachments[0])
-	if body, raw := lastSent(t, h2); !slices.Equal(keysOf(body), []string{"attachments", "forwarded", "nonce", "text"}) || strings.Contains(raw, denID) {
+	if body, raw := lastSent(t, h2); !slices.Equal(keysOf(body), []string{"attachments", "forward_source", "forwarded", "nonce", "text"}) ||
+		strings.Contains(raw, "http") || strings.Contains(raw, "example.com") || strings.Contains(raw, "127.0.0.1") {
 		t.Errorf("Second Den was sent %s", raw)
 	}
 
 	dm := openDM(t, bob, alice, denID)
 	readyDM(t, bob, alice, denID, dm)
 	inDM := forward(t, bob, denID, general, src.ID, denID, dm)
+	if !reflect.DeepEqual(inDM.ForwardSource, wantSrc) {
+		t.Fatalf("channel->DM forward_source = %+v, want %+v", inDM.ForwardSource, wantSrc)
+	}
 	theirs := openDM(t, bob, carol, den2)
 	readyDM(t, bob, carol, den2, theirs)
 	across := forward(t, bob, denID, dm, inDM.ID, den2, theirs)
 	got = newest(t, carol, den2, theirs)
-	if got.ID != across.ID || !got.Forwarded || got.Text != "look" || len(got.Attachments) != 1 {
+	if got.ID != across.ID || !got.Forwarded || got.ForwardSource != nil || got.Text != "look" || len(got.Attachments) != 1 {
 		t.Fatalf("carol's DM reads %+v", got)
+	}
+	if p, err := denclient.PayloadOf(carol, den2, theirs, across.ID); err != nil || p.ForwardSource != nil {
+		t.Errorf("DM->DM seal carried forward_source: %+v %v", p, err)
 	}
 	sameFile(t, "the DM's photo", bob, denID, dm, inDM.ID, inDM.Attachments[0], carol, den2, theirs, got.ID, got.Attachments[0])
 }
@@ -498,5 +535,197 @@ func TestForwardToNotesJustMade(t *testing.T) {
 	}
 	if body, _ := lastSent(t, h); !slices.Equal(keysOf(body), []string{"key_id", "nonce", "sealed", "text"}) {
 		t.Errorf("the den was sent %v", keysOf(body))
+	}
+}
+
+// Forward links carry (den_id, channel_id, message_id) from text channels
+// across channels, cache/offline, live events, DMs and notes (sealed inside
+// DMPayload, opened on a second device); re-forwarding a channel forward
+// points to the forwarded channel message; DM and Notes forwards never carry
+// a source; hostile unsealed forward_source on a DM is rejected/stripped; and
+// an older den without forward_links still accepts channel forwards cleanly.
+func TestForwardLinks(t *testing.T) {
+	h, alice, bob, denID, general := chatDen(t)
+	ctx := context.Background()
+	denBytes, err := denproto.ParseBytes(denID, denproto.IDSize)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := bob.View(denID); err != nil || !v.ForwardLinks {
+		t.Fatalf("view.ForwardLinks = %v, %v", v.ForwardLinks, err)
+	}
+
+	// Create channels B and C for same-den and re-forward checks.
+	for _, n := range []string{"chan-b", "chan-c"} {
+		name := n
+		if err := alice.Manage(ctx, denID, "channels", "POST", "", denproto.ChannelRequest{Name: &name}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	chanB := channelIn(t, bob, denID, "chan-b")
+	chanC := channelIn(t, bob, denID, "chan-c")
+	channelIn(t, alice, denID, "chan-b")
+	channelIn(t, alice, denID, "chan-c")
+
+	// Cached client (erin) joins to verify live event and offline cache round-trip.
+	s := newCachedStore(t)
+	erin, stopErin := h.clientFrom(t, s, noOwnDen)
+	invite, _, err := alice.CreateInvite(ctx, denID, denproto.InviteCreateRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	join(t, erin, invite, "erin")
+	channelIn(t, erin, denID, "chan-b")
+	channelIn(t, erin, denID, "chan-c")
+	events, unsub := erin.Stream()
+	defer unsub()
+
+	// 1. Channel A -> Channel B (same den): live event, history, and cache.
+	msgA := send(t, alice, denID, general, "from general")
+	wantA := &denproto.ForwardSource{DenID: denBytes, ChannelID: general, MessageID: msgA.ID}
+	fwdB := forward(t, bob, denID, general, msgA.ID, denID, chanB)
+	if !reflect.DeepEqual(fwdB.ForwardSource, wantA) {
+		t.Fatalf("channel->channel ForwardSource = %+v, want %+v", fwdB.ForwardSource, wantA)
+	}
+	// Verify live event carries ForwardSource on erin's stream.
+	var gotEvent denclient.PageMessage
+	deadline := time.After(5 * time.Second)
+	for gotEvent.ID != fwdB.ID {
+		select {
+		case pe := <-events:
+			for _, ev := range pe.Events {
+				if ev.T == denproto.EventMessageCreated {
+					var pm denclient.PageMessage
+					if json.Unmarshal(ev.D, &pm) == nil && pm.ID == fwdB.ID {
+						gotEvent = pm
+					}
+				}
+			}
+		case <-deadline:
+			t.Fatal("timed out waiting for live message.created event")
+		}
+	}
+	if !reflect.DeepEqual(gotEvent.ForwardSource, wantA) {
+		t.Fatalf("live event ForwardSource = %+v, want %+v", gotEvent.ForwardSource, wantA)
+	}
+
+	// 2. Re-forwarding channel B's forward to channel C points to channel B's message.
+	fwdC := forward(t, bob, denID, chanB, fwdB.ID, denID, chanC)
+	wantB := &denproto.ForwardSource{DenID: denBytes, ChannelID: chanB, MessageID: fwdB.ID}
+	if !reflect.DeepEqual(fwdC.ForwardSource, wantB) {
+		t.Fatalf("re-forward ForwardSource = %+v, want %+v", fwdC.ForwardSource, wantB)
+	}
+	if gotC := waitNewest(t, erin, denID, chanC, fwdC.ID); !reflect.DeepEqual(gotC.ForwardSource, wantB) {
+		t.Fatalf("erin history ForwardSource = %+v, want %+v", gotC.ForwardSource, wantB)
+	}
+	// Read chan-b history into cache so erin can read both cached offline.
+	if gotB := waitNewest(t, erin, denID, chanB, fwdB.ID); !reflect.DeepEqual(gotB.ForwardSource, wantA) {
+		t.Fatalf("erin chan-b history ForwardSource = %+v, want %+v", gotB.ForwardSource, wantA)
+	}
+
+	// 3. Channel -> DM and Channel -> Notes (sealed), opened on bob's second device.
+	dm := openDM(t, bob, alice, denID)
+	readyDM(t, bob, alice, denID, dm)
+	notes := openNotes(t, bob, denID)
+
+	fwdDM := forward(t, bob, denID, general, msgA.ID, denID, dm)
+	if body, _ := lastSent(t, h); !slices.Equal(keysOf(body), []string{"key_id", "nonce", "sealed", "text"}) {
+		t.Errorf("channel->DM wire fields: %v", keysOf(body))
+	}
+	fwdNotes := forward(t, bob, denID, general, msgA.ID, denID, notes.ID)
+	if body, _ := lastSent(t, h); !slices.Equal(keysOf(body), []string{"key_id", "nonce", "sealed", "text"}) {
+		t.Errorf("channel->notes wire fields: %v", keysOf(body))
+	}
+
+	laptop := h.client(t, noOwnDen)
+	signInApproved(t, laptop, bob, denID, denclient.SignInRequest{Den: "https://example.com", Username: "bob", Password: "correct horse"}, false)
+	waitFor(t, laptop, "laptop connected", connected)
+	viewOf(t, laptop, denID, "notes on laptop", func(v denclient.View) bool {
+		return slices.ContainsFunc(v.Channels, func(c denproto.Channel) bool { return c.ID == notes.ID })
+	})
+	if gotDM := newest(t, laptop, denID, dm); !reflect.DeepEqual(gotDM.ForwardSource, wantA) {
+		t.Fatalf("laptop DM ForwardSource = %+v, want %+v", gotDM.ForwardSource, wantA)
+	}
+	if gotNotes := newest(t, laptop, denID, notes.ID); !reflect.DeepEqual(gotNotes.ForwardSource, wantA) {
+		t.Fatalf("laptop notes ForwardSource = %+v, want %+v", gotNotes.ForwardSource, wantA)
+	}
+
+	// 4. DM -> channel, DM -> DM, Notes -> channel, Notes -> DM NEVER carry ForwardSource,
+	// even when re-forwarding a channel forward that landed in DM or Notes.
+	dm2 := openDM(t, bob, erin, denID)
+	readyDM(t, bob, erin, denID, dm2)
+	for name, tc := range map[string]struct {
+		fromCh, fromMsg, toCh string
+		reader                *denclient.Manager
+	}{
+		"DM->channel":    {dm, fwdDM.ID, chanC, alice},
+		"DM->DM":         {dm, fwdDM.ID, dm2, erin},
+		"Notes->channel": {notes.ID, fwdNotes.ID, chanC, alice},
+		"Notes->DM":      {notes.ID, fwdNotes.ID, dm2, erin},
+	} {
+		out := forward(t, bob, denID, tc.fromCh, tc.fromMsg, denID, tc.toCh)
+		if out.ForwardSource != nil {
+			t.Errorf("%s carried ForwardSource: %+v", name, out.ForwardSource)
+		}
+		if got := waitNewest(t, tc.reader, denID, tc.toCh, out.ID); got.ForwardSource != nil {
+			t.Errorf("%s reader saw ForwardSource: %+v", name, got.ForwardSource)
+		}
+		if tc.toCh == dm2 {
+			if p, err := denclient.PayloadOf(tc.reader, denID, tc.toCh, out.ID); err != nil || p.ForwardSource != nil {
+				t.Errorf("%s seal carried ForwardSource: %+v %v", name, p, err)
+			}
+		}
+	}
+
+	// 5. Hostile den injecting forward_source outside seal on a DM is rejected
+	// by History (CheckMessage) and stripped by openLocked.
+	injected := sendDM(t, bob, denID, dm, "injected check")
+	if _, err := h.s.db.Exec(`UPDATE den_messages SET forwarded = 1, forward_den = ?, forward_channel = ?, forward_message = ? WHERE id = ?`,
+		[]byte(denBytes), general, msgA.ID, injected.ID); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := alice.History(ctx, denID, dm, denclient.HistoryQuery{}); err == nil {
+		t.Error("History accepted a hostile den's unsealed forward_source on a DM message")
+	}
+	// Restore row so direct OpenMessage test can read the sealed payload cleanly.
+	if _, err := h.s.db.Exec(`UPDATE den_messages SET forwarded = 0, forward_den = NULL, forward_channel = NULL, forward_message = NULL WHERE id = ?`,
+		injected.ID); err != nil {
+		t.Fatal(err)
+	}
+	var rawSealed, rawNonce []byte
+	var rawKeyID int64
+	if err := h.s.db.QueryRow(`SELECT text, nonce, key_id FROM den_messages WHERE id = ?`, injected.ID).Scan(&rawSealed, &rawNonce, &rawKeyID); err != nil {
+		t.Fatal(err)
+	}
+	opened, err := denclient.OpenMessage(alice, denID, denproto.Message{
+		ID: injected.ID, ChannelID: dm, AuthorID: me(t, bob, denID).ID, Revision: 1,
+		Sealed: rawSealed, Nonce: rawNonce, KeyID: denproto.FormatID(rawKeyID),
+		Forwarded: true, ForwardSource: wantA,
+	})
+	if err != nil || opened.Locked != "" || opened.Forwarded || opened.ForwardSource != nil {
+		t.Errorf("openLocked kept unsealed forward_source on DM: %+v %v", opened, err)
+	}
+
+	// 6. Older den without forward_links (forward: true, forward_links: false):
+	// channel forward succeeds cleanly without sending forward_source.
+	if err := denclient.ForgetForwardLinks(bob, denID); err != nil {
+		t.Fatal(err)
+	}
+	older := forward(t, bob, denID, general, msgA.ID, denID, chanC)
+	if !older.Forwarded || older.ForwardSource != nil {
+		t.Fatalf("older den forward: %+v", older)
+	}
+	if body, _ := lastSent(t, h); !slices.Equal(keysOf(body), []string{"forwarded", "nonce", "text"}) {
+		t.Errorf("older den without forward_links was sent %v", keysOf(body))
+	}
+
+	// 7. Cache round-trip across restart and while den is offline preserves ForwardSource.
+	stopErin()
+	erinRestarted, _ := h.clientFrom(t, s, noOwnDen)
+	viewOf(t, erinRestarted, denID, "cached state after restart", func(v denclient.View) bool { return channelNamed(v, "chan-b") })
+	h.stop()
+	waitFor(t, erinRestarted, "den offline", func(s denclient.Status) bool { return !connected(s) })
+	if gotB := newest(t, erinRestarted, denID, chanB); !reflect.DeepEqual(gotB.ForwardSource, wantA) {
+		t.Fatalf("offline cached ForwardSource = %+v, want %+v", gotB.ForwardSource, wantA)
 	}
 }

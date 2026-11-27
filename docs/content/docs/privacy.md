@@ -30,6 +30,8 @@ protect you from.
 | What your devices relay to each other: your voice keys and your computer's sound | Only your own devices. The den passes the notes that introduce them, which only they can open, and learns that two of your devices spoke, and when; the keys and the sound go straight between them on your network, encrypted ([Relay](../relay/)) |
 | Your profile | Members of that den. You have a separate one in each den, and no den can link it to your others |
 | Your devices' names | Each den you're in, and your own devices. A device goes by one name in all your dens, its computer's or phone's until you give it one, so the owners of two dens comparing notes could match you by it |
+| Where a forwarded message came from | For a forward from a channel: members who see where it lands, and that den (or only the DM's members, or your devices in notes, where the link is end-to-end encrypted). It carries only the source den, channel and message IDs with no address or author; forwarding a channel message into another den reveals the source den's ID to the destination den, which owners comparing notes could use to correlate membership across dens. Forwards from a DM or notes carry no link |
+| Collections (shared and personal) | Shared channel collections: members who can see the channel, and the den. Personal collections: only you, and the den (it stores their names and which message IDs you saved; DM and Notes content stays end-to-end encrypted) |
 | Your email or phone number | Nobody: Dens never asks for them |
 
 How DMs stay between the two of you, and the code you compare to be sure of it,

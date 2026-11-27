@@ -222,12 +222,23 @@ export function CalendarIcon({ size = 'h-3.5 w-3.5' }) {
     );
 }
 
+// BookmarkIcon marks collections: the sidebar row, a channel's collections
+// header button, and saving a message to a collection.
+export function BookmarkIcon({ filled = false, size = 'h-4 w-4' }) {
+    return (
+        <svg class={`${size} shrink-0`} {...ICON}>
+            <path d="M4 2.5h8a.5.5 0 0 1 .5.5v10.5L8 10.5 3.5 13.5V3a.5.5 0 0 1 .5-.5z" fill={filled ? 'currentColor' : 'none'} />
+        </svg>
+    );
+}
+
 // MENU_ICONS are what a menu's items show beside their labels, and a few
 // other small marks, by name, so a menu's items stay data that the page's
 // tests read. Each is paths in ICON's style.
 export const MENU_ICONS = {
     reply: 'M6.25 4 2.75 7.5 6.25 11M2.75 7.5h6.5a4.25 4.25 0 0 1 4.25 4.25v1',
     forward: 'M9.75 4l3.5 3.5-3.5 3.5M13.25 7.5h-6.5a4.25 4.25 0 0 0-4.25 4.25v1',
+    bookmark: 'M4 2.5h8a.5.5 0 0 1 .5.5v10.5L8 10.5 3.5 13.5V3a.5.5 0 0 1 .5-.5z',
     react: 'M14.5 8A6.5 6.5 0 1 1 8 1.5M5.25 9.6a3.25 3.25 0 0 0 5.5 0M12.5 1.5v4M10.5 3.5h4',
     unreact: 'M14.5 8A6.5 6.5 0 1 1 8 1.5M5.25 9.6a3.25 3.25 0 0 0 5.5 0M10.5 3.5h4',
     edit: 'M10.75 2.25l3 3-8.25 8.25H2.5v-3zM9.25 3.75l3 3',

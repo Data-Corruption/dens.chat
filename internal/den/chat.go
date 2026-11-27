@@ -100,7 +100,10 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, rolesMas
 		if roles, err = allRoles(ctx, tx); err != nil {
 			return err
 		}
-		mroles, err = allMemberRoles(ctx, tx)
+		if mroles, err = allMemberRoles(ctx, tx); err != nil {
+			return err
+		}
+		r.Collections, err = d.collectionsFor(ctx, tx, member, staff, version)
 		return err
 	})
 	if err != nil {
@@ -234,8 +237,10 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, rolesMas
 	if r.Emoji, err = d.emojis(ctx, d.db); err != nil {
 		return r, err
 	}
-	r.Events, err = d.eventsFor(ctx, d.db, member, staff)
-	return r, err
+	if r.Events, err = d.eventsFor(ctx, d.db, member, staff); err != nil {
+		return r, err
+	}
+	return r, nil
 }
 
 // newestSeen selects each channel and DM a member sees, as id, and its
@@ -1148,15 +1153,15 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 // Messages --------------------------------------------------------------------
 
 const messageColumns = `id, channel_id, author_id, created_at, revision, edited_at, edited_by, text, reply_to, nonce, key_id, everyone, expires_at,
-	forwarded`
+	forwarded, forward_den, forward_channel, forward_message`
 
 func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	var m denproto.Message
 	var id, channel, author int64
-	var editedAt, editedBy, replyTo, keyID, expiresAt sql.NullInt64
-	var text, nonce []byte
+	var editedAt, editedBy, replyTo, keyID, expiresAt, fwdChannel, fwdMessage sql.NullInt64
+	var text, nonce, fwdDen []byte
 	if err := scan(&id, &channel, &author, &m.CreatedAt, &m.Revision, &editedAt, &editedBy, &text, &replyTo, &nonce, &keyID, &m.Everyone,
-		&expiresAt, &m.Forwarded); err != nil {
+		&expiresAt, &m.Forwarded, &fwdDen, &fwdChannel, &fwdMessage); err != nil {
 		return m, err
 	}
 	m.ExpiresAt = expiresAt.Int64
@@ -1180,6 +1185,13 @@ func (d *Den) scanMessage(scan func(...any) error) (denproto.Message, error) {
 	}
 	if replyTo.Valid {
 		m.ReplyTo = denproto.FormatID(replyTo.Int64)
+	}
+	if len(fwdDen) == denproto.IDSize && fwdChannel.Valid && fwdChannel.Int64 > 0 && fwdMessage.Valid && fwdMessage.Int64 > 0 {
+		m.ForwardSource = &denproto.ForwardSource{
+			DenID:     denproto.Bytes(fwdDen),
+			ChannelID: denproto.FormatID(fwdChannel.Int64),
+			MessageID: denproto.FormatID(fwdMessage.Int64),
+		}
 	}
 	return m, nil
 }
@@ -1576,7 +1588,21 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	}
 	var id int64
 	var reopened []int64
-	var keyID, expires *int64
+	var keyID, expires, fwdCh, fwdMsg *int64
+	var fwdDen any
+	var fwdSrc *denproto.ForwardSource
+	if req.ForwardSource != nil {
+		denBytes := append([]byte(nil), req.ForwardSource.DenID...)
+		fwdDen = denBytes
+		ch, _ := denproto.ParseID(req.ForwardSource.ChannelID)
+		msg, _ := denproto.ParseID(req.ForwardSource.MessageID)
+		fwdCh, fwdMsg = &ch, &msg
+		fwdSrc = &denproto.ForwardSource{
+			DenID:     denproto.Bytes(denBytes),
+			ChannelID: req.ForwardSource.ChannelID,
+			MessageID: req.ForwardSource.MessageID,
+		}
+	}
 	var posted *denproto.Poll
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		text := []byte(req.Sealed)
@@ -1603,8 +1629,9 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 			text = []byte{}
 		}
 		res, err := tx.ExecContext(ctx, `INSERT INTO den_messages (channel_id, author_id, created_at, text, reply_to, nonce, key_id, everyone, expires_at,
-			forwarded) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`, cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID, everyone, expires,
-			req.Forwarded)
+			forwarded, forward_den, forward_channel, forward_message) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+			cid, s.MemberID, now.UnixMilli(), text, replyTo, []byte(req.Nonce), keyID, everyone, expires,
+			req.Forwarded, fwdDen, fwdCh, fwdMsg)
 		if err != nil {
 			return err
 		}
@@ -1658,7 +1685,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 	m := denproto.Message{
 		ID: denproto.FormatID(id), ChannelID: c.ID, AuthorID: denproto.FormatID(s.MemberID),
 		CreatedAt: now.UnixMilli(), Revision: 1, Text: req.Text, ReplyTo: req.ReplyTo, Reply: reply, Nonce: req.Nonce,
-		Editors: formatIDs(editors), Poll: posted, Everyone: everyone, Forwarded: req.Forwarded,
+		Editors: formatIDs(editors), Poll: posted, Everyone: everyone, Forwarded: req.Forwarded, ForwardSource: fwdSrc,
 	}
 	if posted != nil {
 		d.planTimer()
@@ -1709,10 +1736,21 @@ func parseSpoilers(ids []string, files []int64, dm bool) ([]int64, error) {
 	return out, nil
 }
 
-// checkForward checks a forward: a channel's, since a sealed place's mark
-// goes in its seal, with no poll, reply or editors, which aren't its
-// sender's to carry.
+// checkForward checks a forward and its optional channel source: a channel's,
+// since a sealed place's mark and source go in its seal, with no poll, reply
+// or editors, which aren't its sender's to carry.
 func checkForward(req denproto.SendRequest, dm bool) error {
+	if req.ForwardSource != nil {
+		if dm {
+			return invalid("forward_source: a DM's forward source goes inside its sealed text")
+		}
+		if !req.Forwarded {
+			return invalid("forward_source: requires forwarded")
+		}
+		if err := denproto.CheckForwardSource(req.ForwardSource); err != nil {
+			return invalid("forward_source: %v", err)
+		}
+	}
 	switch {
 	case !req.Forwarded:
 		return nil

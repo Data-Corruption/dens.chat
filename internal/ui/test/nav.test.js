@@ -14,8 +14,13 @@ test('an address opens Home, or a channel with Home and its den beneath it on th
     assert.deepEqual(trailFor('/den/abc', true), [HOME, list('abc')]);
     assert.deepEqual(trailFor('/den/abc/12', true), [HOME, list('abc'), chan('abc', '12')]);
     assert.deepEqual(trailFor('/den/abc/dms', true), [HOME, list('abc'), chan('abc', 'dms')]);
+    assert.deepEqual(trailFor('/den/abc/collections', true), [HOME, list('abc'), chan('abc', 'collections')]);
+    assert.deepEqual(trailFor('/den/abc/channels/12/collections', true), [HOME, list('abc'), chan('abc', '12'), chan('abc', 'channels/12/collections')]);
     assert.deepEqual(trailFor('/den/abc', false), [HOME, chan('abc', '')], 'a wider window shows a den as one level');
     assert.deepEqual(trailFor('/den/abc/12', false), [HOME, chan('abc', '12')]);
+    assert.deepEqual(trailFor('/den/abc/collections', false), [HOME, chan('abc', 'collections')]);
+    assert.deepEqual(trailFor('/den/abc/channels/12/collections', false), [HOME, chan('abc', '12'), chan('abc', 'channels/12/collections')]);
+    assert.equal(pathOf(trailFor('/den/abc/channels/12/collections', true)), '/den/abc/channels/12/collections');
     assert.deepEqual(denTrail('abc', '12', 'side', true), [HOME, list('abc'), chan('abc', '12'), side('abc', '12')]);
     assert.deepEqual(denTrail('abc', '12', 'side', false), [HOME, chan('abc', '12')]);
 });

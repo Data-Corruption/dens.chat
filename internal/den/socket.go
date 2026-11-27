@@ -3,6 +3,7 @@ package den
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -277,15 +278,32 @@ func (d *Den) ServeSocket(w http.ResponseWriter, r *http.Request, s *Session) {
 	if e, v, ok := denproto.ParseMembersCursor(r.URL.Query().Get("members")); ok {
 		members = &membersCursor{epoch: e, version: v}
 	}
+	d.roles.RLock()
+	var role string
+	err = d.db.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ? AND left_at IS NULL`, s.MemberID).Scan(&role)
+	if err != nil {
+		d.roles.RUnlock()
+		if errors.Is(err, sql.ErrNoRows) {
+			end("member left")
+			c.Close(denproto.CloseRevoked, denproto.CloseReasonRemoved)
+			return
+		}
+		d.log.Errorf("den socket role: %v", err)
+		end("role lookup failed")
+		c.Close(websocket.StatusInternalError, "")
+		return
+	}
 	rolesMask, err := d.memberRoleMask(ctx, d.db, s.MemberID)
 	if err != nil {
+		d.roles.RUnlock()
 		d.log.Errorf("den socket roles: %v", err)
 		end("role lookup failed")
 		c.Close(websocket.StatusInternalError, "")
 		return
 	}
 	// A Dens speaking a version before notes gets nothing of them.
-	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(s.Role), rolesMask, s.Version, epoch, after)
+	sub, missed, resumed, seq := d.Hub.SubscribeAt(s.MemberID, IsStaff(role), rolesMask, s.Version, epoch, after)
+	d.roles.RUnlock()
 	defer d.Hub.Unsubscribe(sub)
 	d.sockets.subscribed(sock, sub)
 	d.deviceConnected(s.MemberID, s.KeyID)

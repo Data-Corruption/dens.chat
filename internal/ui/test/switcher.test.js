@@ -78,3 +78,24 @@ test('each entry says where it opens and what waits in it', () => {
     const keys = switcherList(dens, views, HOME, 'g').map((e) => e.key);
     assert.equal(new Set(keys).size, keys.length);
 });
+
+test('switcher includes personal and visible channel collections by name and channel name', () => {
+    const withCols = new Map([
+        [HOME, {
+            ...home,
+            collections: [
+                { id: '1', name: 'Saved', count: 2, created_at: 10 },
+                { id: '2', channel_id: '10', name: 'Raid Guides', who_adds: 'everyone', count: 3, created_at: 20 },
+                { id: '3', channel_id: '999', name: 'Hidden Col', who_adds: 'staff', count: 1, created_at: 30 },
+            ],
+        }],
+        [OTHER, other],
+    ]);
+    assert.deepEqual(switcherList(dens, withCols, HOME, 'sav').map((e) => [e.kind, e.id, e.detail]), [
+        ['collection', '1', 'Personal'],
+    ]);
+    assert.deepEqual(switcherList(dens, withCols, HOME, 'raid').map((e) => [e.kind, e.id, e.channelId, e.detail]), [
+        ['channel_collection', '2', '10', '#general'],
+    ]);
+    assert.deepEqual(switcherList(dens, withCols, HOME, 'hidden'), [], 'collections of channels not in view stay hidden');
+});

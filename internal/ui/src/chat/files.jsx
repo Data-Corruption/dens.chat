@@ -244,6 +244,146 @@ function setVideoVolume(v) {
     volumeListeners.forEach((fn) => fn(v));
 }
 
+// useVideoControls wires a <video> and its frame to the page's custom
+// player controls: play/pause, time and duration, shared DENS_VIDEO_VOLUME
+// with per-video mute, seek, auto-hiding while playing, and full screen.
+export function useVideoControls({ frame, video, initialDuration = 0, active = true }) {
+    const linger = useRef(0);
+    const [paused, setPaused] = useState(true);
+    const [started, setStarted] = useState(false);
+    const [time, setTime] = useState(0);
+    const [duration, setDuration] = useState(initialDuration);
+    const [muted, setMuted] = useState(false);
+    const [volume, setVolume] = useState(videoVolume);
+    const [waiting, setWaiting] = useState(false);
+    const [stirred, setStirred] = useState(false);
+    const [full, setFull] = useState(false);
+
+    useEffect(() => {
+        const onFull = () => setFull(document.fullscreenElement === frame.current);
+        document.addEventListener?.('fullscreenchange', onFull);
+        return () => {
+            document.removeEventListener?.('fullscreenchange', onFull);
+            clearTimeout(linger.current);
+        };
+    }, []);
+
+    useEffect(() => {
+        if (!active) {
+            setPaused(true);
+            setStarted(false);
+            setTime(0);
+            setDuration(initialDuration);
+            setMuted(false);
+            setWaiting(false);
+            setStirred(false);
+            clearTimeout(linger.current);
+            return undefined;
+        }
+        const follow = (x) => {
+            if (video.current) video.current.volume = x;
+            setVolume(x);
+        };
+        follow(videoVolume);
+        volumeListeners.add(follow);
+        return () => volumeListeners.delete(follow);
+    }, [active]);
+
+    // stir shows the controls for a while after the pointer moves.
+    function stir() {
+        setStirred(true);
+        clearTimeout(linger.current);
+        linger.current = setTimeout(() => setStirred(false), CONTROLS_LINGER);
+    }
+    function rest() {
+        clearTimeout(linger.current);
+        setStirred(false);
+    }
+    function toggle() {
+        const v = video.current;
+        if (!v) return;
+        // A play the browser refuses shows through the error event.
+        if (v.paused) v.play().catch(() => {});
+        else v.pause();
+    }
+    function toggleMute() {
+        const v = video.current;
+        if (!v) return;
+        v.muted = !v.muted;
+        if (!v.muted && v.volume === 0) setVideoVolume(1);
+    }
+    function setLevel(e) {
+        const x = Number(e.currentTarget.value);
+        setVideoVolume(x);
+        if (video.current) video.current.muted = x === 0;
+    }
+    function seek(e) {
+        const t = Number(e.currentTarget.value);
+        if (video.current) video.current.currentTime = t;
+        setTime(t);
+    }
+    function toggleFull() {
+        if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+        else frame.current?.requestFullscreen?.().catch(() => {});
+    }
+
+    const videoProps = {
+        onClick: toggle,
+        onPlay: () => { setPaused(false); setStarted(true); },
+        onPause: () => setPaused(true),
+        onTimeUpdate: (e) => setTime(e.currentTarget.currentTime),
+        onDurationChange: (e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration),
+        onVolumeChange: (e) => { setMuted(e.currentTarget.muted); setVolume(e.currentTarget.volume); },
+        onWaiting: () => setWaiting(true),
+        onPlaying: () => setWaiting(false),
+        onCanPlay: () => setWaiting(false),
+    };
+
+    return { paused, started, time, duration, muted, volume, waiting, stirred, full, stir, rest, toggle, toggleMute, setLevel, seek, toggleFull, videoProps };
+}
+
+// VideoControlsBar is the overlay controls bar shared by uploaded videos
+// and Steam trailers.
+export function VideoControlsBar({ controls, shown, class: cls = '' }) {
+    const { paused, time, duration, muted, volume, toggle, toggleMute, setLevel, seek, toggleFull, full } = controls;
+    // Hidden controls still come up for keyboard focus inside.
+    const fade = shown ? '' : 'pointer-events-none opacity-0 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100';
+    const silent = muted || volume === 0;
+    const button = 'flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-white/20';
+    return (
+        <div class={`absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white transition-opacity ${fade} ${cls}`}
+            data-video-controls>
+            <button type="button" class={`${button} hidden @min-[4rem]:flex`} onClick={toggle} title={paused ? 'Play' : 'Pause'} aria-label={paused ? 'Play' : 'Pause'}>
+                {paused ? <PlayIcon size="h-3.5 w-3.5" /> : <PauseIcon />}
+            </button>
+            <span class="hidden shrink-0 cursor-default select-none text-[11px] tabular-nums @min-[13rem]:inline">{playbackTime(time, duration)}</span>
+            <input type="range" class="seek hidden min-w-0 flex-1 @min-[6rem]:block" min="0" max={duration || 0} step="any" value={time}
+                style={{ '--seek': `${duration > 0 ? Math.min(100, (time / duration) * 100) : 0}%` }}
+                onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
+            {/* The volume shows above the mute button on hover or
+                keyboard focus, wherever the mute fits. */}
+            <div class="group/volume relative hidden shrink-0 @min-[9rem]:flex">
+                <button type="button" class={button} onClick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
+                    <SoundIcon muted={silent} />
+                </button>
+                <div class="absolute bottom-full left-1/2 hidden -translate-x-1/2 pb-1 group-focus-within/volume:flex group-hover/volume:flex">
+                    <div class="flex rounded bg-black/70 px-1 py-2">
+                        <input type="range" class="h-16 w-6 cursor-pointer accent-white [direction:rtl] [writing-mode:vertical-lr]" min="0" max="1"
+                            step="0.05" value={silent ? 0 : volume} onInput={setLevel} aria-label="Volume" aria-orientation="vertical"
+                            aria-valuetext={`${Math.round((silent ? 0 : volume) * 100)}%`} />
+                    </div>
+                </div>
+            </div>
+            {document.fullscreenEnabled && (
+                <button type="button" class={`${button} ml-auto`} onClick={toggleFull}
+                    title={full ? 'Exit full screen' : 'Full screen'} aria-label={full ? 'Exit full screen' : 'Full screen'}>
+                    <FullIcon full={full} />
+                </button>
+            )}
+        </div>
+    );
+}
+
 // VideoTile plays a video in the message list, sized before it loads from
 // the size the den stated, with its preview as the poster, or a plain box
 // of its shape without one. Nothing of the video loads until it plays; the
@@ -260,87 +400,15 @@ function VideoTile({ denID, at, file, box }) {
     const named = useFileNames();
     const frame = useRef(null);
     const video = useRef(null);
-    const linger = useRef(0);
-    const [paused, setPaused] = useState(true);
-    const [started, setStarted] = useState(false);
-    const [time, setTime] = useState(0);
-    const [duration, setDuration] = useState((file.duration_ms || 0) / 1000);
-    const [muted, setMuted] = useState(false);
-    const [volume, setVolume] = useState(videoVolume);
-    const [waiting, setWaiting] = useState(false);
     const [failed, setFailed] = useState(null);
-    const [stirred, setStirred] = useState(false);
-    const [full, setFull] = useState(false);
+    const vc = useVideoControls({ frame, video, initialDuration: (file.duration_ms || 0) / 1000 });
 
-    useEffect(() => {
-        const onFull = () => setFull(document.fullscreenElement === frame.current);
-        document.addEventListener('fullscreenchange', onFull);
-        return () => {
-            document.removeEventListener('fullscreenchange', onFull);
-            clearTimeout(linger.current);
-        };
-    }, []);
-
-    // stir shows the controls for a while after the pointer moves.
-    function stir() {
-        setStirred(true);
-        clearTimeout(linger.current);
-        linger.current = setTimeout(() => setStirred(false), CONTROLS_LINGER);
-    }
-    function rest() {
-        clearTimeout(linger.current);
-        setStirred(false);
-    }
-    function toggle() {
-        const v = video.current;
-        // A play the browser refuses shows through the error event.
-        if (v.paused) v.play().catch(() => {});
-        else v.pause();
-    }
-    useEffect(() => {
-        const follow = (x) => {
-            if (video.current) video.current.volume = x;
-        };
-        follow(videoVolume);
-        volumeListeners.add(follow);
-        return () => volumeListeners.delete(follow);
-    }, []);
-    function toggleMute() {
-        const v = video.current;
-        v.muted = !v.muted;
-        if (!v.muted && v.volume === 0) setVideoVolume(1);
-    }
-    function setLevel(e) {
-        const x = Number(e.currentTarget.value);
-        setVideoVolume(x);
-        video.current.muted = x === 0;
-    }
-    function seek(e) {
-        const t = Number(e.currentTarget.value);
-        video.current.currentTime = t;
-        setTime(t);
-    }
-    function toggleFull() {
-        if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
-        else frame.current.requestFullscreen().catch(() => {});
-    }
-
-    const shown = paused || stirred || failed;
-    // Hidden controls still come up for keyboard focus inside.
-    const fade = shown ? '' : 'pointer-events-none opacity-0 group-has-[:focus-visible]:pointer-events-auto group-has-[:focus-visible]:opacity-100';
-    const silent = muted || volume === 0;
-    const button = 'flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-white/20';
     return (
-        <div ref={frame} onPointerMove={stir} onPointerDown={stir} onPointerLeave={rest}
+        <div ref={frame} onPointerMove={vc.stir} onPointerDown={vc.stir} onPointerLeave={vc.rest}
             class="@container group relative max-w-full overflow-hidden rounded bg-base-300 [&:fullscreen]:rounded-none [&:fullscreen]:bg-black"
-            style={full ? undefined : { width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}>
+            style={vc.full ? undefined : { width: `${size.width}px`, aspectRatio: `${size.width} / ${size.height}` }}>
             <video ref={video} src={fileURL(denID, file.id, at)} poster={file.thumb ? thumbURL(denID, file.id, at) : undefined} preload="none"
-                title={named ? file.name : undefined} aria-label={file.name} class="h-full w-full object-contain" onClick={toggle}
-                onPlay={() => { setPaused(false); setStarted(true); }} onPause={() => setPaused(true)}
-                onTimeUpdate={(e) => setTime(e.currentTarget.currentTime)}
-                onDurationChange={(e) => Number.isFinite(e.currentTarget.duration) && setDuration(e.currentTarget.duration)}
-                onVolumeChange={(e) => { setMuted(e.currentTarget.muted); setVolume(e.currentTarget.volume); }}
-                onWaiting={() => setWaiting(true)} onPlaying={() => setWaiting(false)} onCanPlay={() => setWaiting(false)}
+                title={named ? file.name : undefined} aria-label={file.name} class="h-full w-full object-contain" {...vc.videoProps}
                 onError={(e) => setFailed(e.currentTarget.error?.code === 2 ? "The video couldn't be loaded." : "This page can't play this video.")} />
             {failed ? (
                 <div class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/70 p-2 text-center text-xs text-white">
@@ -348,45 +416,15 @@ function VideoTile({ denID, at, file, box }) {
                     <a class={buttonClass('secondary', 'xs')} href={downloadURL(denID, file, at)} download={file.name}>Download</a>
                 </div>
             ) : (
-                (!started || (waiting && !paused)) && (
+                (!vc.started || (vc.waiting && !vc.paused)) && (
                     <span class="pointer-events-none absolute inset-0 flex items-center justify-center text-white">
-                        {waiting && !paused
+                        {vc.waiting && !vc.paused
                             ? <span class="loading loading-spinner loading-md" aria-label="Loading"></span>
                             : <span class="flex h-10 w-10 items-center justify-center rounded-full bg-black/50"><PlayIcon size="h-5 w-5" /></span>}
                     </span>
                 )
             )}
-            {!failed && (
-                <div class={`absolute inset-x-0 bottom-0 flex items-center gap-1 bg-linear-to-t from-black/70 to-transparent px-1 pb-1 pt-5 text-white transition-opacity ${fade}`}>
-                    <button type="button" class={`${button} hidden @min-[4rem]:flex`} onClick={toggle} title={paused ? 'Play' : 'Pause'} aria-label={paused ? 'Play' : 'Pause'}>
-                        {paused ? <PlayIcon size="h-3.5 w-3.5" /> : <PauseIcon />}
-                    </button>
-                    <span class="hidden shrink-0 cursor-default select-none text-[11px] tabular-nums @min-[13rem]:inline">{playbackTime(time, duration)}</span>
-                    <input type="range" class="seek hidden min-w-0 flex-1 @min-[6rem]:block" min="0" max={duration || 0} step="any" value={time}
-                        style={{ '--seek': `${duration > 0 ? Math.min(100, (time / duration) * 100) : 0}%` }}
-                        onInput={seek} disabled={!(duration > 0)} aria-label="Seek" aria-valuetext={playbackTime(time, duration)} />
-                    {/* The volume shows above the mute button on hover or
-                        keyboard focus, wherever the mute fits. */}
-                    <div class="group/volume relative hidden shrink-0 @min-[9rem]:flex">
-                        <button type="button" class={button} onClick={toggleMute} title={silent ? 'Unmute' : 'Mute'} aria-label={silent ? 'Unmute' : 'Mute'}>
-                            <SoundIcon muted={silent} />
-                        </button>
-                        <div class="absolute bottom-full left-1/2 hidden -translate-x-1/2 pb-1 group-focus-within/volume:flex group-hover/volume:flex">
-                            <div class="flex rounded bg-black/70 px-1 py-2">
-                                <input type="range" class="h-16 w-6 cursor-pointer accent-white [direction:rtl] [writing-mode:vertical-lr]" min="0" max="1"
-                                    step="0.05" value={silent ? 0 : volume} onInput={setLevel} aria-label="Volume" aria-orientation="vertical"
-                                    aria-valuetext={`${Math.round((silent ? 0 : volume) * 100)}%`} />
-                            </div>
-                        </div>
-                    </div>
-                    {document.fullscreenEnabled && (
-                        <button type="button" class={`${button} ml-auto`} onClick={toggleFull}
-                            title={full ? 'Exit full screen' : 'Full screen'} aria-label={full ? 'Exit full screen' : 'Full screen'}>
-                            <FullIcon full={full} />
-                        </button>
-                    )}
-                </div>
-            )}
+            {!failed && <VideoControlsBar controls={vc} shown={vc.paused || vc.stirred || failed} />}
         </div>
     );
 }

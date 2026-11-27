@@ -246,14 +246,15 @@ func (c *conn) openLocked(m denproto.Message) PageMessage {
 		return PageMessage{Message: out, Reply: reply}
 	}
 	// Its members' sets of reactions open with the keys they name, which
-	// may be newer than the message's. Its mark is its seal's alone.
+	// may be newer than the message's. Its mark and forward source are its
+	// seal's alone.
 	sets := c.openSetsLocked(m)
-	out.Sealed, out.DMReactions, out.Forwarded = nil, nil, false
+	out.Sealed, out.DMReactions, out.Forwarded, out.ForwardSource = nil, nil, false, nil
 	p, locked := c.openPayloadLocked(m.ChannelID, m.AuthorID, m.KeyID, m.Nonce, m.Revision, m.Sealed)
 	if locked != "" {
 		return PageMessage{Message: out, Locked: locked, Reply: reply, DMReactions: sets}
 	}
-	out.Text, out.Forwarded = p.Text, p.Forwarded
+	out.Text, out.Forwarded, out.ForwardSource = p.Text, p.Forwarded, p.ForwardSource
 	out.Attachments = append(out.Attachments, c.dmFilesLocked(m, p)...)
 	return PageMessage{Message: out, Reply: reply, DMReactions: sets}
 }

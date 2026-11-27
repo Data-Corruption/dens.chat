@@ -600,7 +600,7 @@ func TestTrailerSelectionSkipsAllAgesFalseAndCardFetchesNoTrailer(t *testing.T) 
 		t.Errorf("unknown encoding: %v, want ErrNotFound", err)
 	}
 
-	// Only all_ages: false trailers => Card.Trailer is false.
+	// Non-adult game with only all_ages: false trailers => Card.Trailer is false.
 	s2 := newSteam(t)
 	s2.answer("/items", withTrailer(t, []any{
 		map[string]any{
@@ -612,11 +612,74 @@ func TestTrailerSelectionSkipsAllAgesFalseAndCardFetchesNoTrailer(t *testing.T) 
 	}))
 	l2 := s2.lookup()
 	c2, err := l2.Card(context.Background(), "1771300")
-	if err != nil || c2.Trailer {
-		t.Fatalf("adult-only trailer: err=%v trailer=%v", err, c2.Trailer)
+	if err != nil || c2.Adult || c2.Trailer {
+		t.Fatalf("non-adult with mature-only trailer: err=%v adult=%v trailer=%v", err, c2.Adult, c2.Trailer)
 	}
 	if _, err := l2.Trailer(context.Background(), "1771300", "h264"); !errors.Is(err, ErrNotFound) {
-		t.Errorf("adult-only Trailer(): %v, want ErrNotFound", err)
+		t.Errorf("non-adult mature-only Trailer(): %v, want ErrNotFound", err)
+	}
+
+	// Adult-only game (content descriptors 3/4, covered on the page) with only
+	// all_ages: false trailers falls back to its first valid trailer, fetched
+	// only on play. When an all-ages highlight exists, it is still preferred.
+	s3 := newSteam(t)
+	s3.answer("/items", edited(t, "items-1771300.json", func(it map[string]any) {
+		it["content_descriptorids"] = []int{3, 4}
+		it["trailers"] = map[string]any{
+			"highlights": []any{
+				map[string]any{
+					"all_ages": false,
+					"adaptive_trailers": []any{
+						map[string]any{"encoding": "dash_h264", "cdn_path": sampleTrailerDir + "dash_h264.mpd"},
+					},
+				},
+			},
+		}
+	}))
+	s3.answer("/video/"+sampleTrailerDir+"dash_h264.mpd", serveBytes("application/dash+xml", []byte(sampleH264MPD)))
+	l3 := s3.lookup()
+	c3, err := l3.Card(context.Background(), "1771300")
+	if err != nil || !c3.Adult || !c3.Trailer {
+		t.Fatalf("adult game with mature trailer: err=%v adult=%v trailer=%v", err, c3.Adult, c3.Trailer)
+	}
+	for path := range s3.asked {
+		if strings.HasPrefix(path, "/video/") {
+			t.Errorf("adult Card fetched trailer path %s", path)
+		}
+	}
+	if _, err := l3.Trailer(context.Background(), "1771300", "h264"); err != nil {
+		t.Fatalf("adult Trailer(): %v", err)
+	}
+
+	otherDir := "1771300/257095827/" + strings.Repeat("b", 40) + "/1738683277/"
+	s4 := newSteam(t)
+	s4.answer("/items", edited(t, "items-1771300.json", func(it map[string]any) {
+		it["content_descriptorids"] = []int{3}
+		it["trailers"] = map[string]any{
+			"highlights": []any{
+				map[string]any{
+					"all_ages": false,
+					"adaptive_trailers": []any{
+						map[string]any{"encoding": "dash_h264", "cdn_path": otherDir + "dash_h264.mpd"},
+					},
+				},
+				map[string]any{
+					"all_ages": true,
+					"adaptive_trailers": []any{
+						map[string]any{"encoding": "dash_h264", "cdn_path": sampleTrailerDir + "dash_h264.mpd"},
+					},
+				},
+			},
+		}
+	}))
+	s4.answer("/video/"+sampleTrailerDir+"dash_h264.mpd", serveBytes("application/dash+xml", []byte(sampleH264MPD)))
+	l4 := s4.lookup()
+	if _, err := l4.Trailer(context.Background(), "1771300", "h264"); err != nil {
+		t.Fatalf("adult game preferring all_ages highlight: %v", err)
+	}
+	if s4.times("/video/"+sampleTrailerDir+"dash_h264.mpd") != 1 || s4.times("/video/"+otherDir+"dash_h264.mpd") != 0 {
+		t.Errorf("expected all_ages highlight preferred: all_ages=%d mature=%d",
+			s4.times("/video/"+sampleTrailerDir+"dash_h264.mpd"), s4.times("/video/"+otherDir+"dash_h264.mpd"))
 	}
 }
 

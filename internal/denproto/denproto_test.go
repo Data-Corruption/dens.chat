@@ -184,6 +184,25 @@ func TestNames(t *testing.T) {
 	}
 }
 
+func TestFoldName(t *testing.T) {
+	same := [][2]string{
+		{"Raiders", "raiders"},
+		{"SAVED", "saved"},
+		{"École", "école"},
+		{"İ", "i"},
+		{"I\u0307", "i\u0307"},
+		{"\u212a", "k"},
+	}
+	for _, p := range same {
+		if FoldName(p[0]) != FoldName(p[1]) {
+			t.Errorf("FoldName(%q)=%q != FoldName(%q)=%q", p[0], FoldName(p[0]), p[1], FoldName(p[1]))
+		}
+	}
+	if FoldName("İ") == FoldName("i\u0307") {
+		t.Errorf("FoldName(İ) unexpectedly matched combining i\\u0307: %q", FoldName("İ"))
+	}
+}
+
 func TestRecoveryCodes(t *testing.T) {
 	code := Random(RecoveryCodeSize)
 	shown := FormatRecoveryCode(code)
@@ -344,6 +363,41 @@ func TestChecks(t *testing.T) {
 		if CheckMessage(m) == nil {
 			t.Errorf("CheckMessage accepted the editors %q", bad)
 		}
+	}
+	m.Editors = nil
+	src := &ForwardSource{DenID: bytes.Repeat([]byte{0x2a}, IDSize), ChannelID: "12", MessageID: "34"}
+	if err := CheckForwardSource(src); err != nil {
+		t.Errorf("CheckForwardSource(valid): %v", err)
+	}
+	for name, bad := range map[string]*ForwardSource{
+		"nil":           nil,
+		"short den":     {DenID: []byte{1, 2, 3}, ChannelID: "12", MessageID: "34"},
+		"long den":      {DenID: bytes.Repeat([]byte{1}, IDSize+1), ChannelID: "12", MessageID: "34"},
+		"bad channel":   {DenID: src.DenID, ChannelID: "0", MessageID: "34"},
+		"bad message":   {DenID: src.DenID, ChannelID: "12", MessageID: "abc"},
+		"empty channel": {DenID: src.DenID, ChannelID: "", MessageID: "34"},
+		"empty message": {DenID: src.DenID, ChannelID: "12", MessageID: ""},
+	} {
+		if CheckForwardSource(bad) == nil {
+			t.Errorf("CheckForwardSource(%s) accepted", name)
+		}
+	}
+	m.Forwarded, m.ForwardSource = true, src
+	if err := CheckMessage(m); err != nil {
+		t.Errorf("CheckMessage(valid forward source): %v", err)
+	}
+	m.Forwarded = false
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted forward_source without forwarded")
+	}
+	m.Forwarded, m.ForwardSource = true, &ForwardSource{DenID: []byte{1}, ChannelID: "12", MessageID: "34"}
+	if CheckMessage(m) == nil {
+		t.Error("CheckMessage accepted malformed forward_source")
+	}
+	sealed := Message{ID: "5", ChannelID: "2", AuthorID: "3", Revision: 1, Sealed: Bytes("cipher"), KeyID: "7", Nonce: Random(NonceBytes),
+		Forwarded: true, ForwardSource: src}
+	if CheckMessage(sealed) == nil {
+		t.Error("CheckMessage accepted forward_source outside seal on a sealed message")
 	}
 }
 

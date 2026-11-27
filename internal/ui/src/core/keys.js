@@ -12,7 +12,7 @@ import { keyMatches } from '../voice/voice.js';
 // PAGE_KEYS are the keys, by name, as the list of keys shows them, each
 // with a press that stands for it.
 export const PAGE_KEYS = [
-    { name: 'switcher', keys: ['Ctrl', 'K'], what: 'Find a channel, DM or den', press: { code: 'KeyK', ctrlKey: true } },
+    { name: 'switcher', keys: ['Ctrl', 'K'], what: 'Find a channel, DM, collection or den', press: { code: 'KeyK', ctrlKey: true } },
     { name: 'previous', keys: ['Alt', '↑'], what: 'The channel or DM above', press: { code: 'ArrowUp', altKey: true } },
     { name: 'next', keys: ['Alt', '↓'], what: 'The channel or DM below', press: { code: 'ArrowDown', altKey: true } },
     { name: 'escape', keys: ['Esc'], what: 'Mark the channel read, and go to its newest message', press: { code: 'Escape' } },

@@ -983,9 +983,10 @@ func (d *Den) startDue(ctx context.Context) error {
 	for _, st := range live {
 		d.log.Infof("Event %d started, with %d interested", st.e.id, st.e.interested)
 		v := st.e.view(nil)
+		gated := len(st.e.roleIDs) > 0
 		mask := d.Hub.Mask(st.e.roleIDs)
-		errs = append(errs, d.Hub.Publish(denproto.EventEventStarted, v, Voters(st.interested, st.e.staffOnly, mask)),
-			d.Hub.Publish(denproto.EventEventUpdated, v, NonVoters(st.interested, st.e.staffOnly, mask)))
+		errs = append(errs, d.Hub.Publish(denproto.EventEventStarted, v, Voters(st.interested, st.e.staffOnly, gated, mask)),
+			d.Hub.Publish(denproto.EventEventUpdated, v, NonVoters(st.interested, st.e.staffOnly, gated, mask)))
 	}
 	for _, e := range over {
 		d.log.Infof("Event %d passed while the den was stopped", e.id)

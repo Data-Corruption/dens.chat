@@ -1,5 +1,22 @@
 # Changelog
 
+## [v1.17.0] - 2026-11-27
+
+### Added
+
+- Custom roles for channel visibility, once the den is updated: staff create roles in Manage's Roles, assign them to members, and restrict text or voice channels to selected roles. Members without a channel's role can't see its messages, files, calls, events or badges; losing a role disconnects a member from its call, and deleting the last role on a channel turns it staff-only so it never opens to everyone.
+- Collections, once the den is updated: bookmark any message (or use Save to collection in its ⋯ menu) to gather it into a shared collection for that text channel or into your own personal collections across the den, including messages from DMs and Notes. Open a channel's collections from its header, your personal collections from Collections in the sidebar, or either from Ctrl+K. Staff manage shared collections and choose whether everyone or staff only can add to them; personal collections are visible only to you, though the den stores their names and which message IDs you saved while DM and Notes text stays encrypted.
+- Links back on channel forwards, once the den is updated: forwarding a message from a text channel carries a link back to its channel and message (encrypted inside a DM or Notes), so members who can see the source channel can jump straight to it, even across dens. Forwards from a DM or Notes carry no link, and nobody sees the original author or den address.
+- Steam card trailers and sizing: Steam cards have their own size slider under Appearance's Messages, independent of YouTube players, and play a game's primary trailer on click using the same controls and volume as uploaded videos. Stepping through a card's screenshots while a trailer plays keeps it running behind a corner pill. Adult-only cards keep their pictures and trailers covered until you show them.
+
+### Changed
+
+- In a den's left sidebar, the den header and tabs at the top and your profile, call and Relay controls at the bottom stay in place while only the channel or DM list scrolls.
+
+### Fixed
+
+- Since v1.0.0, deleting the newest message in a channel you hadn't opened could leave the channel marked unread until you opened it. Deleting it clears the unread mark at once on an updated den, and opening the channel clears it on older dens too.
+
 ## [v1.16.0] - 2026-11-25
 
 ### Added

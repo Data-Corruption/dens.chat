@@ -98,6 +98,7 @@ var codes = map[string]bool{
 	CodeRateLimited: true, CodeDenNotCreated: true, CodeWrongPassword: true, CodeUnsupportedType: true,
 	CodeQuotaExceeded: true, CodeDenFull: true, CodeKeyExists: true, CodeNoOtherDevice: true, CodeChangesGone: true,
 	CodeSoundNameTaken: true, CodeEmojiNameTaken: true, CodeCallHeld: true, CodeCallFull: true, CodeRoleNameTaken: true,
+	CodeCollectionNameTaken: true,
 }
 
 // KnownCode reports whether code is one of the protocol's error codes. A
@@ -335,8 +336,10 @@ type Den struct {
 	AuditLog    bool `json:"audit_log,omitempty"`
 	MembersSeen bool `json:"members_seen,omitempty"`
 	// Forward says the den keeps a channel's message's forwarded mark; a
-	// den older than it drops the mark.
-	Forward bool `json:"forward,omitempty"`
+	// den older than it drops the mark. ForwardLinks says it also keeps a
+	// channel forward's source (den_id, channel_id, message_id).
+	Forward      bool `json:"forward,omitempty"`
+	ForwardLinks bool `json:"forward_links,omitempty"`
 	// DeviceNames says a device may change its own label, at PATCH
 	// /api/me/devices/{key_id}, and Status that members set a status, at
 	// PUT /api/me/status; a den older than them has neither route.
@@ -345,6 +348,9 @@ type Den struct {
 	// Roles says the den supports custom roles for channel visibility; an
 	// older den has no role routes and sends none.
 	Roles bool `json:"roles,omitempty"`
+	// Collections says the den supports shared and personal collections; an
+	// older den has no collection routes and sends none.
+	Collections bool `json:"collections,omitempty"`
 }
 
 // Roles.
@@ -525,6 +531,9 @@ type Ready struct {
 	// Roles are the custom roles the member can see: all of them for staff,
 	// or only those referenced by visible channels for non-staff, by name.
 	Roles []Role `json:"roles,omitempty"`
+	// Collections are the member's personal collections and the shared
+	// collections in channels they can see, with visible item counts.
+	Collections []Collection `json:"collections,omitempty"`
 }
 
 type Renew struct {

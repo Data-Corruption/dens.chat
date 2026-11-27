@@ -391,20 +391,19 @@ func (d *Den) CreateRole(ctx context.Context, s *Session, req denproto.DenRoleRe
 	defer d.roles.Unlock()
 	var id int64
 	var role denproto.Role
+	folded := denproto.FoldName(name)
 	err = d.tx(ctx, func(tx *sql.Tx) error {
-		var n int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM den_roles`).Scan(&n); err != nil {
+		existing, err := allRoles(ctx, tx)
+		if err != nil {
 			return err
 		}
-		if n >= denproto.MaxRoles {
+		if len(existing) >= denproto.MaxRoles {
 			return invalid("a den has at most %d roles", denproto.MaxRoles)
 		}
-		var taken bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM den_roles WHERE name = ? COLLATE NOCASE)`, name).Scan(&taken); err != nil {
-			return err
-		}
-		if taken {
-			return denproto.Errorf(http.StatusConflict, denproto.CodeRoleNameTaken, "another role has that name")
+		for _, r := range existing {
+			if denproto.FoldName(r.Name) == folded {
+				return denproto.Errorf(http.StatusConflict, denproto.CodeRoleNameTaken, "another role has that name")
+			}
 		}
 		res, err := tx.ExecContext(ctx, `INSERT INTO den_roles (name, created_at) VALUES (?, ?)`, name, d.now().UnixMilli())
 		if err != nil {
@@ -455,12 +454,16 @@ func (d *Den) RenameRole(ctx context.Context, s *Session, id string, req denprot
 		if oldName == name {
 			return nil
 		}
-		var taken bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM den_roles WHERE name = ? COLLATE NOCASE AND id != ?)`, name, rid).Scan(&taken); err != nil {
+		existing, err := allRoles(ctx, tx)
+		if err != nil {
 			return err
 		}
-		if taken {
-			return denproto.Errorf(http.StatusConflict, denproto.CodeRoleNameTaken, "another role has that name")
+		selfID := denproto.FormatID(rid)
+		folded := denproto.FoldName(name)
+		for _, r := range existing {
+			if r.ID != selfID && denproto.FoldName(r.Name) == folded {
+				return denproto.Errorf(http.StatusConflict, denproto.CodeRoleNameTaken, "another role has that name")
+			}
 		}
 		if _, err := tx.ExecContext(ctx, `UPDATE den_roles SET name = ? WHERE id = ?`, name, rid); err != nil {
 			return err

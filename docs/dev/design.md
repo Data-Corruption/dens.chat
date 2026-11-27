@@ -235,8 +235,11 @@ Installed copies hold data that every later version reads, so formats move forwa
   | 20 | A message's forwarded mark, whose default, unmarked, an older message takes | v1.16.0 |
   | 21 | Nothing: it deletes every group DM, with all its channel holds, and the change log's rows of it first, and drops the group tables, step 19's column with them; `den_channels` keeps `group_dm` among its kinds, and the files' blobs go as the den next opens, which removes every blob no file's row names | v1.16.0 |
   | 22 | A member's status, sealed with the data key, and its end, two columns that start empty | v1.16.0 |
+  | 23 | Custom roles for channel visibility (`den_roles`, `den_channel_roles`, `den_member_roles`, `den_event_roles`), tables that start empty | v1.17.0 |
+  | 24 | A forward's channel source (`forward_den`, `forward_channel`, `forward_message`), three columns on `den_messages` that start empty | v1.17.0 |
+  | 25 | Shared channel and personal collections (`den_collections`, `den_collection_items`), tables that start empty | v1.17.0 |
 
-  A test makes each released schema by running its steps alone, v1.6.0's, v1.7.0's, v1.8.0's, v1.9.0's, v1.10.1's, v1.12.0's, v1.14.0's and v1.15.0's, puts a row in every table, migrates it, and a backup made of it, and finds every row and table counter as it was, in every column the release had, the new columns at their defaults, but for the group DM's rows and tables, which are gone.
+  A test makes each released schema by running its steps alone, v1.6.0's, v1.7.0's, v1.8.0's, v1.9.0's, v1.10.1's, v1.12.0's, v1.14.0's, v1.15.0's and v1.16.0's, puts a row in every table, migrates it, and a backup made of it, and finds every row and table counter as it was, in every column the release had, the new columns at their defaults, but for the group DM's rows and tables, which are gone.
 - `instance.json` and `state.json` decode strictly, so every field a release wrote stays readable, and a change of meaning gets a new field rather than an old one's name. An older binary never meets a newer file, since downgrades are refused.
 - A backup from any release restores, and migrates as the service starts.
 - A change to one of these comes with a test that reads its released form.

@@ -12,7 +12,7 @@ import { EmojiContext, useDenEmoji } from './denemoji.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from '../core/events.js';
 import { openManage, openSettings } from '../ui/dialogs.js';
 import { Actions, Button, ErrorText, Notice, StatusText, Tip, useNotifications } from '../ui/components.jsx';
-import { BellIcon, ChevronIcon as OpenIcon, CogIcon, HashIcon, ICON, LockIcon, MenuIcon, PlusIcon, ShieldIcon, SpeakerIcon, TagIcon } from '../ui/icons.jsx';
+import { BellIcon, BookmarkIcon, ChevronIcon as OpenIcon, CogIcon, HashIcon, ICON, LockIcon, MenuIcon, PlusIcon, ShieldIcon, SpeakerIcon, TagIcon } from '../ui/icons.jsx';
 import { MenuButton, RowMenu, ownsMenu, rightClick, underOf } from '../ui/menus.jsx';
 import { compareIds, unread } from '../core/ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
@@ -33,6 +33,8 @@ import { ExpiryBadge } from './disappearing.jsx';
 import { NotesIcon, NotesRow } from './notes.jsx';
 import { EVENTS, withEvent } from './denevents.js';
 import { EventsPane, EventsRow, showEvent } from './denevents.jsx';
+import { COLLECTIONS, channelCollectionsOf, channelCollectionsPath, withCollection } from './collections.js';
+import { CollectionsPane, CollectionsRow } from './collections.jsx';
 import { RelayBar } from '../voice/relay.jsx';
 import { createPress, useCoarse } from '../core/touch.js';
 import { DockedPlayer } from '../voice/player.jsx';
@@ -136,7 +138,7 @@ export function lastDM(view, reads, lastID) {
 // den last left there, whose list the phone layout shows at its own
 // address.
 function pick(view, denID, channelID) {
-    if (!view || channelID === NO_DM || channelID === EVENTS) return null;
+    if (!view || channelID === NO_DM || channelID === EVENTS || channelID === COLLECTIONS || channelCollectionsOf(channelID)) return null;
     const shown = view.channels.find((c) => c.id === channelID);
     if (hasMessages(shown)) return shown;
     const lastID = stored(LAST_CHANNEL + denID);
@@ -287,6 +289,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                     else if (e.t === 'identities') view = { ...view, identities: e.d };
                     else if (e.t === 'dens') view = withStatus(view, e.d);
                     else if (e.t.startsWith('event.')) view = { ...view, events: withEvent(view.events, e.t, e.d) };
+                    else if (e.t.startsWith('collection.')) view = { ...view, collections: withCollection(view.collections, e.t, e.d) };
                 }
                 setView(view);
                 setOnline(present);
@@ -330,7 +333,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
             if (msg.t !== 'den' || msg.d.den !== denID) return;
             if (msg.d.reset) return reloadSoon();
             for (const e of msg.d.events || []) {
-                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key' || e.t === 'identities' || e.t.startsWith('event.')) catchUp(e);
+                if (e.t === 'voice.state' || e.t === 'presence' || e.t === 'dm.key' || e.t === 'identities' || e.t.startsWith('event.') || e.t.startsWith('collection.')) catchUp(e);
                 if (STRUCTURAL.has(e.t)) reloadSoon();
                 else if (e.t === 'presence') setOnline((cur) => applyPresence(cur, e.d));
                 else if (e.t === 'voice.state') setView((v) => (v ? { ...v, calls: applyCalls(v.calls, e.d) } : v));
@@ -342,6 +345,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                 else if (e.t === 'identities') setView((v) => (v ? { ...v, identities: e.d } : v));
                 // The den's events.
                 else if (e.t.startsWith('event.')) setView((v) => (v ? { ...v, events: withEvent(v.events, e.t, e.d) } : v));
+                // The den's collections.
+                else if (e.t.startsWith('collection.')) setView((v) => (v ? { ...v, collections: withCollection(v.collections, e.t, e.d) } : v));
             }
             // The local service counts unread messages and mentions.
             if (msg.d.reads) setView((v) => (v ? applyReads(v, msg.d.reads) : v));
@@ -377,6 +382,10 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     // The den's events show in the channel's place, from the Den
     // tab's list, while the den has them.
     const eventsOpen = channelID === EVENTS && !!view?.event_limits;
+    const collectionsOpen = channelID === COLLECTIONS && !!view?.has_collections;
+    const channelColID = view?.has_collections ? channelCollectionsOf(channelID) : '';
+    const channelCol = channelColID ? view.channels.find((c) => c.id === channelColID && c.kind === 'text') : null;
+    const anyCollections = collectionsOpen || !!channelCol;
     // The den sends typing only where this member is looking, and the
     // service notifies them of nothing there; this page takes back
     // its own notification of what it shows, which the service may have
@@ -391,18 +400,19 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
     useEffect(() => {
         if (openKind) setTab(isPrivate({ kind: openKind }) ? 'dms' : 'den');
         else if (noDM) setTab('dms');
-        else if (eventsOpen || callChannel) setTab('den');
-    }, [channel?.id, channelID, noDM, eventsOpen, !!callChannel]);
+        else if (eventsOpen || anyCollections || callChannel) setTab('den');
+    }, [channel?.id, channelID, noDM, eventsOpen, anyCollections, !!callChannel]);
     // shownID is the channel shown, for the page's history: its ID, the
-    // call's voice channel's, NO_DM, EVENTS, or '' for none.
-    const shownID = channel ? channel.id : callChannel ? callChannel.id : noDM ? NO_DM : eventsOpen ? EVENTS : '';
+    // call's voice channel's, NO_DM, EVENTS, collections, or '' for none.
+    const shownID = channel ? channel.id : callChannel ? callChannel.id : noDM ? NO_DM : eventsOpen ? EVENTS
+        : collectionsOpen ? COLLECTIONS : channelCol ? channelCollectionsPath(channelCol.id) : '';
     // The member's notes, which have nobody else to show beside
     // them.
     const notes = isNotes(channel);
     // The members' place: the member list, or beside a DM the other
-    // member's profile; with no DM open, the notes, the events or the
-    // call's pane, there's none.
-    const hasSide = !noDM && !notes && !eventsOpen && !callChannel;
+    // member's profile; with no DM open, the notes, the events, collections
+    // or the call's pane, there's none.
+    const hasSide = !noDM && !notes && !eventsOpen && !anyCollections && !callChannel;
     // at is the pane on screen on the phone layout, '' in a wider window.
     const at = !narrow ? '' : pane === 'side' && hasSide ? 'side' : pane === 'list' || (!pane && !channelID) ? 'list' : 'chan';
     const toPane = (next) => nav().den(denID, shownID, next, !!callChannel);
@@ -498,7 +508,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
         store(LIST_TAB + denID, next);
         setTab(next);
         let to = null;
-        if (next === 'den' && (isPrivate(channel) || (!channel && !eventsOpen))) to = denChannel(view, stored(LAST_TEXT + denID))?.id || '';
+        if (next === 'den' && (isPrivate(channel) || (!channel && !eventsOpen && !anyCollections))) to = denChannel(view, stored(LAST_TEXT + denID))?.id || '';
         else if (next === 'dms' && !isPrivate(channel)) to = lastDM(view, reads, stored(LAST_DM + denID))?.id || NO_DM;
         if (to === null) return;
         if (at === 'list') showInList(to);
@@ -605,8 +615,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                     off screen are inert. */}
                 <div ref={row} class="relative flex min-h-0 flex-1 snap-x snap-mandatory overflow-x-auto overscroll-x-contain [scrollbar-width:none] md:snap-none md:overflow-x-visible [&::-webkit-scrollbar]:hidden"
                     onClick={(e) => at && at !== 'chan' && e.target === e.currentTarget && toPane('chan')}>
-                    <aside data-pane="list" inert={!!at && at !== 'list'} class="flex w-[85%] shrink-0 snap-start flex-col overflow-y-auto bg-base-200 md:w-64">
-                        <div class="border-b border-base-300 p-3">
+                    <aside data-pane="list" inert={!!at && at !== 'list'} class="flex min-h-0 w-[85%] shrink-0 snap-start flex-col bg-base-200 md:w-64">
+                        <div class="shrink-0 border-b border-base-300 p-3">
                             <div class="flex items-center gap-2">
                                 <a href="/" class="btn btn-ghost btn-sm btn-square relative -my-1 -ml-1" title="Home"
                                     aria-label={away.mentions ? `Home, ${away.mentions} unread mentions in other dens` : away.unread ? 'Home, unread in other dens' : 'Home'}
@@ -647,23 +657,26 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                             </div>
                             {live && view.state !== 'connected' && <StatusText kind="warning" class="mt-1">{view.error || 'Reconnecting…'}</StatusText>}
                         </div>
-                        <ListTabs tab={tab} onTab={pickTab} view={view} reads={reads} open={channel?.id}
-                            add={tab === 'den' && staff && !gone && { label: 'New channel or group', items: NEW_IN_DEN.map((i) => ({ ...i, run: () => setDialog({ kind: i.key }) })) }} />
-                        {tab === 'dms' ? (
-                            <>
+                        <div class="shrink-0">
+                            <ListTabs tab={tab} onTab={pickTab} view={view} reads={reads} open={channel?.id}
+                                add={tab === 'den' && staff && !gone && { label: 'New channel or group', items: NEW_IN_DEN.map((i) => ({ ...i, run: () => setDialog({ kind: i.key }) })) }} />
+                        </div>
+                        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto" data-list-scroll>
+                            {tab === 'dms' ? (
                                 <DMList denID={denID} denURL={view.url} gone={gone} dms={recentDMs(view, reads, channel?.id)} reads={reads} open={channel?.id} partner={partner} online={online}
                                     identities={view.identities || {}} muted={bells ? muted.channels : null} onOpen={openChannel} onClose={closeDM}
                                     notes={view.has_notes && (ownNotes(view) || !gone) ? { open: notes } : null} onNotes={openNotes} />
-                            </>
-                        ) : (
-                            <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
-                                muted={muted} bells={bells} onOpen={openChannel} onDialog={setDialog}
-                                events={view.event_limits ? { open: eventsOpen, onOpen: () => openChannel(EVENTS) } : null} />
-                        )}
-                        <div class="mt-auto">
+                            ) : (
+                                <ChannelList denID={denID} view={view} reads={reads} members={members} open={channel?.id} staff={staff} gone={gone}
+                                    muted={muted} bells={bells} onOpen={openChannel} onDialog={setDialog}
+                                    events={view.event_limits ? { open: eventsOpen, onOpen: () => openChannel(EVENTS) } : null}
+                                    collections={view.has_collections ? { open: collectionsOpen, onOpen: () => openChannel(COLLECTIONS) } : null} />
+                            )}
                             {/* Room for the call's button over the list's end, so
                                 the last row clears it. */}
-                            {button && <div class="h-11" aria-hidden="true"></div>}
+                            {button && <div class="h-11 shrink-0" aria-hidden="true"></div>}
+                        </div>
+                        <div class="shrink-0">
                             <RelayBar />
                             <CallBlock denID={denID} staffMuted={staffMuted(view, myCall)} roomy={button} />
                             <UserPanel me={view.me} online={live && view.state === 'connected'} onEdit={() => setDialog({ kind: 'edit' })} />
@@ -708,6 +721,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
                                     level={bells ? levelOf(notifications, denID, channel.id) : null}
                                     onLevel={(level) => setLevel(denID, channel.id, level).catch(() => {})}
+                                    onCollections={view.has_collections && channel.kind === 'text' ? () => openChannel(channelCollectionsPath(channel.id)) : null}
                                     onChannels={() => toPane('list')} onMembers={toggleMembers}
                                     onProfile={openProfile} />
                                 {callTop}
@@ -732,6 +746,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                     retention={view.retention}
                                     offline={showsOffline(live, view.state)}
                                     spoilers={!!view.spoilers}
+                                    hasCollections={!!view.has_collections}
+                                    collections={view.collections || []}
                                     channels={inOrder(view).filter((c) => c.kind === 'text')}
                                     onProfile={openProfile}
                                     onTyping={notes ? () => {} : () => sendTyping(denID, channel.id)}
@@ -749,6 +765,18 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                 {callTop}
                                 <EventsPane denID={denID} view={view} members={members} onList={() => toPane('list')}
                                     onProfile={openProfile} />
+                            </>
+                        ) : anyCollections ? (
+                            <>
+                                {callTop}
+                                <CollectionsPane denID={denID} view={view} channel={channelCol} members={members}
+                                    onList={() => toPane('list')}
+                                    onBack={channelCol ? () => openChannel(channelCol.id) : null}
+                                    onProfile={openProfile}
+                                    onJump={(chID, msgID) => {
+                                        openAt(denID, chID, msgID);
+                                        openChannel(chID);
+                                    }} />
                             </>
                         ) : (
                             <>
@@ -1191,7 +1219,7 @@ export function applyReads(view, reads) {
 // rows mark while bells says anything notifies.
 // events, while the den has them, puts its events' row at the list's top,
 // open while their pane shows, which events.onOpen opens.
-function ChannelList({ denID, view, reads, members, open, staff, gone, muted, bells, onOpen, onDialog, events }) {
+function ChannelList({ denID, view, reads, members, open, staff, gone, muted, bells, onOpen, onDialog, events, collections }) {
     const { ungrouped, groups } = listed(view);
     const calls = new Map((view.calls || []).map((c) => [c.channel_id, c]));
     const [folded, setFolded] = useState(() => readFolded(stored(FOLDED + denID)));
@@ -1249,7 +1277,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, be
     // channel or group there.
     const listMenu = !touch && managed ? {
         onContextMenu: (e) => {
-            if (e.defaultPrevented || e.target.closest('[data-channel-row], [data-group-row], [data-call-member], [data-events-row], a, button, input')) return;
+            if (e.defaultPrevented || e.target.closest('[data-channel-row], [data-group-row], [data-call-member], [data-events-row], [data-collections-row], a, button, input')) return;
             e.preventDefault();
             setMenu({ key: 'list', at: { x: e.clientX, y: e.clientY }, back: null });
         },
@@ -1419,9 +1447,10 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, be
     };
     return (
         <nav aria-label="Channels" class="relative flex flex-1 flex-col gap-2 p-2" {...listMenu}>
-            {events && (
+            {(events || collections) && (
                 <ul class="flex flex-col">
-                    <EventsRow events={view.events} open={events.open} onOpen={events.onOpen} />
+                    {events && <EventsRow events={view.events} open={events.open} onOpen={events.onOpen} />}
+                    {collections && <CollectionsRow open={collections.open} onOpen={collections.onOpen} />}
                 </ul>
             )}
             <ul class={`flex flex-col rounded ${dragging === 'channel' ? 'min-h-4' : ''} ${dropMark('ungrouped')}`} data-ungrouped {...looseDrag}>{ungrouped.map(item)}</ul>
@@ -1573,7 +1602,7 @@ function ChannelsButton({ elsewhere, onChannels }) {
 // levels, level the one it's at, and a DM's mutes it: level and muted are
 // null otherwise.
 export function ChannelHeader({ channel, dm, me, roles, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, level, onLevel,
-    onChannels, onMembers, onProfile }) {
+    onCollections, onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
     const clipped = useClipped(line, channel.description);
@@ -1646,6 +1675,12 @@ export function ChannelHeader({ channel, dm, me, roles, elsewhere, verified, onC
                     </button>
                 )}
                 <div class="ml-auto flex shrink-0 items-center gap-1">
+                    {onCollections && channel.kind === 'text' && (
+                        <button type="button" class="btn btn-ghost btn-sm btn-square" onClick={onCollections}
+                            aria-label="Channel collections" title="Channel collections" data-channel-collections>
+                            <BookmarkIcon />
+                        </button>
+                    )}
                     {level && channel.kind === 'text' && (
                         <MenuButton label={`Notifications for #${channel.name}`} title={`#${channel.name}`}
                             items={levelMenu(level).map((l) => ({ ...l, run: () => onLevel(l.key) }))}

@@ -91,7 +91,7 @@ try {
     const end = await focused();
     await press('Escape');
     const closed = !(await b.eval(`!!${MENU}`)) && (await focused()) === 'Message actions';
-    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Forward', 'Add reaction', 'Edit', 'Let others edit', 'Copy text', 'Copy message link', 'Delete']) &&
+    c.report(opened && JSON.stringify(all) === JSON.stringify(['Reply', 'Forward', 'Save to collection', 'Add reaction', 'Edit', 'Let others edit', 'Copy text', 'Copy message link', 'Delete']) &&
         down === 'Forward' && wrapped === 'Delete' && home === 'Reply' && end === 'Delete' && closed,
         `Enter opened ${JSON.stringify(all)} at Reply (${opened}); the arrows moved to ${down} and round to ${wrapped}, Home to ${home}, End to ${end}, and Escape closed it back to the ⋯ (${closed})`);
 
@@ -104,7 +104,7 @@ try {
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
     await press('Enter');
     await menuWith('Reply');
-    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
+    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
     const text = await may(waitFor(async () => (await copied())?.includes("Bob's first") && (await has('Text copied')), 'the text copied', 5000));
     await press('Enter');
     await menuWith('Reply');
@@ -116,7 +116,7 @@ try {
     await b.eval(`${DOTS("Bob's first")}.focus(), true`);
     await press('Enter');
     await menuWith('Reply');
-    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
+    await press('ArrowDown', 'ArrowDown', 'ArrowDown', 'ArrowDown', 'Enter');
     const editing = await may(waitFor(() => b.eval(`(() => { const el = document.activeElement; return el?.tagName === 'TEXTAREA' && el.value === "Bob's first" && el.selectionStart === el.value.length; })()`), 'the edit box, caret at its end', 5000));
     await b.type(' (fixed)');
     await press('Enter');
@@ -152,8 +152,8 @@ try {
     await b.type(' (from the bar)');
     await press('Enter');
     const barSaved = await may(waitFor(() => b.eval(`!!${ROW("Bob's second (from the bar)")}?.textContent.includes('(edited)')`), 'the edit from the bar saved', 5000));
-    c.report(JSON.stringify(mine) === JSON.stringify(['Add a reaction', 'Reply', 'Edit', 'Message actions'])
-        && JSON.stringify(alices) === JSON.stringify(['Add a reaction', 'Reply', 'Message actions']) && barReply && barEdit && barSaved
+    c.report(JSON.stringify(mine) === JSON.stringify(['Add a reaction', 'Reply', 'Save to collection', 'Edit', 'Message actions'])
+        && JSON.stringify(alices) === JSON.stringify(['Add a reaction', 'Reply', 'Save to collection', 'Message actions']) && barReply && barEdit && barSaved
         && under.below === 1 && JSON.stringify(under.items) === JSON.stringify(['Save', 'Cancel', 'Enter to save, Escape to cancel']) && under.level && !under.sharing,
     `the bar holds ${JSON.stringify(mine)} on his own and ${JSON.stringify(alices)} on alice's; its Reply started a reply (${barReply}), its Edit opened the box (${barEdit}) under which is one row ${JSON.stringify(under)}, and saved (${barSaved})`);
 
@@ -213,7 +213,7 @@ try {
     await menuWith('Reply');
     const inside = await b.eval(`${MENU}.getBoundingClientRect().bottom <= document.querySelector('[data-scroller]').getBoundingClientRect().bottom + 1`);
     await press('Escape');
-    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Forward', 'Add reaction', 'Copy text', 'Copy message link']) && inside,
+    c.report(JSON.stringify(theirs) === JSON.stringify(['Reply', 'Forward', 'Save to collection', 'Add reaction', 'Copy text', 'Copy message link']) && inside,
         `alice's message offers bob ${JSON.stringify(theirs)}, and the last message's menu stays inside the list (${inside})`);
 
     step("a message's link, underlined only on hover and keyboard focus");
@@ -325,16 +325,31 @@ try {
     // The newest row is the forward, marked, its photo loaded.
     const arrived = (on) => on.eval(`(() => { const r = [...document.querySelectorAll('[data-id]')].at(-1), img = r?.querySelector('img');
         return !!r?.querySelector('[data-forwarded]') && !!img && img.complete && img.naturalWidth > 0; })()`);
+    const fwdHeader = (on) => on.eval(`(() => { const r = [...document.querySelectorAll('[data-id]')].at(-1), h = r?.querySelector('[data-forwarded]');
+        return JSON.stringify({ text: h?.textContent.trim() || '', chip: h?.querySelector('[data-forward-link]')?.textContent.trim() || '' }); })()`).then(JSON.parse);
     await pair(b, ALICE);
     await open(b, ALICE, den, dm);
     const inDM = await may(waitFor(() => arrived(b), 'the forward in the DM', 10000));
+    const dmHdr = await fwdHeader(b);
     await shot('forwarded-dm');
+    await click(`[...document.querySelectorAll('[data-id]')].at(-1)?.querySelector('[data-forward-link]')`);
+    const dmJumped = await may(waitFor(async () => (await b.eval(`location.pathname`)) === `/den/${den}/${general}` && (await lit(b, "Alice's photo")), 'DM forward link jumped to general', 10000));
     await pair(b, CAROL);
     await open(b, CAROL, den2, lobby);
     const inLobby = await may(waitFor(() => arrived(b), 'the forward in lobby', 10000));
+    const carolHdr = await fwdHeader(b);
     await shot('forwarded-lobby');
-    c.report(toDM.marked.startsWith('Alice') && toDM.went && toLobby.marked.startsWith('lobby') && toLobby.went && inDM && inLobby,
-        `Forward found ${JSON.stringify(toDM.marked)} and sent it (${toDM.went}), and ${JSON.stringify(toLobby.marked)} (${toLobby.went}); alice opens it in the DM (${inDM}), and carol in Second Den (${inLobby}), each marked with its photo`);
+    await pair(b, BOB);
+    await open(b, BOB, den2, lobby);
+    await may(waitFor(async () => (await fwdHeader(b)).chip === 'Voice Den · #general', 'cross-den forward chip for bob', 10000));
+    const bobHdr = await fwdHeader(b);
+    await click(`[...document.querySelectorAll('[data-id]')].at(-1)?.querySelector('[data-forward-link]')`);
+    const crossJumped = await may(waitFor(async () => (await b.eval(`location.pathname`)) === `/den/${den}/${general}` && (await lit(b, "Alice's photo")), 'cross-den forward link jumped to Voice Den', 10000));
+    c.report(toDM.marked.startsWith('Alice') && toDM.went && toLobby.marked.startsWith('lobby') && toLobby.went && inDM && inLobby
+        && dmHdr.text === 'Forwarded from #general' && dmHdr.chip === '#general' && dmJumped
+        && carolHdr.text === 'Forwarded from another den' && carolHdr.chip === ''
+        && bobHdr.text === 'Forwarded from Voice Den · #general' && bobHdr.chip === 'Voice Den · #general' && crossJumped,
+    `Forward found ${JSON.stringify(toDM.marked)} and sent it (${toDM.went}), and ${JSON.stringify(toLobby.marked)} (${toLobby.went}); alice opens it in the DM (${inDM}, ${JSON.stringify(dmHdr)}, jumped: ${dmJumped}), carol in Second Den (${inLobby}, ${JSON.stringify(carolHdr)}), and bob follows ${JSON.stringify(bobHdr)} (${crossJumped})`);
 
     step("the owner sees whose message she's deleting");
     await pair(b, ALICE);
@@ -347,7 +362,7 @@ try {
     await waitFor(() => b.eval(`!!${DIALOG}`), 'the dialog', 5000);
     const whose = await b.eval(`${DIALOG}.innerText`);
     await press('Escape');
-    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Forward', 'Add reaction', 'Copy text', 'Copy message link', 'Delete']) && whose.includes("This is @bob's message. It goes for everyone"),
+    c.report(JSON.stringify(hers) === JSON.stringify(['Reply', 'Forward', 'Save to collection', 'Add reaction', 'Copy text', 'Copy message link', 'Delete']) && whose.includes("This is @bob's message. It goes for everyone"),
         `bob's message offers alice ${JSON.stringify(hers)}, and its dialog says ${JSON.stringify(whose)}`);
 
     step('the menu by a long press');

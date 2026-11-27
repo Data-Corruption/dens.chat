@@ -76,6 +76,10 @@
 #                               bob, in BROWSER, gaining and losing access, never learning hidden roles,
 #                               with role-filtered @ mentions, an immediate voice kick, audit lines and
 #                               a 390px phone layout check
+#   collections BROWSER         alice and bob exercising shared channel collections (CRUD, staff vs everyone,
+#                               audit log), personal collections (lazy Saved, filter/create, channel + DM
+#                               photo + Notes), role-loss hide and regain restore, Ctrl+K switcher, and
+#                               390px phone layout bottom-sheet picker and Back trail
 #   sounds BROWSER              the page's sounds in a call, as each change plays them, from
 #                               a file of the member's own, quieted and off, and a DM's sound, once
 #                               with the browser's popup, alone with DMs off, none muted or on screen

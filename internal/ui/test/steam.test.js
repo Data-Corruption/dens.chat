@@ -342,7 +342,7 @@ test('one-at-a-time playback lock coordinates YouTube players and Steam trailers
             return { ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ title: 'Song', channel: 'Ch', playable: true }) };
         }
         if (path === '/api/steam/1771300') {
-            return { ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ name: 'KCD2', trailer: true, platforms: { windows: true } }) };
+            return { ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ name: 'KCD2', trailer: true, shots: 2, platforms: { windows: true } }) };
         }
         if (path === '/api/steam/1091500') {
             return { ok: true, status: 200, headers: new Headers(), text: async () => JSON.stringify({ name: 'Adult Game', adult: true, trailer: true, platforms: { windows: true } }) };
@@ -367,11 +367,29 @@ test('one-at-a-time playback lock coordinates YouTube players and Steam trailers
         assert.ok(adultCard.find((n) => 'data-steam-cover' in n.attributes), 'adult cover shown');
         assert.equal(adultCard.find((n) => 'data-steam-play' in n.attributes), null, 'play button hidden behind adult cover');
 
-        // Clicking Steam play mounts <video>; clicking YouTube play stops Steam and mounts <iframe>.
+        // Play button only appears on slide 0, not on screenshots.
         const steamCard = root.find((n) => n.attributes['data-steam'] === '1771300');
+        assert.ok(steamCard.find((n) => 'data-steam-play' in n.attributes), 'play button shown on header slide');
+        steamCard.find((n) => n.attributes['aria-label'] === 'Next picture').dispatch('click');
+        await settle();
+        assert.equal(steamCard.find((n) => 'data-steam-play' in n.attributes), null, 'play button hidden on screenshots');
+        steamCard.find((n) => n.attributes['aria-label'] === 'Previous picture').dispatch('click');
+        await settle();
+
+        // Clicking Steam play mounts <video> with Dens custom video controls;
+        // stepping to a screenshot keeps <video> mounted and shows the return pill.
         steamCard.find((n) => 'data-steam-play' in n.attributes).dispatch('click');
         await settle();
         assert.ok(steamCard.find((n) => 'data-steam-video' in n.attributes), 'Steam trailer started');
+        assert.ok(steamCard.find((n) => 'data-video-controls' in n.attributes), 'Steam trailer uses custom video controls');
+        steamCard.find((n) => n.attributes['aria-label'] === 'Next picture').dispatch('click');
+        await settle();
+        assert.ok(steamCard.find((n) => 'data-steam-video' in n.attributes), 'Steam trailer stays mounted while browsing screenshots');
+        assert.ok(steamCard.find((n) => 'data-steam-playing-pill' in n.attributes), 'playing pill shown on screenshots');
+        assert.ok(steamCard.find((n) => n.localName === 'img'), 'screenshot shown while trailer plays');
+        steamCard.find((n) => 'data-steam-playing-pill' in n.attributes).find((n) => n.localName === 'button').dispatch('click');
+        await settle();
+        assert.equal(steamCard.find((n) => 'data-steam-playing-pill' in n.attributes), null, 'pill jumps back to trailer slide');
 
         const ytBox = root.find((n) => n.attributes['data-video'] === 'dQw4w9WgXcQ');
         ytBox.find((n) => n.localName === 'button').dispatch('click');

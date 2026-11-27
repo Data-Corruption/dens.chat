@@ -59,7 +59,10 @@ export async function tileMenu(b, name) {
         const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
         return JSON.stringify({ within, reached: hit === s || s.contains(hit) });
     })()`), `${name}'s tile's menu`, 5000).then(JSON.parse, () => ({ within: false, reached: false }));
-    await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+    await waitFor(async () => {
+        await b.eval(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), true`);
+        return b.eval(`!${slider}`);
+    }, `${name}'s tile's menu closed`, 3000);
     return seen;
 }
 

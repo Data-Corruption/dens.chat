@@ -40,6 +40,10 @@ func NormalizeUsername(s string) (string, error) {
 // something visible among them, so a name can't pass for nobody's.
 func CleanName(s string, max int) (string, error) { return cleanText(s, max, false, "name") }
 
+// FoldName returns the case-folded key used to compare role and collection
+// names for uniqueness so the den and clients agree on collisions.
+func FoldName(s string) string { return strings.ToLower(s) }
+
 // cleanText cleans a name, or with emoji a poll's choice, which
 // keeps each of Unicode's emoji whole, joiners and all; what is what the
 // errors call it.

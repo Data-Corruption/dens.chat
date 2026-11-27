@@ -593,6 +593,70 @@ forwarded)
     api GET "/api/dens/$1/channels/$2/messages?limit=100" |
         json 'str(next(m.get("forwarded", False) for m in d["messages"] if m["id"] == "'"$3"'")).lower()'
     ;;
+forward-source)
+    # forward-source DEN_ID CHANNEL_ID MESSAGE_ID: print a message's
+    # forward_source as "den_id channel_id message_id", or "none".
+    api GET "/api/dens/$1/channels/$2/messages?limit=100" |
+        json '(lambda s: "%s %s %s" % (s["den_id"], s["channel_id"], s["message_id"]) if s else "none")(next(m.get("forward_source") for m in d["messages"] if m["id"] == "'"$3"'"))'
+    ;;
+create-role)
+    # create-role DEN_ID NAME: create a custom role; print its ID.
+    api POST "/api/dens/$1/roles" "{\"name\":\"$2\"}" | json 'd["id"]'
+    ;;
+channel-gated)
+    # channel-gated DEN_ID NAME ROLE_ID: create a text channel restricted
+    # to ROLE_ID; print its ID once the den's event has reached this client.
+    api POST "/api/dens/$1/channels" "{\"name\":\"$2\",\"kind\":\"text\",\"role_ids\":[\"$3\"]}" >/dev/null
+    for _ in $(seq 1 40); do
+        id=$(api GET "/api/dens/$1/state" | json 'next((c["id"] for c in d["channels"] if c["name"] == "'"$2"'"), "")')
+        [ -n "$id" ] && { printf '%s\n' "$id"; exit 0; }
+        sleep 0.25
+    done
+    fail "channel $2 never appeared"
+    ;;
+channel-hidden)
+    # channel-hidden DEN_ID CHANNEL_ID NAME: fail if NAME is in this
+    # client's state or if reading CHANNEL_ID's history succeeds.
+    seen=$(api GET "/api/dens/$1/state" | json 'any(c["name"] == "'"$3"'" for c in d["channels"])')
+    [ "$seen" = False ] || fail "hidden channel $3 appeared in state"
+    status=$(curl -sS -b "$JAR" -c "$JAR" -H "Origin: $BASE" -o /dev/null -w '%{http_code}' \
+        "$BASE/api/dens/$1/channels/$2/messages?limit=10")
+    [ "$status" -ge 400 ] || fail "hidden channel $3 history returned $status"
+    ;;
+set-member-roles)
+    # set-member-roles DEN_ID MEMBER_ID ROLE_ID: assign ROLE_ID to MEMBER_ID.
+    api PUT "/api/dens/$1/members/$2/roles" "{\"role_ids\":[\"$3\"]}" >/dev/null
+    ;;
+channel-roles)
+    # channel-roles DEN_ID CHANNEL_ID: print a channel's role IDs.
+    api GET "/api/dens/$1/state" | json '" ".join(next(c.get("role_ids") or [] for c in d["channels"] if c["id"] == "'"$2"'"))'
+    ;;
+create-collection)
+    # create-collection DEN_ID CHANNEL_ID NAME [WHO_ADDS]: create a
+    # collection, personal when CHANNEL_ID is "-", else shared on
+    # CHANNEL_ID; print its ID.
+    if [ "$2" = "-" ]; then
+        api POST "/api/dens/$1/collections" "{\"name\":\"$3\"}" | json 'd["id"]'
+    else
+        api POST "/api/dens/$1/channels/$2/collections" "{\"name\":\"$3\",\"who_adds\":\"${4:-everyone}\"}" | json 'd["id"]'
+    fi
+    ;;
+collection-add)
+    # collection-add DEN_ID COLLECTION_ID MESSAGE_ID: add MESSAGE_ID to a
+    # collection.
+    api POST "/api/dens/$1/collections/$2/items" "{\"message_id\":\"$3\"}" >/dev/null
+    ;;
+collection-info)
+    # collection-info DEN_ID COLLECTION_ID: print "name count" for a
+    # collection, or "none" if absent.
+    api GET "/api/dens/$1/collections" |
+        json 'next(("%s %d" % (c["name"], c["count"]) for c in d["collections"] if c["id"] == "'"$2"'"), "none")'
+    ;;
+collection-items)
+    # collection-items DEN_ID COLLECTION_ID: print each item as "id text".
+    api GET "/api/dens/$1/collections/$2/items" |
+        json '"\n".join("%s %s" % (it["message"]["id"], it["message"]["text"]) for it in d["items"])'
+    ;;
 set-status)
     # set-status DEN_ID TEXT: set this member's status, with no end.
     api PUT "/api/dens/$1/me/status" "{\"status\":\"$2\"}" >/dev/null

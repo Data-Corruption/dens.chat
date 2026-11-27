@@ -43,18 +43,18 @@ test('photos and videos show at Medium and players and Steam cards at Small unti
     setSize(PLAYERS, 'small');
 });
 
-test('Steam cards stack at Small and lay out side by side past Small, with fixed 16:9 media boxes', () => {
+test('Steam cards lay out side by side at Medium and stack at Small, Large and Largest, with fixed 16:9 media boxes', () => {
     assert.deepEqual(SIZES.map(steamCardClass), [
         'w-[400px] flex-col',
         'w-[640px] flex-row',
-        'w-[960px] flex-row',
-        'w-[1280px] flex-row',
+        'w-[960px] flex-col',
+        'w-[1280px] flex-col',
     ]);
     assert.deepEqual(SIZES.map(steamMediaClass), [
         'aspect-video w-full',
         'aspect-video w-[56.25%]',
-        'aspect-video w-[62.5%]',
-        'aspect-video w-[68.75%]',
+        'aspect-video w-full',
+        'aspect-video w-full',
     ]);
     assert.equal(steamCardClass('unknown'), 'w-[400px] flex-col');
     assert.equal(steamMediaClass('unknown'), 'aspect-video w-full');

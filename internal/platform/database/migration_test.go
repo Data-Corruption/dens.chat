@@ -79,9 +79,9 @@ var m19Tables = []string{"background"}
 // m23Tables are the tables v1.15.0's steps add: the audit log.
 var m23Tables = []string{"den_audit"}
 
-// m25Tables are the tables Channel roles adds: roles and their links to
-// members, channels and ended events.
-var m25Tables = []string{"den_roles", "den_member_roles", "den_channel_roles", "den_event_roles"}
+// m25Tables are the tables Channel roles and Collections add: roles,
+// collections and their links.
+var m25Tables = []string{"den_roles", "den_member_roles", "den_channel_roles", "den_event_roles", "den_collections", "den_collection_items"}
 
 // retiredKeys are the tables of DM keys, which Identities changes for a
 // release before it: an exchange still running, or checked by one member
@@ -438,6 +438,57 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 				if err := db.QueryRow(`SELECT (SELECT count(*) FROM den_member_roles) + (SELECT count(*) FROM den_channel_roles) + (SELECT count(*) FROM den_event_roles)`).Scan(&leftovers); err != nil || leftovers != 0 {
 					t.Errorf("%s kept %d role links after role delete, %v", what, leftovers, err)
 				}
+				// Forward links start empty on pre-step-24 schemas, accept a
+				// 32-byte den ID and positive channel/message IDs, and reject
+				// malformed values.
+				var linked int
+				if err := db.QueryRow(`SELECT count(*) FROM den_messages WHERE forward_den IS NOT NULL OR forward_channel IS NOT NULL OR forward_message IS NOT NULL`).Scan(&linked); err != nil ||
+					(released.version < 24 && linked != 0) {
+					t.Errorf("%s holds %d forward sources after the migration, %v", what, linked, err)
+				}
+				if _, err := db.Exec(`UPDATE den_messages SET forward_den = zeroblob(32), forward_channel = 1, forward_message = 2 WHERE id = 1`); err != nil {
+					t.Errorf("%s takes no forward source after the migration: %v", what, err)
+				}
+				for _, q := range []string{
+					`UPDATE den_messages SET forward_den = x'01' WHERE id = 1`,
+					`UPDATE den_messages SET forward_channel = 0 WHERE id = 1`,
+					`UPDATE den_messages SET forward_channel = -1 WHERE id = 1`,
+					`UPDATE den_messages SET forward_message = 0 WHERE id = 1`,
+					`UPDATE den_messages SET forward_message = -1 WHERE id = 1`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
+				}
+				// Collections belong to either a channel or an owner, never both or neither,
+				// and cascade their items on delete.
+				if _, err := db.Exec(`INSERT INTO den_collections (id, channel_id, name, who_adds, created_by, created_at) VALUES (1, 1, x'c1', 'everyone', 1, 20)`); err != nil {
+					t.Errorf("%s takes no shared collection after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`INSERT INTO den_collections (id, owner_id, name, created_by, created_at) VALUES (2, 1, x'c2', 1, 21)`); err != nil {
+					t.Errorf("%s takes no personal collection after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 1, 1, 22), (2, 1, 1, 23)`); err != nil {
+					t.Errorf("%s takes no collection items after the migration: %v", what, err)
+				}
+				for _, q := range []string{
+					`INSERT INTO den_collections (name, created_by, created_at) VALUES (x'c3', 1, 24)`,
+					`INSERT INTO den_collections (channel_id, owner_id, name, created_by, created_at) VALUES (1, 1, x'c3', 1, 24)`,
+					`INSERT INTO den_collections (channel_id, name, who_adds, created_by, created_at) VALUES (1, x'c3', 'mods', 1, 24)`,
+					`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 1, 1, 25)`,
+					`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (99, 1, 1, 25)`,
+					`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 99, 1, 25)`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
+				}
+				if _, err := db.Exec(`DELETE FROM den_collections WHERE id IN (1, 2)`); err != nil {
+					t.Errorf("%s failed deleting collections: %v", what, err)
+				}
+				if err := db.QueryRow(`SELECT count(*) FROM den_collection_items`).Scan(&leftovers); err != nil || leftovers != 0 {
+					t.Errorf("%s kept %d collection items after collection delete, %v", what, leftovers, err)
+				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
 					t.Errorf("%s has foreign keys %d after the migration, %v", what, on, err)
@@ -634,10 +685,109 @@ func fillEveryTable(t *testing.T, db *sql.DB, version int) {
 	if version >= 22 {
 		rows = append(rows, `UPDATE den_members SET status = x'a5', status_until = 99 WHERE id = 1`)
 	}
+	if version >= 23 {
+		rows = append(rows,
+			`INSERT INTO den_roles (id, name, created_at) VALUES (1, 'VIP', 15)`,
+			`INSERT INTO den_member_roles (member_id, role_id) VALUES (3, 1)`,
+			`INSERT INTO den_channel_roles (channel_id, role_id) VALUES (1, 1)`,
+			`INSERT INTO den_event_roles (event_id, role_id) VALUES (1, 1)`,
+		)
+	}
+	if version >= 24 {
+		rows = append(rows, `UPDATE den_messages SET forward_den = zeroblob(32), forward_channel = 1, forward_message = 2 WHERE id = 1`)
+	}
 	for _, q := range rows {
 		if _, err := db.Exec(q); err != nil {
 			t.Fatalf("%s: %v", q, err)
 		}
+	}
+}
+
+// TestMigrationFromStep23PreservesRowsAndForwardLinks checks migrating from
+// Step 23 (channel roles) through Step 24 (forward links) and keeping forward
+// source columns across snapshot and reopen.
+func TestMigrationFromStep23PreservesRowsAndForwardLinks(t *testing.T) {
+	bi := build.BuildInfo{DefaultLogLevel: "warn"}
+	dir, backedUp, reopened := t.TempDir(), t.TempDir(), t.TempDir()
+	log, err := xlog.New(filepath.Join(t.TempDir(), "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { log.Close() })
+	ctx := context.Background()
+
+	old, err := Open(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := newMigrator(bi).Upto(23).Run(ctx, old, log); err != nil || v != 23 {
+		old.Close()
+		t.Fatalf("make step 23 schema: version %d, %v", v, err)
+	}
+	fillEveryTable(t, old, 23)
+	tables, err := Tables(ctx, old)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tables = append(tables, "sqlite_sequence")
+	columns := map[string]string{}
+	before := map[string]string{}
+	for _, table := range tables {
+		columns[table] = columnsOf(t, old, table)
+		before[table] = dumpColumns(t, old, table, columns[table])
+	}
+	if err := Snapshot(ctx, old, filepath.Join(backedUp, FileName)); err != nil {
+		t.Fatal(err)
+	}
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	for what, at := range map[string]string{"the step 23 database": dir, "its backup": backedUp} {
+		db, err := New(at, log, bi, ApplyPendingMigrations)
+		if err != nil {
+			t.Fatalf("migrate %s from step 23: %v", what, err)
+		}
+		if v, err := FileSchemaVersion(ctx, db); err != nil || v != SchemaVersion(bi) || v < 24 {
+			db.Close()
+			t.Fatalf("%s migrated to schema %d, %v; want %d", what, v, err, SchemaVersion(bi))
+		}
+		for _, table := range tables {
+			if after := dumpColumns(t, db, table, columns[table]); after != before[table] {
+				t.Errorf("%s's %s changed in the migration: before\n%s\nafter\n%s", what, table, before[table], after)
+			}
+		}
+		var denBlob []byte
+		var fwdCh, fwdMsg sql.NullInt64
+		if err := db.QueryRow(`SELECT forward_den, forward_channel, forward_message FROM den_messages WHERE id = 1`).Scan(&denBlob, &fwdCh, &fwdMsg); err != nil ||
+			denBlob != nil || fwdCh.Valid || fwdMsg.Valid {
+			t.Errorf("%s forward columns not NULL after step 24: %x %v %v %v", what, denBlob, fwdCh, fwdMsg, err)
+		}
+		wantDen := make([]byte, 32)
+		for i := range wantDen {
+			wantDen[i] = byte(i + 1)
+		}
+		if _, err := db.Exec(`UPDATE den_messages SET forward_den = ?, forward_channel = 7, forward_message = 42 WHERE id = 1`, wantDen); err != nil {
+			t.Fatalf("%s update forward source: %v", what, err)
+		}
+		if what == "the step 23 database" {
+			if err := Snapshot(ctx, db, filepath.Join(reopened, FileName)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		db.Close()
+	}
+
+	db, err := New(reopened, log, bi, RequireCurrentSchema)
+	if err != nil {
+		t.Fatalf("reopen step 24 snapshot: %v", err)
+	}
+	defer db.Close()
+	var gotDen []byte
+	var gotCh, gotMsg int64
+	if err := db.QueryRow(`SELECT forward_den, forward_channel, forward_message FROM den_messages WHERE id = 1`).Scan(&gotDen, &gotCh, &gotMsg); err != nil ||
+		len(gotDen) != 32 || gotDen[0] != 1 || gotDen[31] != 32 || gotCh != 7 || gotMsg != 42 {
+		t.Fatalf("reopened forward source = %x %d %d, %v", gotDen, gotCh, gotMsg, err)
 	}
 }
 
@@ -675,4 +825,78 @@ func dumpQuery(t *testing.T, db *sql.DB, query string) string {
 	}
 	slices.Sort(lines)
 	return strings.Join(lines, "\n")
+}
+
+// TestCollectionsMigration checks that migrating from v1.16.0's schema adds
+// den_collections and den_collection_items with their constraints, and cascades
+// items and shared collections when messages, channels or owners go.
+func TestCollectionsMigration(t *testing.T) {
+	dir := t.TempDir()
+	log, err := xlog.New(filepath.Join(t.TempDir(), "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { log.Close() })
+	bi := build.BuildInfo{DefaultLogLevel: "warn"}
+	ctx := context.Background()
+
+	old, err := Open(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := newMigrator(bi).Upto(22).Run(ctx, old, log); err != nil || v != 22 {
+		old.Close()
+		t.Fatalf("make v1.16.0 schema: version %d, %v", v, err)
+	}
+	fillEveryTable(t, old, 22)
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := New(dir, log, bi, ApplyPendingMigrations)
+	if err != nil {
+		t.Fatalf("migrate to current schema: %v", err)
+	}
+	defer db.Close()
+
+	// Insert a shared collection and a personal collection with items.
+	if _, err := db.Exec(`INSERT INTO den_collections (id, channel_id, name, who_adds, created_by, created_at) VALUES (1, 1, x'01', 'staff', 1, 100)`); err != nil {
+		t.Fatalf("insert shared collection: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO den_collections (id, owner_id, name, created_by, created_at) VALUES (2, 1, x'02', 1, 101)`); err != nil {
+		t.Fatalf("insert personal collection: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 1, 1, 102), (2, 1, 1, 103), (2, 3, 1, 104)`); err != nil {
+		t.Fatalf("insert collection items: %v", err)
+	}
+
+	// Deleting a message cascades its collection items.
+	if _, err := db.Exec(`DELETE FROM den_messages WHERE id = 1`); err != nil {
+		t.Fatalf("delete message: %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM den_collection_items WHERE message_id = 1`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("items left after message delete: %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM den_collection_items WHERE collection_id = 2`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("other item affected by message delete: %d, %v", count, err)
+	}
+
+	// Deleting a channel cascades its shared collections (and their items).
+	if _, err := db.Exec(`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 3, 1, 105)`); err != nil {
+		t.Fatalf("insert shared item: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM den_channels WHERE id = 1`); err != nil {
+		t.Fatalf("delete channel: %v", err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM den_collections WHERE id = 1`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("shared collection left after channel delete: %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM den_collection_items`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("items left after channel delete: %d, %v", count, err)
+	}
+	// Personal collection row stays intact when a channel is deleted.
+	if err := db.QueryRow(`SELECT count(*) FROM den_collections WHERE id = 2`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("personal collection lost on channel delete: %d, %v", count, err)
+	}
 }

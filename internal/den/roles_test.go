@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 	"github.com/Data-Corruption/dens.chat/internal/sfu"
+	"github.com/coder/websocket"
 )
 
 func (f *fixture) addMember(owner *Session, username string) *Session {
@@ -629,4 +633,445 @@ func TestRoleVoiceKicksAndMove(t *testing.T) {
 
 	// Clean up carol's call.
 	f.d.leaveCall(carolSock)
+}
+
+func TestGatedZeroRoleMaskFailsClosed(t *testing.T) {
+	if got := unsafe.Sizeof(Audience{}); got != 48 {
+		t.Fatalf("Audience size = %d, want 48", got)
+	}
+	f, owner, bob := chatFixture(t)
+	h := f.d.Hub
+	r1, _ := h.EnsureRole(9001)
+	r2, _ := h.EnsureRole(9002)
+
+	voters := map[int64]bool{owner.MemberID: true, bob.MemberID: true}
+	staffSub, _, _, _ := h.SubscribeAt(owner.MemberID, true, 0, denproto.Version, "", 0)
+	defer h.Unsubscribe(staffSub)
+	bobSub, _, _, _ := h.SubscribeAt(bob.MemberID, false, r1, denproto.Version, "", 0)
+	defer h.Unsubscribe(bobSub)
+	otherSub, _, _, _ := h.SubscribeAt(999, false, r2, denproto.Version, "", 0)
+	defer h.Unsubscribe(otherSub)
+	plainSub, _, _, _ := h.SubscribeAt(998, false, 0, denproto.Version, "", 0)
+	defer h.Unsubscribe(plainSub)
+
+	// A gated channel whose role mask resolved to 0 (e.g. concurrent role delete)
+	// must fail closed for both Voters and NonVoters.
+	if err := h.Publish("gated-zero-voters", nil, Voters(voters, false, true, 0)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Publish("gated-zero-nonvoters", nil, NonVoters(voters, false, true, 0)); err != nil {
+		t.Fatal(err)
+	}
+	// A gated channel with a live bit includes only staff and matching holders.
+	if err := h.Publish("gated-r1-voters", nil, Voters(voters, false, true, r1)); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.Publish("gated-r1-nonvoters", nil, NonVoters(voters, false, true, r1)); err != nil {
+		t.Fatal(err)
+	}
+
+	drain := func(sub *Sub) []string {
+		var out []string
+		for len(sub.Events) > 0 {
+			out = append(out, (<-sub.Events).T)
+		}
+		return out
+	}
+	if got := drain(staffSub); !slices.Equal(got, []string{"gated-zero-voters", "gated-r1-voters"}) {
+		t.Fatalf("staff got %v", got)
+	}
+	if got := drain(bobSub); !slices.Equal(got, []string{"gated-r1-voters"}) {
+		t.Fatalf("bob (r1 voter) got %v, want only gated-r1-voters", got)
+	}
+	if got := drain(otherSub); len(got) != 0 {
+		t.Fatalf("other (r2 non-voter) got %v, want none", got)
+	}
+	if got := drain(plainSub); len(got) != 0 {
+		t.Fatalf("plain (roleless non-voter) got %v, want none", got)
+	}
+
+	// roomVisible and publishCallsLocked must also fail closed when gated && roles == 0.
+	room := &callRoom{gated: true, roles: 0, began: f.d.now()}
+	if roomVisible(room, false, 0) || roomVisible(room, false, r1) {
+		t.Fatal("roomVisible allowed non-staff into gated room with zero role mask")
+	}
+	if !roomVisible(room, true, 0) {
+		t.Fatal("roomVisible denied staff on gated room with zero role mask")
+	}
+	f.d.calls.mu.Lock()
+	f.d.calls.rooms[777] = room
+	f.d.publishCallsLocked(777)
+	f.d.calls.mu.Unlock()
+
+	if got := drain(staffSub); !slices.Equal(got, []string{denproto.EventVoiceState}) {
+		t.Fatalf("staff call state = %v, want [voice.state]", got)
+	}
+	for name, sub := range map[string]*Sub{"bob": bobSub, "other": otherSub, "plain": plainSub} {
+		if got := drain(sub); len(got) != 0 {
+			t.Fatalf("%s leaked call state for gated zero-mask room: %v", name, got)
+		}
+	}
+}
+
+func TestSocketSubscribeSerializedWithRoleRevoke(t *testing.T) {
+	f, owner, bob := chatFixture(t)
+	ctx := context.Background()
+
+	raiders, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "Raiders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.SetMemberRoles(ctx, owner, denproto.FormatID(bob.MemberID), denproto.MemberRolesRequest{RoleIDs: []string{raiders.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	rid, _ := denproto.ParseID(raiders.ID)
+	raidersMask := f.d.Hub.Mask([]int64{rid})
+	// ServeSocket checks session expiry against wall time.
+	bob.ExpiresAt = time.Now().Add(time.Hour)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.d.ServeSocket(w, r, bob)
+	}))
+	defer srv.Close()
+
+	// Hold d.roles write lock while bob connects: ServeSocket must wait on
+	// d.roles.RLock() before reading memberRoleMask and subscribing.
+	f.d.roles.Lock()
+	dialed := make(chan *websocket.Conn, 1)
+	dialErr := make(chan error, 1)
+	go func() {
+		wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+		c, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{CompressionMode: websocket.CompressionNoContextTakeover})
+		if err != nil {
+			dialErr <- err
+			return
+		}
+		dialed <- c
+	}()
+
+	var conn *websocket.Conn
+	select {
+	case err := <-dialErr:
+		f.d.roles.Unlock()
+		t.Fatal(err)
+	case conn = <-dialed:
+	case <-time.After(5 * time.Second):
+		f.d.roles.Unlock()
+		t.Fatal("timed out waiting for websocket upgrade")
+	}
+	defer conn.CloseNow()
+
+	// Revoke bob's role while holding d.roles.Lock(), before ServeSocket subscribes.
+	if _, err := f.db.ExecContext(ctx, `DELETE FROM den_member_roles WHERE member_id = ?`, bob.MemberID); err != nil {
+		f.d.roles.Unlock()
+		t.Fatal(err)
+	}
+	f.d.Hub.SetMemberRoles(bob.MemberID, 0)
+	f.d.roles.Unlock()
+
+	readFrame := func() []denproto.Event {
+		t.Helper()
+		rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		_, data, err := conn.Read(rctx)
+		if err != nil {
+			t.Fatalf("read ws frame: %v", err)
+		}
+		evs, err := denproto.DecodeFrame(data)
+		if err != nil {
+			t.Fatalf("decode ws frame: %v", err)
+		}
+		return evs
+	}
+
+	// Drain initial ready event.
+	gotReady := false
+	for !gotReady {
+		for _, ev := range readFrame() {
+			if ev.T == denproto.EventReady {
+				gotReady = true
+			}
+		}
+	}
+
+	// Publish a role-gated event followed by an Everyone sentinel: bob must
+	// never receive the gated event because his subscribe saw the revoke.
+	if err := f.d.Hub.Publish("secret.role.event", nil, Roles(raidersMask)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.Hub.Publish("public.sentinel", nil, Everyone); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		for _, ev := range readFrame() {
+			if ev.T == "secret.role.event" {
+				t.Fatal("bob received role-gated event on socket subscribed concurrently with revoke")
+			}
+			if ev.T == "public.sentinel" {
+				return
+			}
+		}
+	}
+}
+
+func TestJoinCallRechecksVisibilityUnderLock(t *testing.T) {
+	f, owner, bob := chatFixture(t)
+	ctx := context.Background()
+
+	udp, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tcp, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.StartCalls(udp, tcp, sfu.Config{Loopback: true}); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = f.d.StopCalls() })
+
+	raiders, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "Raiders"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raidVoice := f.newChannel(owner, "Raid Voice", denproto.ChannelRequest{Kind: denproto.KindVoice, RoleIDs: &[]string{raiders.ID}})
+	cid, _ := denproto.ParseID(raidVoice.ID)
+	if _, err := f.d.SetMemberRoles(ctx, owner, denproto.FormatID(bob.MemberID), denproto.MemberRolesRequest{RoleIDs: []string{raiders.ID}}); err != nil {
+		t.Fatal(err)
+	}
+
+	bobSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, f.memberRolesMask(bob.MemberID), bob.Version, "", 0)
+	defer f.d.Hub.Unsubscribe(bobSub)
+	bobSock := &socket{member: bob.MemberID, keyID: bob.KeyID, closeReq: make(chan closeRequest, 1), voiceOut: make(chan denproto.Event, 16)}
+
+	expectNotFound := func(label string) {
+		t.Helper()
+		select {
+		case e := <-bobSock.voiceOut:
+			var ended denproto.VoiceEnded
+			if e.T != denproto.EventVoiceEnded || json.Unmarshal(e.D, &ended) != nil || ended.Reason != denproto.VoiceNotFound {
+				t.Fatalf("%s: got %s %s, want voice.ended %s", label, e.T, e.D, denproto.VoiceNotFound)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatalf("%s: timed out waiting for refusal", label)
+		}
+		f.d.calls.mu.Lock()
+		defer f.d.calls.mu.Unlock()
+		if f.d.calls.byMember[bob.MemberID] != nil || f.d.calls.rooms[cid] != nil {
+			t.Fatalf("%s: call or room created despite visibility change", label)
+		}
+	}
+
+	// Case 1: channel flips to staff_only after joinCall's pre-lock check,
+	// while joinCall waits on calls.mu.
+	f.d.calls.mu.Lock()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		f.d.joinCall(ctx, bob, bobSock, bobSub, denproto.VoiceJoin{ChannelID: raidVoice.ID, Sealed: true})
+	}()
+	time.Sleep(30 * time.Millisecond)
+	if _, err := f.db.ExecContext(ctx, `DELETE FROM den_channel_roles WHERE channel_id = ?`, cid); err != nil {
+		f.d.calls.mu.Unlock()
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(ctx, `UPDATE den_channels SET staff_only = 1 WHERE id = ?`, cid); err != nil {
+		f.d.calls.mu.Unlock()
+		t.Fatal(err)
+	}
+	f.d.calls.mu.Unlock()
+	<-done
+	expectNotFound("channel flipped to staff_only")
+
+	// Case 2: channel restored to Raiders, then bob's role is revoked in DB
+	// while joinCall waits on calls.mu (even though bobSub still has the stale mask).
+	rid, _ := denproto.ParseID(raiders.ID)
+	if _, err := f.db.ExecContext(ctx, `UPDATE den_channels SET staff_only = 0 WHERE id = ?`, cid); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.db.ExecContext(ctx, `INSERT INTO den_channel_roles (channel_id, role_id) VALUES (?, ?)`, cid, rid); err != nil {
+		t.Fatal(err)
+	}
+	f.d.calls.mu.Lock()
+	done = make(chan struct{})
+	go func() {
+		defer close(done)
+		f.d.joinCall(ctx, bob, bobSock, bobSub, denproto.VoiceJoin{ChannelID: raidVoice.ID, Sealed: true})
+	}()
+	time.Sleep(30 * time.Millisecond)
+	if _, err := f.db.ExecContext(ctx, `DELETE FROM den_member_roles WHERE member_id = ?`, bob.MemberID); err != nil {
+		f.d.calls.mu.Unlock()
+		t.Fatal(err)
+	}
+	f.d.calls.mu.Unlock()
+	<-done
+	expectNotFound("member role revoked in DB")
+}
+
+func TestRoleNameFolding(t *testing.T) {
+	f, owner, _ := chatFixture(t)
+	ctx := context.Background()
+
+	ecole, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "École"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "école"}); !denproto.IsCode(err, denproto.CodeRoleNameTaken) {
+		t.Fatalf("duplicate École/école create: %v", err)
+	}
+	// Case-only self-rename succeeds.
+	if _, err := f.d.RenameRole(ctx, owner, ecole.ID, denproto.DenRoleRequest{Name: "école"}); err != nil {
+		t.Fatalf("case-only rename École->école: %v", err)
+	}
+
+	dotted, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "İ"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "i"}); !denproto.IsCode(err, denproto.CodeRoleNameTaken) {
+		t.Fatalf("duplicate İ/i create: %v", err)
+	}
+	// Rename into another role's folded name fails.
+	if _, err := f.d.RenameRole(ctx, owner, dotted.ID, denproto.DenRoleRequest{Name: "ÉCOLE"}); !denproto.IsCode(err, denproto.CodeRoleNameTaken) {
+		t.Fatalf("rename collision İ->ÉCOLE: %v", err)
+	}
+	// Combining i\u0307 folds differently from İ under FoldName, so both coexist,
+	// while I\u0307 collides with i\u0307.
+	if _, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "i\u0307"}); err != nil {
+		t.Fatalf("distinct İ vs i\\u0307: %v", err)
+	}
+	if _, err := f.d.CreateRole(ctx, owner, denproto.DenRoleRequest{Name: "I\u0307"}); !denproto.IsCode(err, denproto.CodeRoleNameTaken) {
+		t.Fatalf("duplicate I\\u0307/i\\u0307 create: %v", err)
+	}
+}
+
+func TestSocketSubscribeSerializedWithStaffDemote(t *testing.T) {
+	f, owner, bob := chatFixture(t)
+	ctx := context.Background()
+	bobID := denproto.FormatID(bob.MemberID)
+
+	if _, err := f.d.SetRole(ctx, owner, bobID, denproto.RoleRequest{Role: denproto.RoleModerator}); err != nil {
+		t.Fatal(err)
+	}
+	staffOnly := true
+	staffCh := f.newChannel(owner, "staff-secret", denproto.ChannelRequest{StaffOnly: &staffOnly})
+
+	// Verify SetRole takes d.roles.Lock() by holding RLock and checking SetRole blocks.
+	f.d.roles.RLock()
+	setDone := make(chan error, 1)
+	go func() {
+		_, err := f.d.SetRole(ctx, owner, bobID, denproto.RoleRequest{Role: denproto.RoleMember})
+		setDone <- err
+	}()
+	select {
+	case err := <-setDone:
+		f.d.roles.RUnlock()
+		t.Fatalf("SetRole finished while d.roles.RLock was held (err=%v)", err)
+	case <-time.After(30 * time.Millisecond):
+	}
+	f.d.roles.RUnlock()
+	if err := <-setDone; err != nil {
+		t.Fatalf("SetRole after RUnlock: %v", err)
+	}
+
+	// Re-promote bob, capture a session while he is still a moderator (as
+	// Authenticate does before the WebSocket upgrade), then demote him while
+	// holding d.roles.Lock() as ServeSocket waits on d.roles.RLock().
+	if _, err := f.d.SetRole(ctx, owner, bobID, denproto.RoleRequest{Role: denproto.RoleModerator}); err != nil {
+		t.Fatal(err)
+	}
+	staleMod := *bob
+	staleMod.Role = denproto.RoleModerator
+	staleMod.ExpiresAt = time.Now().Add(time.Hour)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		f.d.ServeSocket(w, r, &staleMod)
+	}))
+	defer srv.Close()
+
+	f.d.roles.Lock()
+	dialed := make(chan *websocket.Conn, 1)
+	dialErr := make(chan error, 1)
+	go func() {
+		wsURL := "ws" + strings.TrimPrefix(srv.URL, "http")
+		c, _, err := websocket.Dial(ctx, wsURL, &websocket.DialOptions{CompressionMode: websocket.CompressionNoContextTakeover})
+		if err != nil {
+			dialErr <- err
+			return
+		}
+		dialed <- c
+	}()
+
+	var conn *websocket.Conn
+	select {
+	case err := <-dialErr:
+		f.d.roles.Unlock()
+		t.Fatal(err)
+	case conn = <-dialed:
+	case <-time.After(5 * time.Second):
+		f.d.roles.Unlock()
+		t.Fatal("timed out waiting for websocket upgrade")
+	}
+	defer conn.CloseNow()
+
+	// Demote bob in DB while holding d.roles.Lock(), before ServeSocket subscribes.
+	if _, err := f.db.ExecContext(ctx, `UPDATE den_members SET role = 'member' WHERE id = ?`, bob.MemberID); err != nil {
+		f.d.roles.Unlock()
+		t.Fatal(err)
+	}
+	f.d.Hub.SetStaff(bob.MemberID, false)
+	f.d.roles.Unlock()
+
+	readFrame := func() []denproto.Event {
+		t.Helper()
+		rctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		_, data, err := conn.Read(rctx)
+		if err != nil {
+			t.Fatalf("read ws frame: %v", err)
+		}
+		evs, err := denproto.DecodeFrame(data)
+		if err != nil {
+			t.Fatalf("decode ws frame: %v", err)
+		}
+		return evs
+	}
+
+	// Ready snapshot must use the fresh non-staff role and omit #staff-secret.
+	gotReady := false
+	for !gotReady {
+		for _, ev := range readFrame() {
+			if ev.T == denproto.EventReady {
+				var ready denproto.Ready
+				if err := json.Unmarshal(ev.D, &ready); err != nil {
+					t.Fatal(err)
+				}
+				for _, ch := range ready.Channels {
+					if ch.ID == staffCh.ID {
+						t.Fatal("demoted moderator saw staff-only channel in ready snapshot")
+					}
+				}
+				gotReady = true
+			}
+		}
+	}
+
+	// Subsequent Staff events must not reach the socket either.
+	if err := f.d.Hub.Publish("secret.staff.event", nil, Staff); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.d.Hub.Publish("public.sentinel", nil, Everyone); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		for _, ev := range readFrame() {
+			if ev.T == "secret.staff.event" {
+				t.Fatal("demoted moderator received staff event on socket subscribed with stale session")
+			}
+			if ev.T == "public.sentinel" {
+				return
+			}
+		}
+	}
 }

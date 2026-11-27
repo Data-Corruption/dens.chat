@@ -5,12 +5,14 @@ Messages and their links, history, sending and editing, read state, shared messa
 ## Messages
 
 ```
-message = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
-           "text", "reply_to"?, "reply"?, "nonce"?, "attachments"?, "editors"?,
-           "sealed"?, "key_id"?, "reactions"?, "dm_reactions"?, "poll"?, "everyone"?, "expires_at"?, "forwarded"?}
+message        = {"id", "channel_id", "author_id", "created_at", "revision", "edited_at"?, "edited_by"?,
+                  "text", "reply_to"?, "reply"?, "nonce"?, "attachments"?, "editors"?,
+                  "sealed"?, "key_id"?, "reactions"?, "dm_reactions"?, "poll"?, "everyone"?, "expires_at"?,
+                  "forwarded"?, "forward_source"?}
+forward_source = {"den_id", "channel_id", "message_id"}
 ```
 
-A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](e2ee.md#private-dms)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls)). A DM's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](sync.md#disappearing-messages)). A channel's message its author forwarded carries `forwarded: true`, and nothing of where it came from; a sealed place's mark is inside the seal (see [DM messages](e2ee.md#dm-messages)).
+A DM's message carries its text and files `sealed` instead, with the DM key `key_id` names; its `text` is empty, and it lists no `attachments` (see [Private DMs](e2ee.md#private-dms)). A channel's message carries its `reactions`, and a DM's its members' sets of them sealed, as `dm_reactions` (see [Reactions](#reactions)). A channel's message may carry a `poll`, as the member it's sent to may see it, and `everyone: true` where its @everyone is staff's (see [Polls](#polls)). A DM's message sent under a time carries when it goes, `expires_at` (see [Disappearing messages](sync.md#disappearing-messages)). A channel's message its author forwarded carries `forwarded: true` and, when forwarded from a text channel, `forward_source` naming its 32-byte `den_id`, `channel_id` and `message_id` (no URL or hostname); a sealed place's mark and source go inside the seal (see [DM messages](e2ee.md#dm-messages)).
 
 `text` is at most 4,000 characters and 16 KiB, and not only spaces, unless the message has files, when it may be empty. It is the markdown subset in the design's [Text and replies](../design/messages.md#text-and-replies), which the client parses and never treats as HTML. The den stores it as sent, except for its links, which it rewrites before checking the limits (see [Links](#links)).
 
@@ -82,15 +84,15 @@ GET /api/channels/{id}/messages?around=<id>&limit=50     id and about half each 
 ### Sending, editing, deleting
 
 ```
-POST   /api/channels/{id}/messages   {"nonce": "<16 bytes>", "text", "reply_to"?, "forwarded"?}   201 message
-PATCH  /api/messages/{id}            {"revision", "text", "attachments"?}       200 message
-DELETE /api/messages/{id}                                                            204
+POST   /api/channels/{id}/messages   {"nonce": "<16 bytes>", "text", "reply_to"?, "forwarded"?, "forward_source"?}   201 message
+PATCH  /api/messages/{id}            {"revision", "text", "attachments"?}                                            200 message
+DELETE /api/messages/{id}                                                                                            204
 ```
 
 - `nonce` makes a send idempotent: for 10 minutes, a retry with the same member and nonce returns the original message instead of posting again. The resulting `message.created` event carries the nonce, so the sender's other devices can match their pending copy. The nonce appears only there and in the send response, never in history, except on a DM's messages, whose sealed text is bound to it.
 - Sending moves the author's read position to their new message.
 - An edit names the `revision` it was made against. If the message has changed since, the den refuses it with `409 edit_conflict` and returns the current message beside the error, as `{"error": {…}, "message": message}`. The client shows it with the member's draft kept to reapply. Two devices, or two co-editors, never silently overwrite each other.
-- `forwarded: true` marks a forward, in a channel, where the den's info says `forward`: the den refuses it (`400 invalid_field`) on a sealed message, or with a poll, `reply_to` or `editors`, and refuses an edit or a tick of one with `403 forbidden`, but its author's edit that keeps its text, names no `editors` and lists only files already on it, which takes the others off.
+- `forwarded: true` marks a forward, in a channel, where the den's info says `forward`: the den refuses it (`400 invalid_field`) on a sealed message, or with a poll, `reply_to` or `editors`, and refuses an edit or a tick of one with `403 forbidden`, but its author's edit that keeps its text, names no `editors` and lists only files already on it, which takes the others off while preserving `forward_source`. Where the den's info says `forward_links`, a channel forward may also carry `forward_source` (`{"den_id", "channel_id", "message_id"}`) as the sender's claim; the den checks only its shape (never whether the message exists or matches) and refuses `forward_source` (`400 invalid_field`) on a sealed message, without `forwarded: true`, or with a malformed 32-byte `den_id` or non-positive IDs. Clients omit `forward_source` when forwarding to a channel on a den without `forward_links`, and reject a sealed message carrying `forward_source` outside its seal.
 - The author edits a message, and so do the members they named as its editors (see [Shared messages](#shared-messages)). The author deletes it, and so does staff of a higher rank than the author: moderators delete members' messages, and the owner anyone's. In a DM only the author deletes a message.
 - Events: `message.created {message}`, `message.updated {message}`, `message.deleted {id, channel_id, files?, last_message_id?}`. A deleted message is gone for good, and so are its files, which `files` lists: clients drop them from memory, and later from their cache. `last_message_id` is the newest message left in the channel, or `""` once none is left, so clients clear an unread mark when a channel's newest message is deleted; older dens omit it, and clients opening a channel whose `last_message_id` still sits past its newest remaining message send that ID to clear it. An edit that takes files off a message lists them the same way, in `files` beside the message's own fields (see [Attachments](files.md#attachments)).
 - Each member a deleted message counted for, in a DM the other member and in a channel each it mentioned, gets `read_state.updated` after its `message.deleted`: their `mention_count` without it, and where it was all that lay past their read position, the position moved past it, so older clients that don't read `last_message_id` on `message.deleted` still clear a DM whose last message went unread.
@@ -200,3 +202,32 @@ POST /api/messages/{id}/poll/end                                                
 - Each vote and each end records its message in the change log, its revision as it was (see [What changed while away](sync.md#what-changed-while-away)). A poll goes with its message, and its votes with it.
 - **@everyone.** Staff's `@everyone` in a channel, found by the mention rule, mentions each member who can see the channel but the author, as a mention by name does, and marks the message `everyone`, a client's sign to count it as a mention of its member and highlight it. It counts while the text holds it and staff put it there: an edit by anyone that keeps a marked one keeps the mark, and one that adds it marks the message only where staff make it. Anyone else's mentions the member named `everyone`, if the den has one; nobody new takes that username, which `/api/join` answers as `409 username_taken`.
 - An older page shows a poll's question alone, and an @everyone as a mention of nobody, though the den counts it among the member's mentions. An older den takes no poll: a client offers none where the den sends no `emoji_limits`, which came with them.
+
+## Collections
+
+A den that supports collections sets `collections: true` in its `Den` object and includes `collections` (all personal collections of the member and all shared collections in text channels they currently see, with visible item counts) in `ready`.
+
+### Objects and limits
+
+- **Collection**: `id`, `channel_id` (present for shared channel collections, omitted for personal), `name` (1–50 runes, emoji kept whole, unique case-insensitively per channel or per member), `who_adds` (`"everyone"` or `"staff"` on shared, omitted on personal), `count` (visible non-expired item count, `0..200`), `created_by` (omitted on personal), `created_at` (unix milliseconds).
+- **CollectionItem**: `message` (full `Message`, sealed as usual for DMs and Notes), `added_by`, `added_at` (unix milliseconds).
+- Limits: at most 20 shared collections per text channel, 20 personal collections per member per den, and 200 items per collection. Name collisions return `409 collection_name_taken`.
+
+### Endpoints
+
+All mutating routes count toward the member's write rate limit.
+
+- `GET /api/collections` — returns `{collections}` with fresh visible item counts.
+- `POST /api/collections` — body `{name}`; creates a personal collection (`201`). Rejects `who_adds`.
+- `POST /api/channels/{id}/collections` — staff only on text channels; body `{name, who_adds?}` (`who_adds` defaults to `"staff"`); creates a shared collection (`201`).
+- `PATCH /api/collections/{id}` — body `{name?, who_adds?}`; staff on shared collections, owner on personal (personal rejects `who_adds`). Returns the updated `Collection` (`200`).
+- `DELETE /api/collections/{id}` — staff on shared collections, owner on personal (`204`). Does not delete messages.
+- `GET /api/collections/{id}/items` (optional `?before_at=<ms>&before_id=<message_id>`, both required together) — returns `{collection, items, has_more?, next_before_at?, next_before_id?}` ordered newest-added first (`added_at DESC, message_id DESC`), filtered through current channel/DM/Notes visibility and disappearing-message expiry (`200`), gzip-compressed when the client sends `Accept-Encoding: gzip`. Each page stops once adding another item would pass history's 896 KiB JSON budget (always returning at least one item), setting `has_more: true` with `next_before_at` and `next_before_id` from its last item so clients fetch remaining pages until `has_more` is false while `collection.count` reports the total visible count. Non-owners of personal collections and members who cannot see a shared collection's channel receive `404 not_found`.
+- `POST /api/collections/{id}/items` — body `{message_id}`; idempotent if already present; returns `CollectionItemEvent` (`200`). Shared collections accept only messages from their own channel and enforce `who_adds`; personal collections accept any non-expired message in any channel, DM or Notes the owner sees.
+- `DELETE /api/collections/{id}/items/{message_id}` — removes an item and returns `CollectionItemEvent` (`200`). On shared collections, allowed for whoever added the item or for staff; staff removing another member's item writes a `collection.item_removed` audit line.
+- `GET /api/messages/{id}/collections` — returns `{collection_ids}` naming the caller's personal collections and that message's channel's shared collections that currently hold message `{id}` (`200`), or `404 not_found` if the message does not exist, has expired or is not visible.
+
+### Events and audit kinds
+
+- Events (sent to the channel's audience for shared collections and to the owner alone for personal collections): `collection.created` (`Collection`), `collection.updated` (`Collection`), `collection.deleted` (`{id, channel_id?}`), `collection.item_added` and `collection.item_removed` (`{collection_id, channel_id?, message_id, added_by?, added_at?, count}`).
+- Staff audit kinds (shared collections only): `collection.created`, `collection.updated` (changes for `name` and `who_adds`), `collection.deleted`, `collection.item_removed` (only when staff removes an item added by another member).
