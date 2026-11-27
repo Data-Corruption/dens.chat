@@ -187,6 +187,16 @@ soundboard work as you'd expect. What's different:
   event's call for a minute and you earn its badge, which shows on your
   profile; hide any badge with its eye on your profile. Nobody sees who's
   interested, only how many.
+- **Collections** gather messages without copying them: use the bookmark icon on
+  any message (or **Save to collection** in its **⋯** menu) to save it into a
+  shared collection for that text channel or into your own personal collections
+  across the den (including messages from DMs and Notes). Open a channel's
+  shared collections from the bookmark button in its header, your personal
+  collections from **Collections** under **Events**, or either from **Ctrl+K**.
+  Staff manage shared collections and choose whether everyone or staff only can
+  add to them. Personal collections are private to you on the den, though the
+  den stores their names and which message IDs you saved (DM and Notes text
+  stays encrypted).
 - **Your profile** is per den. A crown marks the den's owner, a shield a
   moderator, in the member list and on profiles; to see them beside names in
   messages and calls too, turn on **Staff marks** under **Settings** →
@@ -260,10 +270,12 @@ and the keys. What's different:
   your message with you, but not delete it. Change who from the message's
   **⋯**.
 - **Forward**, in a message's **⋯**, sends its text and files to a channel,
-  DM or your notes, in this den or another you're in. It goes as your
-  message, marked **Forwarded**, with nothing of who wrote it or where, and
-  its mentions count where it goes. Its files count toward your space there.
-  Nobody edits a forward, and polls don't forward.
+  DM or your notes, in this den or another you're in, and its mentions count
+  where it goes. A forward from a text channel links back to its channel and
+  message by ID alone (sealed inside a DM or notes) so members who can see it
+  can jump there, while forwards from a DM or notes carry no link and nobody
+  sees the original author or den address. Its files count toward your space
+  there; nobody edits a forward, and polls don't forward.
 - A message holds up to 4,000 characters, and one taller than about 16 lines
   shows folded until it's opened.
 
