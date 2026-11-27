@@ -113,8 +113,9 @@ type Card struct {
 	// Shots is how many screenshots the card steps through, all for all
 	// ages.
 	Shots int `json:"shots,omitempty"`
-	// Trailer reports whether the app has a primary all-ages DASH trailer
-	// the member can play on click.
+	// Trailer reports whether the app has a primary DASH trailer the member
+	// can play on click: all-ages first, or a mature highlight on an adult app
+	// whose card stays covered until shown.
 	Trailer bool `json:"trailer,omitempty"`
 }
 
@@ -385,14 +386,17 @@ type storeItem struct {
 		} `json:"all_ages_screenshots"`
 	} `json:"screenshots"`
 	Trailers struct {
-		Highlights []struct {
-			AllAges  bool `json:"all_ages"`
-			Adaptive []struct {
-				Encoding string `json:"encoding"`
-				CDNPath  string `json:"cdn_path"`
-			} `json:"adaptive_trailers"`
-		} `json:"highlights"`
+		Highlights []storeTrailer `json:"highlights"`
+		Other      []storeTrailer `json:"other_trailers"`
 	} `json:"trailers"`
+}
+
+type storeTrailer struct {
+	AllAges  bool `json:"all_ages"`
+	Adaptive []struct {
+		Encoding string `json:"encoding"`
+		CDNPath  string `json:"cdn_path"`
+	} `json:"adaptive_trailers"`
 }
 
 type storeTag struct {
@@ -505,10 +509,7 @@ func checkItem(app string, s storeItem) (item, error) {
 		}
 	}
 	c.Shots = len(it.shots)
-	for _, h := range s.Trailers.Highlights {
-		if !h.AllAges {
-			continue
-		}
+	trailerPaths := func(h storeTrailer) map[string]string {
 		paths := map[string]string{}
 		for _, a := range h.Adaptive {
 			var enc string
@@ -524,9 +525,31 @@ func checkItem(app string, s storeItem) (item, error) {
 				paths[enc] = p
 			}
 		}
-		if len(paths) > 0 {
+		return paths
+	}
+	for _, h := range s.Trailers.Highlights {
+		if !h.AllAges {
+			continue
+		}
+		if paths := trailerPaths(h); len(paths) > 0 {
 			it.trailers = paths
 			break
+		}
+	}
+	// An app already behind the adults-only cover may mark all of its
+	// trailers as not all-ages; fall back to its first valid trailer only
+	// when the card is covered.
+	if len(it.trailers) == 0 && c.Adult {
+		for _, list := range [][]storeTrailer{s.Trailers.Highlights, s.Trailers.Other} {
+			for _, h := range list {
+				if paths := trailerPaths(h); len(paths) > 0 {
+					it.trailers = paths
+					break
+				}
+			}
+			if len(it.trailers) > 0 {
+				break
+			}
 		}
 	}
 	c.Trailer = len(it.trailers) > 0
