@@ -12,7 +12,7 @@ import { EmojiContext, useDenEmoji } from './denemoji.jsx';
 import { onConnection, onEvent, sendTyping, showChannel } from '../core/events.js';
 import { openManage, openSettings } from '../ui/dialogs.js';
 import { Actions, Button, ErrorText, Notice, StatusText, Tip, useNotifications } from '../ui/components.jsx';
-import { BellIcon, ChevronIcon as OpenIcon, CogIcon, HashIcon, ICON, LockIcon, MenuIcon, PlusIcon, ShieldIcon, SpeakerIcon } from '../ui/icons.jsx';
+import { BellIcon, ChevronIcon as OpenIcon, CogIcon, HashIcon, ICON, LockIcon, MenuIcon, PlusIcon, ShieldIcon, SpeakerIcon, TagIcon } from '../ui/icons.jsx';
 import { MenuButton, RowMenu, ownsMenu, rightClick, underOf } from '../ui/menus.jsx';
 import { compareIds, unread } from '../core/ids.js';
 import { Markdown, Preview, firstLine } from './markdown.jsx';
@@ -24,6 +24,8 @@ import { levelMenu, levelOf, mutedIn, notifying, setLevel, withdraw } from '../c
 import { showsOffline } from '../core/offline.js';
 import { ChannelDialog, GroupDialog } from '../manage.jsx';
 import { EditProfile, MemberList, ProfileCard, ProfilePanel, RemoveMember, isStaff } from '../people.jsx';
+import { MemberRolesDialog } from '../roles.jsx';
+import { roleTipText } from '../core/roles.js';
 import { NO_CALLS, canCall } from '../core/platform.js';
 import { dmGate, isNotes, isPrivate, notesGate, ownNotes, partnerOf } from '../private/private.js';
 import { CodesDialog, HiddenRequests, VerifiedMark } from '../private/private.jsx';
@@ -73,9 +75,11 @@ const NEW_DEVICE_SHOWN = 60000;
 // Changes to these reload the den's state rather than being applied here,
 // the den's emoji among them.
 const STRUCTURAL = new Set([
-    'den.updated', 'member.joined', 'member.updated', 'member.left', 'channel.created', 'channel.updated', 'channel.deleted',
+    'den.updated', 'member.joined', 'member.updated', 'member.left', 'member.roles',
+    'channel.created', 'channel.updated', 'channel.deleted',
     'channels.reordered', 'group.created', 'group.updated', 'group.deleted', 'groups.reordered',
     'emoji.created', 'emoji.updated', 'emoji.deleted',
+    'role.created', 'role.updated', 'role.deleted',
 ]);
 
 function stored(key) {
@@ -698,7 +702,7 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                             </>
                         ) : channel ? (
                             <>
-                                <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} elsewhere={elsewhere}
+                                <ChannelHeader key={channel.id} channel={channel} dm={dm} me={view.me} roles={view.roles} elsewhere={elsewhere}
                                     verified={!!(dm && view.identities?.[dm.id]?.verified)} onCompare={() => dm && setDialog({ kind: 'codes', member: dm })}
                                     online={dm && online.has(dm.id)} membersOpen={!at && membersOpen}
                                     muted={bells ? muted.channels.has(channel.id) : null} onMute={(on) => mute(channel.id, on)}
@@ -768,7 +772,8 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                             </div>
                             {channel?.kind === 'dm' ? (
                                 dm && <ProfilePanel key={dm.id} denID={denID} member={dm} me={view.me} online={online.has(dm.id)}
-                                    kept={view.keeps_identities ? view.identities?.[dm.id] || {} : null} onCompare={() => setDialog({ kind: 'codes', member: dm })}
+                                    kept={view.keeps_identities ? view.identities?.[dm.id] || {} : null} roles={view.roles}
+                                    onCompare={() => setDialog({ kind: 'codes', member: dm })}
                                     expiry={view.disappearing && !dm.left_at && !gone ? channel : null} />
                             ) : (
                                 <MemberList denID={denID} members={view.members} online={online} onProfile={openProfile}
@@ -776,9 +781,11 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                                         me: view.me,
                                         role: gone ? 'member' : view.role,
                                         identities: view.keeps_identities ? view.identities || {} : null,
+                                        hasRoles: !!view.has_roles && !gone,
                                         onMessage: message,
                                         onNotes: view.has_notes && !gone ? openNotes : null,
                                         onCompare: (m) => setDialog({ kind: 'codes', member: m }),
+                                        onRoles: (m) => setDialog({ kind: 'roles', member: m }),
                                         onEdit: () => setDialog({ kind: 'edit' }),
                                         onRemove: (m) => setDialog({ kind: 'remove', member: m }),
                                     }} />
@@ -798,14 +805,20 @@ export function Chat({ denID, channelID, pane, navigate, service }) {
                         me={view.me}
                         role={gone ? 'member' : view.role}
                         online={online.has(dialog.member.id)}
+                        roles={view.roles}
+                        hasRoles={!!view.has_roles && !gone}
                         onClose={() => setDialog(null)}
                         onMessage={message}
                         onNotes={view.has_notes && !gone ? openNotes : null}
                         kept={view.keeps_identities ? view.identities?.[dialog.member.id] || {} : null}
                         onCompare={(m) => setDialog({ kind: 'codes', member: m })}
+                        onRoles={(m) => setDialog({ kind: 'roles', member: m })}
                         onEdit={() => setDialog({ kind: 'edit' })}
                         onRemove={(m) => setDialog({ kind: 'remove', member: m })}
                     />
+                )}
+                {dialog?.kind === 'roles' && (
+                    <MemberRolesDialog denID={denID} member={members.get(dialog.member.id) || dialog.member} roles={view.roles || []} onClose={() => setDialog(null)} />
                 )}
                 {dialog?.kind === 'codes' && <CodesDialog denID={denID} member={members.get(dialog.member.id) || dialog.member} onClose={() => setDialog(null)} />}
                 {dialog?.kind === 'edit' && <EditProfile denID={denID} me={members.get(view.me.id) || view.me} limits={view.limits} nameStyles={!!view.name_styles} statuses={!!view.statuses}
@@ -1169,7 +1182,7 @@ export function staffMuted(view, call) {
     return !!c?.members.find((m) => m.id === view.me.id)?.staff_muted;
 }
 
-function applyReads(view, reads) {
+export function applyReads(view, reads) {
     const changed = new Map(reads.map((r) => [r.channel_id, r]));
     return { ...view, read_states: view.read_states.map((r) => changed.get(r.channel_id) || r) };
 }
@@ -1374,7 +1387,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, be
                         onClick={() => (voice ? openCall(denID, c.id, label) : onOpen(c.id))}
                         disabled={voice && gone}
                         title={voice ? (canCall() ? 'Join the call' : NO_CALLS) : undefined}
-                        aria-label={rowLabel(c.name, state, c.staff_only && 'staff only', isMuted && 'muted', isAll && 'all messages', mentions && `${mentions} mentions`)}
+                        aria-label={rowLabel(c.name, state, c.staff_only && 'staff only', c.role_ids?.length && 'role-restricted', isMuted && 'muted', isAll && 'all messages', mentions && `${mentions} mentions`)}
                     >
                         <span class={!inCall ? 'text-base-content/50' : state === 'connected' ? 'text-success' : 'text-warning'} data-call-state={state || undefined}>
                             {voice ? <SpeakerIcon size="h-4 w-4" /> : <HashIcon />}
@@ -1383,6 +1396,7 @@ function ChannelList({ denID, view, reads, members, open, staff, gone, muted, be
                     </button>
                     {isUnread && <UnreadPill />}
                     {c.staff_only && <Tip id={`staff-${c.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
+                    {c.role_ids?.length > 0 && <Tip id={`roles-${c.id}`} label="Role-restricted" trigger={<TagIcon />}>{roleTipText(c.role_ids, view.roles)}</Tip>}
                     {isMuted && <Tip id={`muted-${c.id}`} label="Muted" trigger={<BellIcon off size="h-3.5 w-3.5" />}>{MUTED}</Tip>}
                     {isAll && <Tip id={`all-${c.id}`} label="All messages" trigger={<BellIcon ring size="h-3.5 w-3.5" />}>{ALL_MESSAGES}</Tip>}
                     {mentions > 0 && <span class="badge badge-error badge-xs ml-1">{mentions}</span>}
@@ -1558,7 +1572,7 @@ function ChannelsButton({ elsewhere, onChannels }) {
 // more than fits. While anything notifies, a text channel's bell opens its
 // levels, level the one it's at, and a DM's mutes it: level and muted are
 // null otherwise.
-export function ChannelHeader({ channel, dm, me, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, level, onLevel,
+export function ChannelHeader({ channel, dm, me, roles, elsewhere, verified, onCompare, online, membersOpen, muted, onMute, level, onLevel,
     onChannels, onMembers, onProfile }) {
     const [expanded, setExpanded] = useState(false);
     const line = useRef(null);
@@ -1609,6 +1623,7 @@ export function ChannelHeader({ channel, dm, me, elsewhere, verified, onCompare,
                         <span class="text-base-content/50"><HashIcon /></span>
                         {channel.name}
                         {channel.staff_only && <Tip id={`header-staff-${channel.id}`} label="Staff only" trigger={<ShieldIcon />}>{STAFF_ONLY}</Tip>}
+                        {channel.role_ids?.length > 0 && <Tip id={`header-roles-${channel.id}`} label="Role-restricted" trigger={<TagIcon />}>{roleTipText(channel.role_ids, roles)}</Tip>}
                     </span>
                 )}
                 {channel.description && (

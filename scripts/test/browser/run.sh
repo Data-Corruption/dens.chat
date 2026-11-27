@@ -71,6 +71,11 @@
 #                               message and a channel; carol, a moderator, in BROWSER, reading each line in
 #                               Manage's Audit log, nothing of the message's words; and bob, a member, offered
 #                               neither section and refused the log
+#   roles BROWSER               alice, in Chromium, creating, renaming and assigning custom roles, gating
+#                               a text and a voice channel, and deleting a role with its fail-closed warning;
+#                               bob, in BROWSER, gaining and losing access, never learning hidden roles,
+#                               with role-filtered @ mentions, an immediate voice kick, audit lines and
+#                               a 390px phone layout check
 #   sounds BROWSER              the page's sounds in a call, as each change plays them, from
 #                               a file of the member's own, quieted and off, and a DM's sound, once
 #                               with the browser's popup, alone with DMs off, none muted or on screen
@@ -225,9 +230,10 @@
 #                               each pane, by the name the laptop was given; the digits typed both ways, and the laptop signed in
 #   steam BROWSER               Steam's cards against a stand-in for Steam: off until bob turns them on,
 #                               asking nothing; each game once, three to a message, none in code or a
-#                               spoiler; a sale's card in full, held to its size as it loads, its arrows
-#                               stepping through the screenshots; a free game, one coming, one Steam lacks;
-#                               and one for adults only, covered and unasked until shown
+#                               spoiler; Small (400 px stacked) by default and Medium/Large/Largest side
+#                               by side via Appearance; screenshots, primary fMP4 trailer playback with
+#                               zero CSP violations and one-at-a-time lock with YouTube; free, coming,
+#                               missing; and adults-only covered and unasked until shown
 #   review [PASS...] [-- PART...]  every screen for a review of the page, in Chromium at 1280 by 800
 #                               with a mouse and at 390 by 844 by touch, each on Dark and on Light: the phone
 #                               check's screens and those it lacks, a call with a share, the owner's, the first

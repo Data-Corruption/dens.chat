@@ -82,15 +82,18 @@ type RetentionPreview struct {
 // a bitrate, in bits a second, for its call's Opus. A member's notes name
 // that member alone, and have no name, group or position either.
 type Channel struct {
-	ID          string   `json:"id"`
-	GroupID     *string  `json:"group_id"`
-	Name        string   `json:"name"`
-	Description string   `json:"description,omitempty"`
-	Kind        string   `json:"kind"`
-	Position    int      `json:"position"`
-	StaffOnly   bool     `json:"staff_only"`
-	Members     []string `json:"members,omitempty"`
-	Bitrate     int      `json:"bitrate,omitempty"`
+	ID          string  `json:"id"`
+	GroupID     *string `json:"group_id"`
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	Kind        string  `json:"kind"`
+	Position    int     `json:"position"`
+	StaffOnly   bool    `json:"staff_only"`
+	// RoleIDs are the custom roles that can see this channel (alongside
+	// staff), empty when visible to everyone or staff only.
+	RoleIDs []string `json:"role_ids,omitempty"`
+	Members []string `json:"members,omitempty"`
+	Bitrate int      `json:"bitrate,omitempty"`
 	// ExpiresAfter is how long, in seconds, a DM's messages stay after
 	// they're sent, 0 while they stay, and ExpiresSet who last set it and
 	// when, once anyone has.
@@ -185,12 +188,15 @@ type ReadState struct {
 	Closed       bool   `json:"closed,omitempty"`
 }
 
-// MessageDeleted names a deleted message, and the files that went with
-// it, so clients drop them from their caches.
+// MessageDeleted names a deleted message, the files that went with it,
+// so clients drop them from their caches, and LastMessage, the newest
+// message left in its channel, or "" once none is left; an older den
+// omits LastMessage.
 type MessageDeleted struct {
-	ID        string   `json:"id"`
-	ChannelID string   `json:"channel_id"`
-	Files     []string `json:"files,omitempty"`
+	ID          string   `json:"id"`
+	ChannelID   string   `json:"channel_id"`
+	Files       []string `json:"files,omitempty"`
+	LastMessage *string  `json:"last_message_id,omitempty"`
 }
 
 type ChannelDeleted struct {
@@ -275,13 +281,14 @@ type ReadRequest struct {
 // ChannelRequest creates or changes a channel. On a change, nil fields stay
 // as they are; GroupID "" moves the channel out of any group.
 type ChannelRequest struct {
-	Name        *string `json:"name,omitempty"`
-	Description *string `json:"description,omitempty"`
-	Kind        string  `json:"kind,omitempty"`
-	GroupID     *string `json:"group_id,omitempty"`
-	Position    *int    `json:"position,omitempty"`
-	StaffOnly   *bool   `json:"staff_only,omitempty"`
-	Bitrate     *int    `json:"bitrate,omitempty"` // a voice channel's
+	Name        *string   `json:"name,omitempty"`
+	Description *string   `json:"description,omitempty"`
+	Kind        string    `json:"kind,omitempty"`
+	GroupID     *string   `json:"group_id,omitempty"`
+	Position    *int      `json:"position,omitempty"`
+	StaffOnly   *bool     `json:"staff_only,omitempty"`
+	RoleIDs     *[]string `json:"role_ids,omitempty"`
+	Bitrate     *int      `json:"bitrate,omitempty"` // a voice channel's
 }
 
 type GroupRequest struct {

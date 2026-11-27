@@ -51,6 +51,18 @@ test('Move to lists the voice channels a member could join but their own, in the
     assert.deepEqual(names(moveTargets(view, { role: 'moderator' }, '2')), ['Staff', 'Raid']);
     assert.deepEqual(names(moveTargets(view, { role: 'owner' }, '4')), ['Lounge', 'Raid']);
     assert.deepEqual(names(moveTargets(view, undefined, '5')), ['Lounge']);
+    // Role-restricted voice channels accept staff and members holding a listed role.
+    const gated = {
+        ...view,
+        channels: [
+            ...view.channels,
+            { id: '6', kind: 'voice', name: 'Raiders Only', group_id: 'g2', position: 1, role_ids: ['10', '11'] },
+        ],
+    };
+    assert.deepEqual(names(moveTargets(gated, { role: 'member' }, '2')), ['Raid']);
+    assert.deepEqual(names(moveTargets(gated, { role: 'member', role_ids: ['99'] }, '2')), ['Raid']);
+    assert.deepEqual(names(moveTargets(gated, { role: 'member', role_ids: ['11'] }, '2')), ['Raid', 'Raiders Only']);
+    assert.deepEqual(names(moveTargets(gated, { role: 'moderator' }, '2')), ['Staff', 'Raid', 'Raiders Only']);
 });
 
 test("a drag says what it carries by its types, and anything else, as files, is none of Dens's", () => {

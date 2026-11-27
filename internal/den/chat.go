@@ -52,12 +52,16 @@ type membersCursor struct {
 // build's version of the protocol. With a cursor the den can still answer
 // from, its members are only those changed since.
 func (d *Den) snapshot(ctx context.Context, member int64, staff bool, seq uint64, mc *membersCursor) (denproto.Ready, error) {
-	return d.snapshotAt(ctx, member, staff, denproto.Version, seq, mc)
+	roles, err := d.memberRoleMask(ctx, d.db, member)
+	if err != nil {
+		return denproto.Ready{}, err
+	}
+	return d.snapshotAt(ctx, member, staff, roles, denproto.Version, seq, mc)
 }
 
 // snapshotAt is snapshot for a client that speaks a version of the
 // protocol, which gets nothing of notes before 3.
-func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version int, seq uint64, mc *membersCursor) (denproto.Ready, error) {
+func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, rolesMask uint64, version int, seq uint64, mc *membersCursor) (denproto.Ready, error) {
 	r := denproto.Ready{Epoch: d.Hub.Epoch(), Seq: seq, Members: []denproto.Member{}, Groups: []denproto.Group{},
 		Channels: []denproto.Channel{}, ReadStates: []denproto.ReadState{}}
 	// The version comes first: a change made while the rest is read has a
@@ -81,30 +85,25 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 		return r, err
 	}
 	r.Den, _ = d.Info()
-	rows, err := d.db.QueryContext(ctx, `SELECT `+memberColumns+` FROM den_members ORDER BY id`)
-	if err != nil {
-		return r, err
-	}
-	for rows.Next() {
-		m, err := d.scanMember(rows.Scan)
-		if err != nil {
-			rows.Close()
-			return r, err
-		}
-		if m.ID == denproto.FormatID(member) {
-			r.Me = m
-		}
-		if id, _ := denproto.ParseID(m.ID); only == nil || only[id] {
-			r.Members = append(r.Members, m)
-		}
-	}
-	rows.Close()
 	r.Online = d.online()
-	r.Calls = d.visibleCalls(staff)
+	r.Calls = d.visibleCalls(staff, rolesMask)
 	if r.Groups, err = d.groups(ctx, d.db); err != nil {
 		return r, err
 	}
-	if r.Channels, err = d.channels(ctx, d.db, staff); err != nil {
+	var roles []denproto.Role
+	var mroles map[int64][]string
+	err = d.readTx(ctx, func(tx *sql.Tx) error {
+		var err error
+		if r.Channels, err = d.channels(ctx, tx, member, staff); err != nil {
+			return err
+		}
+		if roles, err = allRoles(ctx, tx); err != nil {
+			return err
+		}
+		mroles, err = allMemberRoles(ctx, tx)
+		return err
+	})
+	if err != nil {
 		return r, err
 	}
 	dms, err := d.dms(ctx, d.db, member)
@@ -118,6 +117,55 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 			return r, err
 		}
 		r.Channels = append(r.Channels, notes...)
+	}
+	visibleRoles := map[string]bool{}
+	if staff {
+		r.Roles = roles
+		for _, role := range roles {
+			visibleRoles[role.ID] = true
+		}
+	} else {
+		for _, ch := range r.Channels {
+			for _, rid := range ch.RoleIDs {
+				visibleRoles[rid] = true
+			}
+		}
+		for _, role := range roles {
+			if visibleRoles[role.ID] {
+				r.Roles = append(r.Roles, role)
+			}
+		}
+	}
+	// When the viewer can see custom roles, send the full member list so each
+	// member's filtered RoleIDs stays exact across channel or rank changes.
+	if len(r.Roles) > 0 {
+		r.Sync.MembersSince = nil
+		only = nil
+	}
+	rows, err := d.db.QueryContext(ctx, `SELECT `+memberColumns+` FROM den_members ORDER BY id`)
+	if err != nil {
+		return r, err
+	}
+	for rows.Next() {
+		m, err := d.scanMember(rows.Scan)
+		if err != nil {
+			rows.Close()
+			return r, err
+		}
+		id, _ := denproto.ParseID(m.ID)
+		if len(visibleRoles) > 0 {
+			m.RoleIDs = filterRoleIDs(mroles[id], visibleRoles)
+		}
+		if m.ID == denproto.FormatID(member) {
+			r.Me = m
+		}
+		if only == nil || only[id] {
+			r.Members = append(r.Members, m)
+		}
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return r, err
 	}
 	last, err := d.lastMessages(ctx, member, staff, version)
 	if err != nil {
@@ -196,10 +244,10 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, version 
 // Dens speaks notes. Each newest is a lookup of the (channel_id, id)
 // index, where max(id) GROUP BY channel_id would read every message in the
 // den, for each of the hundreds of snapshots a den restart sends at once.
-const newestSeen = `
+var newestSeen = `
 	SELECT c.id AS id, (SELECT max(m.id) FROM den_messages m WHERE m.channel_id = c.id) AS newest
 	FROM den_channels c
-	WHERE (c.kind = 'text' AND (c.staff_only = 0 OR ?1)) OR (c.kind = 'dm' AND (c.dm_low = ?2 OR c.dm_high = ?2))
+	WHERE (c.kind = 'text' AND ` + channelVisibleSQL("?1", "?2") + `) OR (c.kind = 'dm' AND (c.dm_low = ?2 OR c.dm_high = ?2))
 		OR (?3 AND c.kind = 'notes' AND c.notes_of = ?2)`
 
 // lastMessages returns the newest message in each channel and DM a member
@@ -278,9 +326,9 @@ func scanChannel(scan func(...any) error) (denproto.Channel, error) {
 }
 
 // channels lists the channels a member can see, without DMs.
-func (d *Den) channels(ctx context.Context, q querier, staff bool) ([]denproto.Channel, error) {
-	return d.queryChannels(ctx, q, `SELECT `+channelColumns+` FROM den_channels
-		WHERE kind IN ('text', 'voice') AND (staff_only = 0 OR ?) ORDER BY coalesce(group_id, 0), position, id`, staff)
+func (d *Den) channels(ctx context.Context, q querier, member int64, staff bool) ([]denproto.Channel, error) {
+	return d.queryChannels(ctx, q, `SELECT `+channelColumns+` FROM den_channels c
+		WHERE c.kind IN ('text', 'voice') AND `+channelVisibleSQL("?1", "?2")+` ORDER BY coalesce(c.group_id, 0), c.position, c.id`, staff, member)
 }
 
 // dms lists a member's DMs.
@@ -294,16 +342,37 @@ func (d *Den) queryChannels(ctx context.Context, q querier, query string, args .
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
 	out := []denproto.Channel{}
+	var ids []int64
 	for rows.Next() {
 		c, err := scanChannel(rows.Scan)
 		if err != nil {
+			rows.Close()
 			return nil, err
+		}
+		if c.Kind == denproto.KindText || c.Kind == denproto.KindVoice {
+			if id, err := denproto.ParseID(c.ID); err == nil {
+				ids = append(ids, id)
+			}
 		}
 		out = append(out, c)
 	}
-	return out, rows.Err()
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(ids) > 0 {
+		roleMap, err := channelRoleIDs(ctx, q, ids)
+		if err != nil {
+			return nil, err
+		}
+		for i := range out {
+			if id, err := denproto.ParseID(out[i].ID); err == nil {
+				out[i].RoleIDs = roleMap[id]
+			}
+		}
+	}
+	return out, nil
 }
 
 // channel reads a channel.
@@ -312,7 +381,17 @@ func (d *Den) channel(ctx context.Context, q querier, id int64) (denproto.Channe
 	if errors.Is(err, sql.ErrNoRows) {
 		return c, errChannelNotFound
 	}
-	return c, err
+	if err != nil {
+		return c, err
+	}
+	if c.Kind == denproto.KindText || c.Kind == denproto.KindVoice {
+		roleMap, err := channelRoleIDs(ctx, q, []int64{id})
+		if err != nil {
+			return c, err
+		}
+		c.RoleIDs = roleMap[id]
+	}
+	return c, nil
 }
 
 // visibleChannel returns a channel the session can see, or not found.
@@ -325,49 +404,27 @@ func (d *Den) visibleChannel(ctx context.Context, s *Session, id string) (denpro
 	if err != nil {
 		return c, 0, err
 	}
-	if !sees(c, s) {
+	ok, err := d.sees(ctx, d.db, c, s)
+	if err != nil {
+		return c, 0, err
+	}
+	if !ok {
 		return c, 0, errChannelNotFound
 	}
 	return c, cid, nil
 }
 
-// visible reports whether a member can see a channel: a DM only its two
-// members, notes only their member, a staff-only channel only staff, and
-// any other channel anyone.
+// visible reports whether a member without custom roles can see a channel: a
+// DM only its two members, notes only their member, a staff-only or
+// role-gated channel only staff, and any other channel anyone.
 func visible(c denproto.Channel, member int64, staff bool) bool {
 	switch {
 	case isPrivate(c):
 		return slices.Contains(c.Members, denproto.FormatID(member))
-	case c.StaffOnly:
+	case c.StaffOnly || len(c.RoleIDs) > 0:
 		return staff
 	}
 	return true
-}
-
-// sees reports whether a session sees a channel: one its member can see,
-// and notes only in a version of the protocol with them.
-func sees(c denproto.Channel, s *Session) bool {
-	return visible(c, s.MemberID, IsStaff(s.Role)) && s.Version >= kindVersion(c.Kind)
-}
-
-func audienceOf(c denproto.Channel) Audience {
-	switch {
-	case c.Kind == denproto.KindNotes:
-		// Their member alone; notes naming nobody, which the den never
-		// makes, reach nobody rather than falling through to everyone.
-		if len(c.Members) != 1 {
-			return nobody
-		}
-		member, _ := denproto.ParseID(c.Members[0])
-		return notesOf(member)
-	case c.Kind == denproto.KindDM && len(c.Members) == 2:
-		a, _ := denproto.ParseID(c.Members[0])
-		b, _ := denproto.ParseID(c.Members[1])
-		return Pair(a, b)
-	case c.StaffOnly:
-		return Staff
-	}
-	return Everyone
 }
 
 // Ordering --------------------------------------------------------------------
@@ -433,10 +490,12 @@ type reorderedList struct {
 	ids   []int64
 }
 
-// publishReorders announces channel lists twice: in full to staff, and
-// without staff-only channels to everyone else, so members never learn a
-// hidden channel exists.
-func (d *Den) publishReorders(ctx context.Context, lists []reorderedList) error {
+// publishReorders announces channel lists: in full to staff, and without
+// restricted (staff-only or role-gated) channels to non-staff so members never
+// learn a hidden channel exists. When refreshRoles is true and a reordered
+// list contains role-gated channels, non-staff holding those roles receive a
+// targeted snapshot so their channel order stays exact.
+func (d *Den) publishReorders(ctx context.Context, lists []reorderedList, refreshRoles bool) error {
 	hidden := map[int64]bool{}
 	rows, err := d.db.QueryContext(ctx, `SELECT id FROM den_channels WHERE staff_only = 1`)
 	if err != nil {
@@ -451,6 +510,27 @@ func (d *Den) publishReorders(ctx context.Context, lists []reorderedList) error 
 		hidden[id] = true
 	}
 	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	chanRoles := map[int64][]int64{}
+	rows, err = d.db.QueryContext(ctx, `SELECT channel_id, role_id FROM den_channel_roles`)
+	if err != nil {
+		return err
+	}
+	for rows.Next() {
+		var cid, rid int64
+		if err := rows.Scan(&cid, &rid); err != nil {
+			rows.Close()
+			return err
+		}
+		chanRoles[cid] = append(chanRoles[cid], rid)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	var roleMask uint64
 	for _, l := range lists {
 		var group *string
 		if l.group != nil {
@@ -460,7 +540,9 @@ func (d *Den) publishReorders(ctx context.Context, lists []reorderedList) error 
 		all, public := []string{}, []string{}
 		for _, id := range l.ids {
 			all = append(all, denproto.FormatID(id))
-			if !hidden[id] {
+			if rids := chanRoles[id]; len(rids) > 0 {
+				roleMask |= d.Hub.Mask(rids)
+			} else if !hidden[id] {
 				public = append(public, denproto.FormatID(id))
 			}
 		}
@@ -470,6 +552,9 @@ func (d *Den) publishReorders(ctx context.Context, lists []reorderedList) error 
 		if err := d.Hub.Publish(denproto.EventChannelsReordered, denproto.ChannelsReordered{GroupID: group, ChannelIDs: public}, NonStaff); err != nil {
 			return err
 		}
+	}
+	if refreshRoles && roleMask != 0 {
+		d.Hub.RefreshChannelVisibility(false, false, roleMask, roleMask)
 	}
 	return nil
 }
@@ -544,6 +629,15 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 		description = *req.Description
 	}
 	staffOnly := req.StaffOnly != nil && *req.StaffOnly
+	var roleIDs []int64
+	if req.RoleIDs != nil {
+		if roleIDs, err = parseRoleIDs(*req.RoleIDs); err != nil {
+			return denproto.Channel{}, err
+		}
+	}
+	if staffOnly && len(roleIDs) > 0 {
+		return denproto.Channel{}, invalid("a staff-only channel takes no roles")
+	}
 	// A voice channel's call goes at the default bitrate unless staff set
 	// another; other channels have none.
 	var bitrate *int
@@ -564,6 +658,9 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 		if n >= denproto.MaxChannels {
 			return invalid("a den has at most %d channels", denproto.MaxChannels)
 		}
+		if err := checkRolesExist(ctx, tx, roleIDs); err != nil {
+			return err
+		}
 		res, err := tx.ExecContext(ctx, `INSERT INTO den_channels (group_id, name, description, kind, position, staff_only, created_at, bitrate)
 			VALUES (?, ?, ?, ?, 0, ?, ?, ?)`, group, *req.Name, description, kind, staffOnly, d.now().UnixMilli(), bitrate)
 		if err != nil {
@@ -572,6 +669,11 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 		id, err := res.LastInsertId()
 		if err != nil {
 			return err
+		}
+		if len(roleIDs) > 0 {
+			if err := setChannelRoles(ctx, tx, id, roleIDs); err != nil {
+				return err
+			}
 		}
 		ids, err := siblings(ctx, tx, group)
 		if err != nil {
@@ -590,10 +692,22 @@ func (d *Den) CreateChannel(ctx context.Context, s *Session, req denproto.Channe
 		return c, err
 	}
 	d.audited()
-	if err := d.Hub.Publish(denproto.EventChannelCreated, c, audienceOf(c)); err != nil {
+	if len(c.RoleIDs) > 0 {
+		// Non-staff holding one of the channel's roles may not yet have those
+		// roles in their snapshot, so give them a targeted refresh.
+		if err := d.Hub.Publish(denproto.EventChannelCreated, c, Staff); err != nil {
+			return c, err
+		}
+		if err := d.publishReorders(ctx, []reorderedList{{group, order}}, false); err != nil {
+			return c, err
+		}
+		d.Hub.RefreshChannelVisibility(false, false, 0, d.channelMask(c))
+		return c, nil
+	}
+	if err := d.Hub.Publish(denproto.EventChannelCreated, c, d.audienceOf(c)); err != nil {
 		return c, err
 	}
-	return c, d.publishReorders(ctx, []reorderedList{{group, order}})
+	return c, d.publishReorders(ctx, []reorderedList{{group, order}}, true)
 }
 
 // UpdateChannel changes a channel: its name, description, group,
@@ -616,6 +730,15 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 	group, err := d.checkChannelFields(ctx, req, before.Kind)
 	if err != nil {
 		return before, err
+	}
+	var roleIDs []int64
+	if req.RoleIDs != nil {
+		if roleIDs, err = parseRoleIDs(*req.RoleIDs); err != nil {
+			return before, err
+		}
+	}
+	if req.StaffOnly != nil && *req.StaffOnly && len(roleIDs) > 0 {
+		return before, invalid("a staff-only channel takes no roles")
 	}
 	var oldGroup *int64
 	if before.GroupID != nil {
@@ -641,7 +764,34 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 				return err
 			}
 		}
-		if req.StaffOnly != nil {
+		switch {
+		case req.StaffOnly != nil && *req.StaffOnly:
+			if _, err := tx.ExecContext(ctx, `UPDATE den_channels SET staff_only = 1 WHERE id = ?`, cid); err != nil {
+				return err
+			}
+			if err := setChannelRoles(ctx, tx, cid, nil); err != nil {
+				return err
+			}
+		case req.RoleIDs != nil && len(roleIDs) > 0:
+			if err := checkRolesExist(ctx, tx, roleIDs); err != nil {
+				return err
+			}
+			if _, err := tx.ExecContext(ctx, `UPDATE den_channels SET staff_only = 0 WHERE id = ?`, cid); err != nil {
+				return err
+			}
+			if err := setChannelRoles(ctx, tx, cid, roleIDs); err != nil {
+				return err
+			}
+		case req.RoleIDs != nil:
+			if err := setChannelRoles(ctx, tx, cid, nil); err != nil {
+				return err
+			}
+			if req.StaffOnly != nil {
+				if _, err := tx.ExecContext(ctx, `UPDATE den_channels SET staff_only = ? WHERE id = ?`, *req.StaffOnly, cid); err != nil {
+					return err
+				}
+			}
+		case req.StaffOnly != nil:
 			if _, err := tx.ExecContext(ctx, `UPDATE den_channels SET staff_only = ? WHERE id = ?`, *req.StaffOnly, cid); err != nil {
 				return err
 			}
@@ -700,27 +850,30 @@ func (d *Den) UpdateChannel(ctx context.Context, s *Session, id string, req denp
 	if before.Bitrate != after.Bitrate {
 		d.callBitrateChanged(after)
 	}
-	if before.StaffOnly != after.StaffOnly {
+	visChanged := before.StaffOnly != after.StaffOnly || !slices.Equal(before.RoleIDs, after.RoleIDs)
+	if visChanged {
 		d.channelChanged(after, false)
 		// Members who could see the channel lose it, or members who
-		// couldn't gain it with its history: a fresh snapshot covers both,
+		// couldn't gain it with its history: a targeted snapshot covers both,
 		// and its events, which follow it.
 		if err := d.Hub.Publish(denproto.EventChannelUpdated, after, Staff); err != nil {
 			return after, err
 		}
-		if err := d.publishReorders(ctx, lists); err != nil {
+		if err := d.publishReorders(ctx, lists, false); err != nil {
 			return after, err
 		}
 		if err := d.publishChannelEvents(ctx, cid); err != nil {
 			return after, err
 		}
-		d.Hub.RefreshNonStaff()
+		oldEveryone := !before.StaffOnly && len(before.RoleIDs) == 0
+		newEveryone := !after.StaffOnly && len(after.RoleIDs) == 0
+		d.Hub.RefreshChannelVisibility(oldEveryone, newEveryone, d.channelMask(before), d.channelMask(after))
 		return after, nil
 	}
-	if err := d.Hub.Publish(denproto.EventChannelUpdated, after, audienceOf(after)); err != nil {
+	if err := d.Hub.Publish(denproto.EventChannelUpdated, after, d.audienceOf(after)); err != nil {
 		return after, err
 	}
-	return after, d.publishReorders(ctx, lists)
+	return after, d.publishReorders(ctx, lists, true)
 }
 
 // DeleteChannel removes a channel and all its messages, and a voice
@@ -781,10 +934,20 @@ func (d *Den) DeleteChannel(ctx context.Context, s *Session, id string) error {
 	if err := d.publishGone(ctx, events); err != nil {
 		return err
 	}
-	if err := d.Hub.Publish(denproto.EventChannelDeleted, denproto.ChannelDeleted{ID: c.ID}, audienceOf(c)); err != nil {
+	if len(c.RoleIDs) > 0 {
+		if err := d.Hub.Publish(denproto.EventChannelDeleted, denproto.ChannelDeleted{ID: c.ID}, Staff); err != nil {
+			return err
+		}
+		if err := d.publishReorders(ctx, []reorderedList{{group, order}}, false); err != nil {
+			return err
+		}
+		d.Hub.RefreshChannelVisibility(false, false, d.channelMask(c), 0)
+		return nil
+	}
+	if err := d.Hub.Publish(denproto.EventChannelDeleted, denproto.ChannelDeleted{ID: c.ID}, d.audienceOf(c)); err != nil {
 		return err
 	}
-	return d.publishReorders(ctx, []reorderedList{{group, order}})
+	return d.publishReorders(ctx, []reorderedList{{group, order}}, true)
 }
 
 // Groups ----------------------------------------------------------------------
@@ -976,7 +1139,7 @@ func (d *Den) DeleteGroup(ctx context.Context, s *Session, id string) error {
 	if err := d.Hub.Publish(denproto.EventGroupDeleted, denproto.ChannelDeleted{ID: denproto.FormatID(gid)}, Everyone); err != nil {
 		return err
 	}
-	if err := d.publishReorders(ctx, []reorderedList{{nil, ungrouped}}); err != nil {
+	if err := d.publishReorders(ctx, []reorderedList{{nil, ungrouped}}, true); err != nil {
 		return err
 	}
 	return d.publishGroupOrder(groups)
@@ -1119,11 +1282,18 @@ func (d *Den) checkEditors(ctx context.Context, ids []string, c denproto.Channel
 		}
 		var role string
 		err = d.db.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ? AND left_at IS NULL AND banned_at IS NULL`, id).Scan(&role)
-		if errors.Is(err, sql.ErrNoRows) || err == nil && !visible(c, id, IsStaff(role)) {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, invalid("editors: member %s can't see this channel", s)
 		}
 		if err != nil {
 			return nil, err
+		}
+		ok, err := d.seesChannel(ctx, d.db, c, id, IsStaff(role))
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			return nil, invalid("editors: member %s can't see this channel", s)
 		}
 		out = append(out, id)
 	}
@@ -1506,7 +1676,7 @@ func (d *Den) Send(ctx context.Context, s *Session, channelID string, req denpro
 		}
 		m.Attachments = attached[id]
 	}
-	if err := d.Hub.Publish(denproto.EventMessageCreated, m, audienceOf(c)); err != nil {
+	if err := d.Hub.Publish(denproto.EventMessageCreated, m, d.audienceOf(c)); err != nil {
 		return m, err
 	}
 	for _, member := range reopened {
@@ -1617,6 +1787,35 @@ func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Chan
 		return nil, err
 	}
 	defer rows.Close()
+	var holders map[int64]bool
+	if len(c.RoleIDs) > 0 {
+		rids := make([]int64, 0, len(c.RoleIDs))
+		for _, s := range c.RoleIDs {
+			if id, err := denproto.ParseID(s); err == nil {
+				rids = append(rids, id)
+			}
+		}
+		holders = map[int64]bool{}
+		if len(rids) > 0 {
+			hrows, err := d.db.QueryContext(ctx, `SELECT DISTINCT member_id FROM den_member_roles WHERE role_id IN (?`+
+				strings.Repeat(", ?", len(rids)-1)+`)`, anys(rids)...)
+			if err != nil {
+				return nil, err
+			}
+			for hrows.Next() {
+				var mid int64
+				if err := hrows.Scan(&mid); err != nil {
+					hrows.Close()
+					return nil, err
+				}
+				holders[mid] = true
+			}
+			hrows.Close()
+			if err := hrows.Err(); err != nil {
+				return nil, err
+			}
+		}
+	}
 	var ids []int64
 	for rows.Next() {
 		var id int64
@@ -1624,7 +1823,10 @@ func (d *Den) mentionedMembers(ctx context.Context, text string, c denproto.Chan
 		if err := rows.Scan(&id, &role); err != nil {
 			return nil, err
 		}
-		if id != author && (!c.StaffOnly || IsStaff(role)) {
+		if id == author {
+			continue
+		}
+		if IsStaff(role) || (!c.StaffOnly && (holders == nil || holders[id])) {
 			ids = append(ids, id)
 		}
 	}
@@ -1815,7 +2017,7 @@ func (d *Den) Edit(ctx context.Context, s *Session, id string, req denproto.Edit
 	if req.Editors != nil {
 		m.Editors = formatIDs(editors)
 	}
-	return m, d.Hub.Publish(denproto.EventMessageUpdated, denproto.MessageUpdated{Message: m, Files: removed}, audienceOf(c))
+	return m, d.Hub.Publish(denproto.EventMessageUpdated, denproto.MessageUpdated{Message: m, Files: removed}, d.audienceOf(c))
 }
 
 // SetTask checks or unchecks task n of a message, for its author or one of
@@ -1874,7 +2076,7 @@ func (d *Den) SetTask(ctx context.Context, s *Session, id string, n int, req den
 		return m, err
 	}
 	m.Text, m.Revision = text, m.Revision+1
-	return m, d.Hub.Publish(denproto.EventMessageUpdated, m, audienceOf(c))
+	return m, d.Hub.Publish(denproto.EventMessageUpdated, m, d.audienceOf(c))
 }
 
 var errRaced = errors.New("the message changed during the edit")
@@ -1926,12 +2128,16 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 	// names the author, where the den keeps nothing else of them.
 	staffs := m.AuthorID != denproto.FormatID(s.MemberID)
 	var readers []reader
+	var last *string
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		var err error
 		if readers, err = readersOf(ctx, tx, []int64{mid}); err != nil {
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `DELETE FROM den_messages WHERE id = ?`, mid); err != nil {
+			return err
+		}
+		if last, err = channelLastMessage(ctx, tx, cid); err != nil {
 			return err
 		}
 		if err := passDeleted(ctx, tx, readers, map[int64][]int64{cid: {mid}}); err != nil {
@@ -1951,10 +2157,24 @@ func (d *Den) Delete(ctx context.Context, s *Session, id string) error {
 		d.audited()
 	}
 	d.files.remove(blobs)
-	if err := d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid]}, audienceOf(c)); err != nil {
+	if err := d.Hub.Publish(denproto.EventMessageDeleted, denproto.MessageDeleted{ID: m.ID, ChannelID: m.ChannelID, Files: files[mid], LastMessage: last}, d.audienceOf(c)); err != nil {
 		return err
 	}
 	return d.publishReaders(ctx, readers)
+}
+
+// channelLastMessage returns the newest message left in a channel, or ""
+// once none is left, for MessageDeleted.LastMessage.
+func channelLastMessage(ctx context.Context, q querier, channel int64) (*string, error) {
+	var maxID int64
+	if err := q.QueryRowContext(ctx, `SELECT coalesce(max(id), 0) FROM den_messages WHERE channel_id = ?`, channel).Scan(&maxID); err != nil {
+		return nil, err
+	}
+	var last string
+	if maxID > 0 {
+		last = denproto.FormatID(maxID)
+	}
+	return &last, nil
 }
 
 // reader is a member a message counted for in their unread count, in its

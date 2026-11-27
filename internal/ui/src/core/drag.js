@@ -67,14 +67,16 @@ export function groupDrop(view, id, { near, after = false }) {
 
 // moveTargets are the voice channels staff may move a member's call to,
 // in the list's order: every one but the call's own, from, and a
-// staff-only one only for a member who's staff, since the den moves a
-// member only where they could join.
+// staff-only or role-restricted one only for a member who can see it,
+// since the den moves a member only where they could join.
 export function moveTargets(view, member, from) {
     const staff = member?.role === 'owner' || member?.role === 'moderator';
+    const held = member?.role_ids || [];
+    const canJoin = (c) => staff || (!c.staff_only && (!c.role_ids?.length || held.some((r) => c.role_ids.includes(r))));
     const groups = [...view.groups].sort(byPosition);
     return [siblings(view, ''), ...groups.map((g) => siblings(view, g.id))]
         .flat()
-        .filter((c) => c.kind === 'voice' && c.id !== from && (staff || !c.staff_only));
+        .filter((c) => c.kind === 'voice' && c.id !== from && canJoin(c));
 }
 
 // channelMoves is what Move up and Move down in a channel's menu send the

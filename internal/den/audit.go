@@ -6,7 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/Data-Corruption/dens.chat/internal/denproto"
 )
@@ -104,6 +107,54 @@ func namedLine(kind string, s *Session, id int64, name, was string) auditLine {
 	return l
 }
 
+// auditValueMax matches denproto's maxAuditValueRunes (200) so comma-separated
+// lists of role or channel names always pass CheckAuditLine.
+const auditValueMax = 200
+
+// auditNames joins names with ", ", sorted case-insensitively, bounded to
+// auditValueMax runes with a " (+N more)" suffix when truncated.
+func auditNames(names []string) string {
+	if len(names) == 0 {
+		return ""
+	}
+	sorted := slices.Clone(names)
+	slices.SortFunc(sorted, func(a, b string) int {
+		if c := strings.Compare(strings.ToLower(a), strings.ToLower(b)); c != 0 {
+			return c
+		}
+		return strings.Compare(a, b)
+	})
+	full := strings.Join(sorted, ", ")
+	if utf8.RuneCountInString(full) <= auditValueMax {
+		return full
+	}
+	var b strings.Builder
+	used := 0
+	for i, name := range sorted {
+		rem := len(sorted) - i
+		suffix := fmt.Sprintf(" (+%d more)", rem)
+		add := name
+		if i > 0 {
+			add = ", " + name
+		}
+		nextRem := len(sorted) - i - 1
+		nextSuffix := ""
+		if nextRem > 0 {
+			nextSuffix = fmt.Sprintf(" (+%d more)", nextRem)
+		}
+		if used+utf8.RuneCountInString(add)+utf8.RuneCountInString(nextSuffix) > auditValueMax {
+			if i == 0 {
+				return fmt.Sprintf("%d items", len(sorted))
+			}
+			b.WriteString(suffix)
+			return b.String()
+		}
+		b.WriteString(add)
+		used += utf8.RuneCountInString(add)
+	}
+	return b.String()
+}
+
 // channelChanges lists what an update changed of a channel within q: its
 // name, description, visibility, bitrate or group, by its name.
 func channelChanges(ctx context.Context, q querier, before, after denproto.Channel) ([]denproto.AuditChange, error) {
@@ -116,6 +167,28 @@ func channelChanges(ctx context.Context, q querier, before, after denproto.Chann
 	}
 	if before.StaffOnly != after.StaffOnly {
 		out = append(out, denproto.AuditChange{Field: "staff_only", From: fmt.Sprint(before.StaffOnly), To: fmt.Sprint(after.StaffOnly)})
+	}
+	if !slices.Equal(before.RoleIDs, after.RoleIDs) {
+		var ids []int64
+		for _, s := range slices.Concat(before.RoleIDs, after.RoleIDs) {
+			if id, err := denproto.ParseID(s); err == nil && !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+		names, err := roleNamesMap(ctx, q, ids)
+		if err != nil {
+			return nil, err
+		}
+		label := func(list []string) string {
+			ns := make([]string, 0, len(list))
+			for _, s := range list {
+				if id, err := denproto.ParseID(s); err == nil && names[id] != "" {
+					ns = append(ns, names[id])
+				}
+			}
+			return auditNames(ns)
+		}
+		out = append(out, denproto.AuditChange{Field: "roles", From: label(before.RoleIDs), To: label(after.RoleIDs)})
 	}
 	if before.Bitrate != after.Bitrate {
 		out = append(out, denproto.AuditChange{Field: "bitrate", From: fmt.Sprint(before.Bitrate), To: fmt.Sprint(after.Bitrate)})

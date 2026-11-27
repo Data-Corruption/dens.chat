@@ -12,20 +12,24 @@ import (
 // SecurityHeaders sets a strict policy on every response: scripts, styles,
 // media and connections only from the page's own origin, no framing, no
 // referrer, and no MIME sniffing.
-func SecurityHeaders(next http.Handler) http.Handler { return securityHeaders(next, "'self'", "") }
-
-// PageSecurityHeaders sets the same policy on the client listener, which
-// serves the page, with WebAssembly allowed: the page compiles RNNoise
-// for calls. 'wasm-unsafe-eval' allows WebAssembly but not eval, so a
-// script on the page gains nothing it couldn't already do. Its one frame
-// is YouTube's player, for members who turn players on.
-func PageSecurityHeaders(next http.Handler) http.Handler {
-	return securityHeaders(next, "'self' 'wasm-unsafe-eval'", "https://www.youtube-nocookie.com")
+func SecurityHeaders(next http.Handler) http.Handler {
+	return securityHeaders(next, "'self'", "'self'", "")
 }
 
-func securityHeaders(next http.Handler, scriptSrc, frameSrc string) http.Handler {
+// PageSecurityHeaders sets the same policy on the client listener, which
+// serves the page, with WebAssembly allowed (RNNoise for calls) and blob:
+// media allowed (Steam trailers played via URL.createObjectURL(MediaSource),
+// which Chromium and Android WebView require). 'wasm-unsafe-eval' allows
+// WebAssembly but not eval, so a script on the page gains nothing it couldn't
+// already do. Its one frame is YouTube's player, for members who turn players
+// on.
+func PageSecurityHeaders(next http.Handler) http.Handler {
+	return securityHeaders(next, "'self' 'wasm-unsafe-eval'", "'self' blob:", "https://www.youtube-nocookie.com")
+}
+
+func securityHeaders(next http.Handler, scriptSrc, mediaSrc, frameSrc string) http.Handler {
 	csp := "default-src 'none'; script-src " + scriptSrc + "; style-src 'self'; " +
-		"img-src 'self' data:; media-src 'self'; font-src 'self'; connect-src 'self'; "
+		"img-src 'self' data:; media-src " + mediaSrc + "; font-src 'self'; connect-src 'self'; "
 	if frameSrc != "" {
 		csp += "frame-src " + frameSrc + "; "
 	}

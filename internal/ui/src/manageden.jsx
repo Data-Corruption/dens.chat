@@ -20,16 +20,17 @@ import { deletesNow, keptFor } from './core/retention.js';
 import { CALL_PRESETS, HEIGHTS, mbps, presetOf, uploadNeeded } from './voice/share.js';
 import { ManageSoundboard } from './voice/soundboard.jsx';
 import { AuditLog, Members } from './staff.jsx';
+import { RolesSection } from './roles.jsx';
 
 // sectionsFor lists the sections of a den's Manage a member sees, each
 // [id, name]: everything but General needs the den connected; Members,
-// Invites, Bans, the Audit log, the Soundboard and Emoji are staff's, and
-// Events and Limits the owner's.
+// Roles, Invites, Bans, the Audit log, the Soundboard and Emoji are
+// staff's, and Events and Limits the owner's.
 export function sectionsFor(den) {
     const list = [['general', 'General']];
     if (den.state !== 'connected') return list;
     if (rank(den.role) > 0) {
-        list.push(['members', 'Members'], ['invites', 'Invites'], ['bans', 'Bans'], ['audit', 'Audit log'], ['soundboard', 'Soundboard'], ['emoji', 'Emoji']);
+        list.push(['members', 'Members'], ['roles', 'Roles'], ['invites', 'Invites'], ['bans', 'Bans'], ['audit', 'Audit log'], ['soundboard', 'Soundboard'], ['emoji', 'Emoji']);
     }
     if (den.role === 'owner') list.push(['events', 'Events'], ['limits', 'Limits']);
     return list;
@@ -82,7 +83,7 @@ export function ManageDialog({ denID, section, onSection, onClose }) {
     }
     const toList = () => onSection('');
     useEffect(() => {
-        const escape = (e) => e.key === 'Escape' && (narrow && section ? toList() : close());
+        const escape = (e) => e.key === 'Escape' && !e.defaultPrevented && (narrow && section ? toList() : close());
         document.addEventListener('keydown', escape);
         return () => document.removeEventListener('keydown', escape);
     });
@@ -129,9 +130,11 @@ export function ManageDialog({ denID, section, onSection, onClose }) {
             </SectionsFrame>
         );
     }
-    // A den older than events has no limit for them to set, and one older
-    // than the audit log keeps none.
-    const sections = sectionsFor(den).filter(([id]) => (id !== 'events' || !view || view.event_limits) && (id !== 'audit' || !view || view.audit_log));
+    // A den older than events has no limit for them to set, one older than
+    // the audit log keeps none, and one older than custom roles has none.
+    const sections = sectionsFor(den).filter(([id]) => (id !== 'events' || !view || view.event_limits)
+        && (id !== 'audit' || !view || view.audit_log)
+        && (id !== 'roles' || !view || view.has_roles));
     let at = 'general';
     if (sections.find(([id]) => id === section)) at = section;
     else if (narrow && !section) at = '';
@@ -139,6 +142,8 @@ export function ManageDialog({ denID, section, onSection, onClose }) {
     let panel;
     if (at === 'members') {
         panel = view ? <Members denID={denID} view={view} role={den.role} onChanged={() => loadView().catch(() => {})} /> : <span class="loading loading-spinner"></span>;
+    } else if (at === 'roles') {
+        panel = view ? <RolesSection denID={denID} view={view} onChanged={() => loadView().catch(() => {})} /> : <span class="loading loading-spinner"></span>;
     } else if (at === 'audit') {
         panel = view ? <AuditLog denID={denID} view={view} /> : <span class="loading loading-spinner"></span>;
     } else if (at === 'invites') {

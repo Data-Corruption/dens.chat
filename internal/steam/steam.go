@@ -33,7 +33,7 @@ import (
 
 // Sites are the addresses Steam answers at.
 type sites struct {
-	items, price, players, tags, assets string
+	items, price, players, tags, assets, video string
 }
 
 var steamSites = sites{
@@ -42,11 +42,13 @@ var steamSites = sites{
 	players: "https://api.steampowered.com/ISteamUserStats/GetNumberOfCurrentPlayers/v1/",
 	tags:    "https://api.steampowered.com/IStoreService/GetTagList/v1/",
 	assets:  "https://shared.akamai.steamstatic.com/store_item_assets/",
+	video:   "https://video.akamai.steamstatic.com/store_trailers/",
 }
 
 const (
-	// An app's answer is about 5 KB, the tag list's 16 KB.
-	maxItems   = 256 << 10
+	// An app's answer with trailers can reach tens of KB on titles with
+	// many highlights; 1 MiB bounds it safely. The tag list is ~16 KB.
+	maxItems   = 1 << 20
 	maxTags    = 256 << 10
 	maxPrice   = 16 << 10
 	maxPlayers = 4 << 10
@@ -111,6 +113,9 @@ type Card struct {
 	// Shots is how many screenshots the card steps through, all for all
 	// ages.
 	Shots int `json:"shots,omitempty"`
+	// Trailer reports whether the app has a primary all-ages DASH trailer
+	// the member can play on click.
+	Trailer bool `json:"trailer,omitempty"`
 }
 
 // Reviews are an app's reviews as Steam sums them up: its score from 1,
@@ -140,10 +145,11 @@ type Price struct {
 
 // Lookup fetches cards' details and keeps them. Use New.
 type Lookup struct {
-	sites sites
-	fetch *lookup.Fetcher
-	cache *lookup.Cache
-	now   func() time.Time
+	sites    sites
+	fetch    *lookup.Fetcher
+	cache    *lookup.Cache
+	trailers *lookup.Cache
+	now      func() time.Time
 }
 
 // New returns a Lookup that asks Steam.
@@ -153,7 +159,11 @@ func New() *Lookup {
 
 func newLookup(s sites, transport http.RoundTripper) *Lookup {
 	l := &Lookup{sites: s, fetch: lookup.NewFetcher(transport, ErrUnavailable, ErrNotFound), now: time.Now}
-	l.cache = lookup.NewCache(ErrNotFound, func() time.Time { return l.now() })
+	now := func() time.Time { return l.now() }
+	l.cache = lookup.NewCache(ErrNotFound, now)
+	// Trailer manifests and chunks sit in their own 32 MiB cache so
+	// streaming video never evicts cards, headers or screenshots.
+	l.trailers = lookup.NewCacheWithLimit(ErrNotFound, now, trailerCacheBytes)
 	return l
 }
 
@@ -168,13 +178,14 @@ func appID(s string) bool {
 }
 
 // item is what Steam's store says of an app, checked, with the paths of
-// its pictures.
+// its pictures and primary trailer manifests.
 type item struct {
-	card   Card
-	header string
-	large  string
-	shots  []string
-	tags   []int
+	card     Card
+	header   string
+	large    string
+	shots    []string
+	trailers map[string]string
+	tags     []int
 	// sale is the discount the store runs in the US, and when it ends,
 	// which the price's discount takes where it's the same.
 	sale     int
@@ -373,6 +384,15 @@ type storeItem struct {
 			Filename string `json:"filename"`
 		} `json:"all_ages_screenshots"`
 	} `json:"screenshots"`
+	Trailers struct {
+		Highlights []struct {
+			AllAges  bool `json:"all_ages"`
+			Adaptive []struct {
+				Encoding string `json:"encoding"`
+				CDNPath  string `json:"cdn_path"`
+			} `json:"adaptive_trailers"`
+		} `json:"highlights"`
+	} `json:"trailers"`
 }
 
 type storeTag struct {
@@ -396,6 +416,7 @@ func (l *Lookup) fetchItem(ctx context.Context, app string) (any, int, error) {
 		"data_request": map[string]any{
 			"include_assets": true, "include_release": true, "include_platforms": true, "include_reviews": true,
 			"include_basic_info": true, "include_tag_count": 5, "include_ratings": true, "include_screenshots": true,
+			"include_trailers": true,
 		},
 	})
 	body, err := l.askJSON(ctx, l.sites.items+"?"+url.Values{"input_json": {string(input)}}.Encode(), maxItems)
@@ -424,6 +445,9 @@ func (l *Lookup) fetchItem(ctx context.Context, app string) (any, int, error) {
 	size := len(it.card.Name) + len(it.card.Developer) + len(it.card.Description) + len(it.card.ReleaseNote) + len(it.header) + len(it.large) + 8*len(it.tags)
 	for _, p := range it.shots {
 		size += len(p)
+	}
+	for k, p := range it.trailers {
+		size += len(k) + len(p)
 	}
 	return it, size, nil
 }
@@ -481,6 +505,31 @@ func checkItem(app string, s storeItem) (item, error) {
 		}
 	}
 	c.Shots = len(it.shots)
+	for _, h := range s.Trailers.Highlights {
+		if !h.AllAges {
+			continue
+		}
+		paths := map[string]string{}
+		for _, a := range h.Adaptive {
+			var enc string
+			switch a.Encoding {
+			case "dash_h264":
+				enc = "h264"
+			case "dash_av1":
+				enc = "av1"
+			default:
+				continue
+			}
+			if p := trailerPath(app, enc, a.CDNPath); p != "" {
+				paths[enc] = p
+			}
+		}
+		if len(paths) > 0 {
+			it.trailers = paths
+			break
+		}
+	}
+	c.Trailer = len(it.trailers) > 0
 	it.card = c
 	return it, nil
 }

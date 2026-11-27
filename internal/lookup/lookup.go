@@ -171,10 +171,11 @@ func Clean(s string, max int) string {
 }
 
 // Cache keeps what fetches found, the most recently used first, within a
-// budget of entries and bytes. Use NewCache.
+// budget of entries and bytes. Use NewCache or NewCacheWithLimit.
 type Cache struct {
-	final error
-	now   func() time.Time
+	final    error
+	now      func() time.Time
+	maxBytes int
 
 	mu      sync.Mutex
 	entries map[string]*list.Element
@@ -199,11 +200,27 @@ type call struct {
 	err   error
 }
 
-// NewCache returns a cache that keeps final, an answer that the thing
-// asked about isn't there, as long as a value; any other failure it keeps
-// a minute. now tells the time.
+// NewCache returns a cache with the default 16 MiB byte budget that keeps
+// final, an answer that the thing asked about isn't there, as long as a
+// value; any other failure it keeps a minute. now tells the time.
 func NewCache(final error, now func() time.Time) *Cache {
-	return &Cache{final: final, now: now, entries: map[string]*list.Element{}, order: list.New(), calls: map[string]*call{}}
+	return NewCacheWithLimit(final, now, maxBytes)
+}
+
+// NewCacheWithLimit returns a cache bounded to limit bytes (or the default
+// 16 MiB if limit is not positive).
+func NewCacheWithLimit(final error, now func() time.Time, limit int) *Cache {
+	if limit <= 0 {
+		limit = maxBytes
+	}
+	return &Cache{
+		final:    final,
+		now:      now,
+		maxBytes: limit,
+		entries:  map[string]*list.Element{},
+		order:    list.New(),
+		calls:    map[string]*call{},
+	}
 }
 
 // Get returns what's kept under key, or fetches it once for everyone who
@@ -257,7 +274,7 @@ func (c *Cache) store(e *entry) {
 	}
 	c.entries[e.key] = c.order.PushFront(e)
 	c.bytes += e.size
-	for c.bytes > maxBytes || c.order.Len() > maxEntries {
+	for c.bytes > c.maxBytes || c.order.Len() > maxEntries {
 		c.drop(c.order.Back())
 	}
 }

@@ -190,7 +190,7 @@ func TestNotesUnseenBeforeVersion3(t *testing.T) {
 			t.Errorf("a request at version %d opened notes: %v", v, err)
 		}
 	}
-	oldSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, denproto.GroupsVersion, "", 0)
+	oldSub, _, _, _ := f.d.Hub.SubscribeAt(bob.MemberID, false, 0, denproto.GroupsVersion, "", 0)
 	notes, err := f.d.OpenNotes(ctx, bob)
 	if err != nil {
 		t.Fatal(err)
@@ -217,7 +217,7 @@ func TestNotesUnseenBeforeVersion3(t *testing.T) {
 	for _, v := range []int{1, denproto.GroupsVersion} {
 		old := *bob
 		old.Version = v
-		snap, err := f.d.snapshotAt(ctx, bob.MemberID, false, v, 0, nil)
+		snap, err := f.d.snapshotAt(ctx, bob.MemberID, false, 0, v, 0, nil)
 		if err != nil {
 			t.Fatal(err)
 		}

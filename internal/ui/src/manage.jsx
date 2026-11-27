@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'preact/hooks';
 import { api } from './core/api.js';
 import { callLength } from './voice/calltimer.js';
-import { Actions, Button, ErrorText, Field, InSheet, Slider, SubmitButton, TextInput, Tip, Toggle, useAction, useBackdrop } from './ui/components.jsx';
+import { Actions, Button, Choices, ErrorText, Field, InSheet, Slider, SubmitButton, TextInput, Tip, Toggle, useAction, useBackdrop } from './ui/components.jsx';
 import { useLayer, useNarrow } from './core/nav.js';
 import { Handle, useDragDown } from './ui/sheet.jsx';
 
@@ -81,30 +81,53 @@ const BITRATE = { min: 16000, max: 128000, step: 8000, default: 96000 };
 // is its menu's, and the drag's.
 export function ChannelDialog({ denID, view, channel, group: inGroup, onClose }) {
     const editing = !!channel;
+    const hasRoles = !!view.has_roles;
     const [name, setName] = useState(channel?.name || '');
     const [kind, setKind] = useState(channel?.kind || 'text');
     const [description, setDescription] = useState(channel?.description || '');
     const [bitrate, setBitrate] = useState(channel?.bitrate || BITRATE.default);
     const [group, setGroup] = useState(channel?.group_id || inGroup || '');
-    const [staffOnly, setStaffOnly] = useState(channel?.staff_only || false);
+    const [mode, setMode] = useState(() => (channel?.staff_only ? 'staff' : (channel?.role_ids?.length ? 'roles' : 'everyone')));
+    const [roleIDs, setRoleIDs] = useState(() => new Set(channel?.role_ids || []));
     const save = useAction();
     const remove = useAction();
     const [confirmDelete, setConfirmDelete] = useState(false);
+    const roles = view.roles || [];
+
+    function toggleRole(id) {
+        setRoleIDs((prev) => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id);
+            else next.add(id);
+            return next;
+        });
+    }
 
     function submit(e) {
         e.preventDefault();
+        if (hasRoles && mode === 'roles' && roleIDs.size === 0) {
+            save.setError('Pick at least one role.');
+            return;
+        }
         save.run(async () => {
             if (!editing) {
-                await api.post(`/api/dens/${denID}/channels`, {
-                    name, kind, description: kind === 'text' ? description : undefined, group_id: group || undefined, staff_only: staffOnly,
+                const body = {
+                    name, kind, description: kind === 'text' ? description : undefined, group_id: group || undefined, staff_only: mode === 'staff',
                     bitrate: kind === 'voice' ? bitrate : undefined,
-                });
+                };
+                if (hasRoles && mode === 'roles') body.role_ids = [...roleIDs];
+                await api.post(`/api/dens/${denID}/channels`, body);
             } else {
                 const body = {};
                 if (name !== channel.name) body.name = name;
                 if (description !== (channel.description || '')) body.description = description;
                 if (group !== (channel.group_id || '')) body.group_id = group;
-                if (staffOnly !== channel.staff_only) body.staff_only = staffOnly;
+                const nextStaff = mode === 'staff';
+                const nextRoles = hasRoles && mode === 'roles' ? [...roleIDs].sort() : [];
+                const prevRoles = [...(channel.role_ids || [])].sort();
+                const rolesChanged = nextRoles.length !== prevRoles.length || nextRoles.some((id, i) => id !== prevRoles[i]);
+                if (nextStaff !== !!channel.staff_only) body.staff_only = nextStaff;
+                if (hasRoles && !nextStaff && rolesChanged) body.role_ids = nextRoles;
                 if (kind === 'voice' && bitrate !== channel.bitrate) body.bitrate = bitrate;
                 await api.patch(`/api/dens/${denID}/channels/${channel.id}`, body);
             }
@@ -144,10 +167,38 @@ export function ChannelDialog({ denID, view, channel, group: inGroup, onClose })
                         {view.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                     </select>
                 </Field>
-                <Toggle id="staff-only" label="Staff only" hint="Only moderators and the owner can see it." checked={staffOnly} onChange={setStaffOnly} />
+                {hasRoles ? (
+                    <div class="flex flex-col gap-2">
+                        <Choices label="Who can see this channel" name="channel-visibility" data="data-channel-visibility" choice={mode} onPick={setMode}
+                            choices={[['everyone', 'Everyone'], ['staff', 'Staff only'], ['roles', 'Selected roles']]} />
+                        <p class="text-xs text-base-content/70">
+                            {mode === 'staff' ? 'Only moderators and the owner can see it.'
+                                : mode === 'roles' ? 'Staff and members with any selected role can see it.'
+                                    : 'Every member of this den can see it.'}
+                        </p>
+                        {mode === 'roles' && (
+                            roles.length === 0 ? (
+                                <p class="text-sm text-base-content/70" data-no-roles>No roles yet. Create one in Manage → Roles first.</p>
+                            ) : (
+                                <div class="flex max-h-44 flex-col gap-1 overflow-y-auto rounded-box border border-base-300 p-2" role="group" aria-label="Allowed roles" data-channel-roles>
+                                    {roles.map((r) => (
+                                        <label key={r.id} class="flex cursor-pointer items-center gap-2 rounded px-2 py-1 hover:bg-base-200 pointer-coarse:min-h-11">
+                                            <input type="checkbox" class="checkbox checkbox-sm" checked={roleIDs.has(r.id)}
+                                                onChange={() => toggleRole(r.id)} data-channel-role={r.id} />
+                                            <span class="min-w-0 break-words text-sm">{r.name}</span>
+                                        </label>
+                                    ))}
+                                </div>
+                            )
+                        )}
+                    </div>
+                ) : (
+                    <Toggle id="staff-only" label="Staff only" hint="Only moderators and the owner can see it." checked={mode === 'staff'}
+                        onChange={(on) => setMode(on ? 'staff' : 'everyone')} />
+                )}
                 <ErrorText message={save.error} />
                 <Actions>
-                    <SubmitButton busy={save.busy}>{editing ? 'Save' : 'Create channel'}</SubmitButton>
+                    <SubmitButton busy={save.busy} disabled={hasRoles && mode === 'roles' && roleIDs.size === 0}>{editing ? 'Save' : 'Create channel'}</SubmitButton>
                     <Button kind="quiet" onClick={onClose}>Cancel</Button>
                 </Actions>
             </form>

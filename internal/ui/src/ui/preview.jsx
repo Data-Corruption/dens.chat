@@ -21,7 +21,7 @@ import { ShownColors } from '../appearance/names.jsx';
 import { useNarrow } from '../core/nav.js';
 import { RoleMark } from '../people.jsx';
 import { VerifiedMark } from '../private/private.jsx';
-import { MEDIA, PLAYERS, mediaBox, useShownSize } from '../appearance/sizes.js';
+import { MEDIA, PLAYERS, STEAM, mediaBox, useShownSize } from '../appearance/sizes.js';
 import { useStaffMarks } from './staffmarks.js';
 import { hexOf, variables } from '../appearance/themes.js';
 import { CallControls } from '../voice/voice.jsx';
@@ -76,6 +76,11 @@ function ChatSample({ at }) {
     const named = useFileNames();
     const photo = mediaBox(useShownSize(MEDIA));
     const player = mediaBox(useShownSize(PLAYERS));
+    const steamSize = useShownSize(STEAM);
+    const steamW = mediaBox(steamSize).w;
+    const steamShare = { small: 1, medium: 0.5625, large: 0.625, largest: 0.6875 }[steamSize] || 1;
+    const steamMediaW = steamW * steamShare;
+    const steamMediaH = (steamMediaW * 9) / 16;
     const messages = sampleMessages(at);
     return (
         <div class="pointer-events-none select-none px-2 pb-2 pt-1" style={backgroundStyle(background)} inert>
@@ -96,6 +101,15 @@ function ChatSample({ at }) {
                                 data-preview-player>
                                 <span class="absolute left-1/2 top-1/2 flex h-2/5 w-1/3 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-md bg-[#f00]">
                                     <svg viewBox="0 0 24 24" class="size-2/3 fill-white" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                                </span>
+                            </div>
+                            <div class={`flex overflow-hidden rounded border border-base-300 bg-base-200 ${steamSize === 'small' ? 'flex-col' : 'flex-row'}`}
+                                style={{ width: `${steamW / SCALE}px` }} data-preview-steam>
+                                <span class="shrink-0 bg-base-300" style={{ width: `${steamMediaW / SCALE}px`, height: `${steamMediaH / SCALE}px` }}></span>
+                                <span class="flex min-w-0 flex-1 flex-col gap-1 p-1.5" style={{ minHeight: `${202 / SCALE}px` }}>
+                                    <span class="h-1.5 w-3/4 rounded bg-base-content/35"></span>
+                                    <span class="h-1 w-1/2 rounded bg-base-content/20"></span>
+                                    <span class="mt-auto h-1.5 w-1/3 rounded bg-success/70"></span>
                                 </span>
                             </div>
                         </div>

@@ -117,11 +117,15 @@ func (d *Den) Changes(ctx context.Context, s *Session, since, upto int64) (denpr
 		return out, invalid("since and upto are versions and IDs, at least 0")
 	}
 	staff := IsStaff(s.Role)
+	rolesMask, err := d.memberRoleMask(ctx, d.db, s.MemberID)
+	if err != nil {
+		return out, err
+	}
 	type change struct {
 		id, ref, channel int64
 	}
 	var changes []change
-	err := d.readTx(ctx, func(tx *sql.Tx) error {
+	err = d.readTx(ctx, func(tx *sql.Tx) error {
 		state, err := syncState(ctx, tx)
 		if err != nil {
 			return err
@@ -165,7 +169,7 @@ func (d *Den) Changes(ctx context.Context, s *Session, since, upto int64) (denpr
 			ch, err := d.channel(ctx, d.db, c.channel)
 			switch {
 			case err == nil:
-				see = visible(ch, s.MemberID, staff) && s.Version >= kindVersion(ch.Kind)
+				see = d.visibleMask(ch, s.MemberID, staff, rolesMask) && s.Version >= kindVersion(ch.Kind)
 			case !errors.Is(err, errChannelNotFound):
 				return out, err
 			}

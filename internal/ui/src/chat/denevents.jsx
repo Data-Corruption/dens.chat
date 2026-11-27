@@ -23,7 +23,8 @@ import {
 } from './denevents.js';
 import { useLinkedEvent, markRead } from './eventlinks.jsx';
 import { upload, uploadAnimated } from './files.jsx';
-import { ShieldIcon, SpeakerIcon } from '../ui/icons.jsx';
+import { ShieldIcon, SpeakerIcon, TagIcon } from '../ui/icons.jsx';
+import { roleTipText } from '../core/roles.js';
 import { eventLinkTo } from './links.js';
 import { Dialog } from '../manage.jsx';
 import { Markdown, eventsIn } from './markdown.jsx';
@@ -205,6 +206,11 @@ function EventCard({ denID, view, e, members, now, tz, focused, voice, onProfile
                             {channel?.staff_only && (
                                 <Tip id={`event-staff-${e.id}`} label="Staff only" trigger={<ShieldIcon />}>
                                     Staff only: only moderators and the owner can see it.
+                                </Tip>
+                            )}
+                            {channel?.role_ids?.length > 0 && (
+                                <Tip id={`event-roles-${e.id}`} label="Role-restricted" trigger={<TagIcon />}>
+                                    {roleTipText(channel.role_ids, view.roles)}
                                 </Tip>
                             )}
                             {e.live && channel && (

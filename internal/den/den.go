@@ -103,6 +103,9 @@ type Den struct {
 	// calendar orders changes to events, the timer's among them, and their
 	// events.
 	calendar sync.Mutex
+	// roles orders custom role CRUD and member role updates. Always taken
+	// before calendar when both are needed.
+	roles sync.Mutex
 	// requests are sign-ins waiting for approval.
 	requests requests
 
@@ -244,7 +247,11 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
 		SoundLimits: sounds, EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, Away: true,
-		NameStyles: true, Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, DeviceNames: true, Status: true}
+		NameStyles: true, Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, DeviceNames: true, Status: true, Roles: true}
+	if err := d.loadRoleSlots(ctx); err != nil {
+		d.key.Close()
+		return nil, fmt.Errorf("load roles: %w", err)
+	}
 	if err := d.tidyFiles(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("tidy uploads: %w", err)
@@ -391,7 +398,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
 		EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, Away: true, NameStyles: true,
-		Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, DeviceNames: true, Status: true}
+		Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, DeviceNames: true, Status: true, Roles: true}
 	d.log.Infof("Den created")
 	return code, nil
 }

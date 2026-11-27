@@ -25,34 +25,38 @@ const (
 // The kinds of line the den writes. A newer den may write others, which a
 // client shows in words of its own.
 const (
-	AuditMemberRemoved    = "member.removed"
-	AuditBanLifted        = "ban.lifted"
-	AuditRoleChanged      = "role.changed"
-	AuditInviteCreated    = "invite.created"
-	AuditInviteRevoked    = "invite.revoked"
-	AuditChannelCreated   = "channel.created"
-	AuditChannelUpdated   = "channel.updated"
-	AuditChannelDeleted   = "channel.deleted"
-	AuditGroupCreated     = "group.created"
-	AuditGroupUpdated     = "group.updated"
-	AuditGroupDeleted     = "group.deleted"
-	AuditMessageDeleted   = "message.deleted"
-	AuditReactionsCleared = "reactions.cleared"
-	AuditCallDisconnected = "call.disconnected"
-	AuditCallMuted        = "call.muted"
-	AuditCallUnmuted      = "call.unmuted"
-	AuditCallMoved        = "call.moved"
-	AuditRecordReset      = "record.reset"
-	AuditEmojiAdded       = "emoji.added"
-	AuditEmojiRenamed     = "emoji.renamed"
-	AuditEmojiDeleted     = "emoji.deleted"
-	AuditSoundAdded       = "sound.added"
-	AuditSoundRenamed     = "sound.renamed"
-	AuditSoundDeleted     = "sound.deleted"
-	AuditEventUpdated     = "event.updated"
-	AuditEventCanceled    = "event.canceled"
-	AuditEventEnded       = "event.ended"
-	AuditDenUpdated       = "den.updated"
+	AuditMemberRemoved      = "member.removed"
+	AuditBanLifted          = "ban.lifted"
+	AuditRoleChanged        = "role.changed"
+	AuditInviteCreated      = "invite.created"
+	AuditInviteRevoked      = "invite.revoked"
+	AuditChannelCreated     = "channel.created"
+	AuditChannelUpdated     = "channel.updated"
+	AuditChannelDeleted     = "channel.deleted"
+	AuditGroupCreated       = "group.created"
+	AuditGroupUpdated       = "group.updated"
+	AuditGroupDeleted       = "group.deleted"
+	AuditMessageDeleted     = "message.deleted"
+	AuditReactionsCleared   = "reactions.cleared"
+	AuditCallDisconnected   = "call.disconnected"
+	AuditCallMuted          = "call.muted"
+	AuditCallUnmuted        = "call.unmuted"
+	AuditCallMoved          = "call.moved"
+	AuditRecordReset        = "record.reset"
+	AuditEmojiAdded         = "emoji.added"
+	AuditEmojiRenamed       = "emoji.renamed"
+	AuditEmojiDeleted       = "emoji.deleted"
+	AuditSoundAdded         = "sound.added"
+	AuditSoundRenamed       = "sound.renamed"
+	AuditSoundDeleted       = "sound.deleted"
+	AuditEventUpdated       = "event.updated"
+	AuditEventCanceled      = "event.canceled"
+	AuditEventEnded         = "event.ended"
+	AuditDenUpdated         = "den.updated"
+	AuditRoleCreated        = "role.created"
+	AuditRoleRenamed        = "role.renamed"
+	AuditRoleDeleted        = "role.deleted"
+	AuditMemberRolesChanged = "member.roles"
 )
 
 // AuditKinds lists the kinds of line the den writes.
@@ -62,6 +66,7 @@ var AuditKinds = []string{
 	AuditMessageDeleted, AuditReactionsCleared, AuditCallDisconnected, AuditCallMuted, AuditCallUnmuted, AuditCallMoved,
 	AuditRecordReset, AuditEmojiAdded, AuditEmojiRenamed, AuditEmojiDeleted, AuditSoundAdded, AuditSoundRenamed,
 	AuditSoundDeleted, AuditEventUpdated, AuditEventCanceled, AuditEventEnded, AuditDenUpdated,
+	AuditRoleCreated, AuditRoleRenamed, AuditRoleDeleted, AuditMemberRolesChanged,
 }
 
 // AuditLine is one of staff's acts: when, what, who did it and on whom,

@@ -59,7 +59,7 @@ func (d *Den) SetExpiry(ctx context.Context, s *Session, channelID string, req d
 		return c, nil
 	}
 	d.log.Infof("Member %d set channel %d's messages to disappear after %d seconds", s.MemberID, cid, req.ExpiresAfter)
-	return c, d.Hub.Publish(denproto.EventChannelUpdated, c, audienceOf(c))
+	return c, d.Hub.Publish(denproto.EventChannelUpdated, c, d.audienceOf(c))
 }
 
 // disappeared is a message the timer deleted: its ID, its channel and its
@@ -97,6 +97,7 @@ func (d *Den) deleteBatch(ctx context.Context) (int, error) {
 	var gone []disappeared
 	var blobs [][]byte
 	var readers []reader
+	lastByChannel := map[int64]*string{}
 	err := d.tx(ctx, func(tx *sql.Tx) error {
 		rows, err := tx.QueryContext(ctx, `SELECT id, channel_id FROM den_messages WHERE expires_at <= ? ORDER BY expires_at, id LIMIT ?`,
 			now.UnixMilli(), expireBatch)
@@ -145,6 +146,13 @@ func (d *Den) deleteBatch(ctx context.Context) (int, error) {
 			}
 			byChannel[g.channel] = append(byChannel[g.channel], g.id)
 		}
+		for ch := range byChannel {
+			last, err := channelLastMessage(ctx, tx, ch)
+			if err != nil {
+				return err
+			}
+			lastByChannel[ch] = last
+		}
 		return passDeleted(ctx, tx, readers, byChannel)
 	})
 	if err != nil || len(gone) == 0 {
@@ -170,7 +178,7 @@ func (d *Den) deleteBatch(ctx context.Context) (int, error) {
 			continue
 		}
 		errs = append(errs, d.Hub.Publish(denproto.EventMessageDeleted,
-			denproto.MessageDeleted{ID: denproto.FormatID(g.id), ChannelID: c.ID, Files: g.files}, audienceOf(*c)))
+			denproto.MessageDeleted{ID: denproto.FormatID(g.id), ChannelID: c.ID, Files: g.files, LastMessage: lastByChannel[g.channel]}, d.audienceOf(*c)))
 	}
 	errs = append(errs, d.publishReaders(ctx, readers))
 	return len(gone), errors.Join(errs...)

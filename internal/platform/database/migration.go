@@ -882,6 +882,46 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// Custom roles for channel visibility. A channel with rows in
+	// den_channel_roles is visible to staff and to members holding any listed
+	// role. When a voice channel is deleted, its ended events snapshot those
+	// roles into den_event_roles so their cards and badges keep their
+	// visibility.
+	m.Add("Channel roles", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_roles (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				name       TEXT NOT NULL,
+				created_at INTEGER NOT NULL, -- unix milliseconds
+				UNIQUE (name COLLATE NOCASE)
+			) STRICT;
+
+			CREATE TABLE den_member_roles (
+				member_id INTEGER NOT NULL REFERENCES den_members (id) ON DELETE CASCADE,
+				role_id   INTEGER NOT NULL REFERENCES den_roles (id) ON DELETE CASCADE,
+				PRIMARY KEY (member_id, role_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_member_roles_role ON den_member_roles (role_id);
+
+			CREATE TABLE den_channel_roles (
+				channel_id INTEGER NOT NULL REFERENCES den_channels (id) ON DELETE CASCADE,
+				role_id    INTEGER NOT NULL REFERENCES den_roles (id) ON DELETE CASCADE,
+				PRIMARY KEY (channel_id, role_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_channel_roles_role ON den_channel_roles (role_id);
+
+			CREATE TABLE den_event_roles (
+				event_id INTEGER NOT NULL REFERENCES den_events (id) ON DELETE CASCADE,
+				role_id  INTEGER NOT NULL REFERENCES den_roles (id) ON DELETE CASCADE,
+				PRIMARY KEY (event_id, role_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_event_roles_role ON den_event_roles (role_id);
+		`); err != nil {
+			return fmt.Errorf("add channel roles: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

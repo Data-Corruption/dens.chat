@@ -47,7 +47,7 @@ func (f *fixture) newChannel(s *Session, name string, req denproto.ChannelReques
 
 func (f *fixture) order(staff bool) string {
 	f.t.Helper()
-	cs, err := f.d.channels(context.Background(), f.db, staff)
+	cs, err := f.d.channels(context.Background(), f.db, 0, staff)
 	if err != nil {
 		f.t.Fatal(err)
 	}
@@ -79,7 +79,7 @@ func TestChannelOrdering(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cs, _ := f.d.channels(ctx, f.db, true)
+	cs, _ := f.d.channels(ctx, f.db, 0, true)
 	random := cs[2]
 	if _, err := f.d.UpdateChannel(ctx, owner, random.ID, denproto.ChannelRequest{GroupID: &g.ID}); err != nil {
 		t.Fatal(err)
@@ -393,7 +393,7 @@ func TestMarkAllRead(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	snap, err := f.d.snapshotAt(ctx, bob.MemberID, false, bob.Version, 0, nil)
+	snap, err := f.d.snapshotAt(ctx, bob.MemberID, false, 0, bob.Version, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -434,7 +434,7 @@ func TestMarkAllRead(t *testing.T) {
 			t.Errorf("bob heard of channel %s %d times", id, n)
 		}
 	}
-	snap, err = f.d.snapshotAt(ctx, bob.MemberID, false, bob.Version, 0, nil)
+	snap, err = f.d.snapshotAt(ctx, bob.MemberID, false, 0, bob.Version, 0, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

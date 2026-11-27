@@ -45,7 +45,7 @@ func (d *Den) OwnFiles(ctx context.Context, s *Session, after string) (denproto.
 		m.channel_id, CASE WHEN EXISTS (SELECT 1 FROM den_members WHERE avatar_id = f.id) THEN 'avatar'
 			WHEN EXISTS (SELECT 1 FROM den_members WHERE banner_id = f.id) THEN 'banner' ELSE '' END,
 		(SELECT e.id FROM den_events e LEFT JOIN den_channels c ON c.id = e.channel_id
-			WHERE e.banner_id = f.id AND (`+eventStaffOnly+` = 0 OR ?5)), coalesce(m.forwarded, 0)
+			WHERE e.banner_id = f.id AND `+eventVisibleSQL("?5", "?1")+`), coalesce(m.forwarded, 0)
 		FROM den_files f LEFT JOIN den_messages m ON m.id = f.message_id LEFT JOIN den_channels mc ON mc.id = m.channel_id
 		WHERE f.uploader_id = ?1 AND NOT EXISTS (SELECT 1 FROM den_named_files WHERE file_id = f.id)
 			AND (f.size + coalesce(f.thumb_size, 0), f.id) < (?2, ?3)

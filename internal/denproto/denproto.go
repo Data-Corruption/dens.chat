@@ -97,7 +97,7 @@ var codes = map[string]bool{
 	CodeEditConflict: true, CodeInviteInvalid: true, CodeTooLarge: true, CodeProtocolUnsupported: true,
 	CodeRateLimited: true, CodeDenNotCreated: true, CodeWrongPassword: true, CodeUnsupportedType: true,
 	CodeQuotaExceeded: true, CodeDenFull: true, CodeKeyExists: true, CodeNoOtherDevice: true, CodeChangesGone: true,
-	CodeSoundNameTaken: true, CodeEmojiNameTaken: true, CodeCallHeld: true, CodeCallFull: true,
+	CodeSoundNameTaken: true, CodeEmojiNameTaken: true, CodeCallHeld: true, CodeCallFull: true, CodeRoleNameTaken: true,
 }
 
 // KnownCode reports whether code is one of the protocol's error codes. A
@@ -342,6 +342,9 @@ type Den struct {
 	// PUT /api/me/status; a den older than them has neither route.
 	DeviceNames bool `json:"device_names,omitempty"`
 	Status      bool `json:"status,omitempty"`
+	// Roles says the den supports custom roles for channel visibility; an
+	// older den has no role routes and sends none.
+	Roles bool `json:"roles,omitempty"`
 }
 
 // Roles.
@@ -374,6 +377,9 @@ type Member struct {
 	NameStyle   NameStyle `json:"name_style,omitzero"`
 	Status      string    `json:"status,omitempty"`
 	StatusUntil int64     `json:"status_until,omitempty"`
+	// RoleIDs are the custom roles this member holds that the viewer can
+	// see, sorted by numeric ID.
+	RoleIDs []string `json:"role_ids,omitempty"`
 }
 
 // MemberProfile is a member as GET /api/members/{id} answers, for their
@@ -516,6 +522,9 @@ type Ready struct {
 	// The den's events to come and live that the member sees, live
 	// first and then by their start, each with the member's own mark.
 	Events []DenEvent `json:"events"`
+	// Roles are the custom roles the member can see: all of them for staff,
+	// or only those referenced by visible channels for non-staff, by name.
+	Roles []Role `json:"roles,omitempty"`
 }
 
 type Renew struct {

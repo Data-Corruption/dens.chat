@@ -30,6 +30,7 @@ import {
 } from './files.jsx';
 import { compareIds, newNonce } from '../core/ids.js';
 import { channelLinkTo, linkTo } from './links.js';
+import { canSeeChannel } from '../core/roles.js';
 import { OFFLINE_NOTE } from '../core/offline.js';
 import {
     PAGE, REACTIONS, SCREENS, WINDOW, atTail, farIds, fromPage, mergeIn, pageSize, replayed, withDelete, withExpired, withNewer, withOlder, withUpdate,
@@ -134,6 +135,18 @@ export function dividerAt(readPosition, lastMessage) {
     return readPosition && compareIds(lastMessage, readPosition) > 0 ? readPosition : '';
 }
 
+// readTarget is the message ID to mark read up to once the newest end of
+// a channel is on screen, or '' when nothing past readUpTo waits. Taking
+// the newer of the loaded tail and the read state's last_message_id clears
+// an older den's unread mark even when its newest message was deleted
+// before the channel opened, leaving older messages or none at all.
+export function readTarget(list, readUpTo, lastMessage) {
+    if (!list.loaded || list.hasNewer) return '';
+    const tail = list.messages.length ? list.messages[list.messages.length - 1].id : '';
+    const last = compareIds(lastMessage, tail) > 0 ? lastMessage : tail;
+    return compareIds(last, readUpTo) > 0 ? last : '';
+}
+
 // MessagePane shows a channel or DM. dm is the other member of a DM, and
 // keys the DM's keys; typing lists who is typing here; closed, when set,
 // says why nothing can be sent; limits are the den's upload limits, and
@@ -216,7 +229,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // the pages beyond what this computer kept don't load.
     const offlineRef = useRef(offline);
     offlineRef.current = offline;
+    const lastMessageRef = useRef(lastMessage || '');
+    lastMessageRef.current = lastMessage || '';
     const readUpTo = useRef(readPosition || '');
+    if (compareIds(readPosition, readUpTo.current) > 0) readUpTo.current = readPosition;
     const readTimer = useRef(null);
     const unsentRead = useRef('');
     const highlightTimer = useRef(null);
@@ -229,7 +245,7 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // candidates could edit a message here with its author: the members
     // who can see the channel, besides this one.
     const candidates = notes ? [] : [...members.values()]
-        .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : !channel.staff_only || isStaff(x.role)))
+        .filter((x) => x.id !== me.id && !x.left_at && (dm ? x.id === dm.id : canSeeChannel(channel, x)))
         .sort((a, b) => name(a).localeCompare(name(b)));
 
     // captureAnchor remembers where the topmost visible message sits, so
@@ -384,10 +400,9 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
     // screen. Updates go out at most every READ_EVERY, so a busy channel
     // costs the den one small write every few seconds, not one per message.
     function markRead() {
-        const l = listRef.current;
-        if (l.hasNewer || !atBottom.current || document.visibilityState !== 'visible' || !l.messages.length) return;
-        const last = l.messages[l.messages.length - 1].id;
-        if (compareIds(last, readUpTo.current) <= 0) return;
+        if (!atBottom.current || document.visibilityState !== 'visible') return;
+        const last = readTarget(listRef.current, readUpTo.current, lastMessageRef.current);
+        if (!last) return;
         unsentRead.current = last;
         if (!readTimer.current) readTimer.current = setTimeout(sendRead, READ_EVERY);
     }
@@ -399,6 +414,10 @@ export function MessagePane({ denID, denURL, channel, me, members, readPosition,
         readUpTo.current = id;
         api.put(`/api/dens/${denID}/channels/${channel.id}/read`, { message_id: id }).catch(() => {});
     }
+
+    useEffect(() => {
+        if (lastMessage) markRead();
+    }, [lastMessage]);
 
     // toggled hears that a folded message opened or folded back. The member
     // is reading it, so the list stops following the newest until it next

@@ -47,6 +47,7 @@ func (rt *router) mountDens(r chi.Router) {
 	rt.mountChat(r)
 	rt.mountNotify(r)
 	rt.mountMembers(r)
+	rt.mountRoles(r)
 	rt.mountFiles(r)
 	rt.mountDevices(r)
 	rt.mountSoundboard(r)
@@ -758,6 +759,8 @@ func denMessage(e *denproto.Error) string {
 		return "Another sound in this den has that name."
 	case denproto.CodeEmojiNameTaken:
 		return "Another emoji in this den has that name."
+	case denproto.CodeRoleNameTaken:
+		return "Another role in this den has that name."
 	case denproto.CodeRateLimited:
 		return "The den asked us to slow down. Try again in a minute."
 	case denproto.CodeProtocolUnsupported:

@@ -93,7 +93,7 @@ func TestResumeTakesOnlyTheDevice(t *testing.T) {
 	next(later, denproto.EventVoiceOffer)
 	later.requestClose(denproto.CloseRevoked, denproto.CloseReasonKeyRevoked)
 	f.d.socketClosed(later)
-	if c := f.d.socketCall(later); c != nil || len(f.d.visibleCalls(true)) != 0 {
+	if c := f.d.socketCall(later); c != nil || len(f.d.visibleCalls(true, 0)) != 0 {
 		t.Fatal("a socket closed for good left its call held")
 	}
 }

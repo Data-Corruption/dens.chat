@@ -54,7 +54,7 @@ it.
   about the first time it opens Dens: your IP address for each video whose
   cover shows, and which videos you play.
 - **To Steam**, only with Steam's link previews on: your IP address for each
-  game whose card shows.
+  game whose card shows, and which screenshots or trailers you play.
 
 That's all. There's no analytics or telemetry.
 

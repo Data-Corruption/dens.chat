@@ -89,6 +89,10 @@ type denState struct {
 	// nil from a den older than events.
 	events      map[string]denproto.DenEvent
 	eventLimits *denproto.EventLimits
+	// roles are the den's custom roles visible to this member, by ID, and
+	// hasRoles says the den supports custom roles at all.
+	roles    map[string]denproto.Role
+	hasRoles bool
 }
 
 // View is a joined den as the page sees it.
@@ -161,6 +165,10 @@ type View struct {
 	// which the page offers them by.
 	Events      []denproto.DenEvent   `json:"events"`
 	EventLimits *denproto.EventLimits `json:"event_limits"`
+	// Roles are the custom roles visible to this member, by name, and
+	// HasRoles says the den supports custom roles at all.
+	Roles    []denproto.Role `json:"roles"`
+	HasRoles bool            `json:"has_roles"`
 }
 
 // PageCall is a call as the page sees it: the den's, its length given as
@@ -209,7 +217,7 @@ func newState() *denState {
 		channels: map[string]denproto.Channel{}, kinds: map[string]string{}, reads: map[string]denproto.ReadState{}, online: map[string]bool{},
 		touched: map[string]bool{}, keys: map[string]denproto.DMKey{}, requests: map[string]denproto.DeviceRequest{},
 		signed: map[string]denproto.SignedKey{}, calls: map[string]denproto.Call{}, starts: map[string]int64{}, sounds: map[string]denproto.Sound{},
-		emoji: map[string]denproto.Emoji{}, events: map[string]denproto.DenEvent{}}
+		emoji: map[string]denproto.Emoji{}, events: map[string]denproto.DenEvent{}, roles: map[string]denproto.Role{}}
 }
 
 // takeTouched returns the read states that changed since the last call.
@@ -232,7 +240,7 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
 		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Events: sortedEvents(s.events),
 		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen, Forward: s.forward,
-		DeviceNames: s.deviceNames, Statuses: s.statuses}
+		DeviceNames: s.deviceNames, Statuses: s.statuses, Roles: sortedRoles(s.roles), HasRoles: s.hasRoles}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
 	}
@@ -293,6 +301,19 @@ func sortedEmoji(emoji map[string]denproto.Emoji) []denproto.Emoji {
 	return out
 }
 
+// sortedRoles lists the den's custom roles by name, in any case, as the den
+// lists them.
+func sortedRoles(roles map[string]denproto.Role) []denproto.Role {
+	out := slices.Collect(maps.Values(roles))
+	slices.SortFunc(out, func(a, b denproto.Role) int {
+		return cmp.Or(strings.Compare(strings.ToLower(a.Name), strings.ToLower(b.Name)), compareIDs(a.ID, b.ID))
+	})
+	if out == nil {
+		out = []denproto.Role{}
+	}
+	return out
+}
+
 func compareIDs(a, b string) int {
 	x, _ := denproto.ParseID(a)
 	y, _ := denproto.ParseID(b)
@@ -318,13 +339,13 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	}
 	if c.Kind == denproto.KindDM {
 		ok := len(c.Members) == 2 && validID(c.Members[0]) && validID(c.Members[1]) && c.Members[0] != c.Members[1] &&
-			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly && c.Bitrate == 0
+			c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly && len(c.RoleIDs) == 0 && c.Bitrate == 0
 		return c, ok && cleanExpiry(c)
 	}
 	if c.Kind == denproto.KindNotes {
 		// A member's notes name them alone, whom the state checks.
 		ok := len(c.Members) == 1 && validID(c.Members[0]) && c.GroupID == nil && c.Name == "" && c.Description == "" && !c.StaffOnly &&
-			c.Bitrate == 0 && c.ExpiresAfter == 0 && c.ExpiresSet == nil
+			len(c.RoleIDs) == 0 && c.Bitrate == 0 && c.ExpiresAfter == 0 && c.ExpiresSet == nil
 		return c, ok
 	}
 	if c.ExpiresAfter != 0 || c.ExpiresSet != nil {
@@ -334,6 +355,14 @@ func cleanChannel(c denproto.Channel) (denproto.Channel, bool) {
 	if err != nil || len(c.Members) != 0 || (c.GroupID != nil && !validID(*c.GroupID)) ||
 		(c.Kind != denproto.KindText && c.Kind != denproto.KindVoice) || denproto.CheckDescription(c.Description) != nil {
 		return c, false
+	}
+	if denproto.CheckRoleIDs(c.RoleIDs) != nil || (c.StaffOnly && len(c.RoleIDs) > 0) {
+		return c, false
+	}
+	if len(c.RoleIDs) == 0 {
+		c.RoleIDs = nil
+	} else {
+		c.RoleIDs = slices.Clone(c.RoleIDs)
 	}
 	// A voice channel's bitrate is one staff could set, and a text
 	// channel has none.
@@ -468,6 +497,49 @@ func cleanSounds(list []denproto.Sound) (map[string]denproto.Sound, bool) {
 	return out, true
 }
 
+// cleanRoles checks a den's custom roles: at most MaxRoles, each once and
+// with a case-insensitively unique name.
+func cleanRoles(list []denproto.Role) (map[string]denproto.Role, bool) {
+	if len(list) > denproto.MaxRoles {
+		return nil, false
+	}
+	out := map[string]denproto.Role{}
+	names := map[string]bool{}
+	for _, r := range list {
+		if denproto.CheckRole(r) != nil || out[r.ID] != (denproto.Role{}) {
+			return nil, false
+		}
+		key := strings.ToLower(r.Name)
+		if names[key] {
+			return nil, false
+		}
+		out[r.ID], names[key] = r, true
+	}
+	return out, true
+}
+
+func pruneRoleIDs(ids []string, roles map[string]denproto.Role) []string {
+	if len(ids) == 0 || len(roles) == 0 {
+		return nil
+	}
+	var out []string
+	for _, id := range ids {
+		if _, ok := roles[id]; ok {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
+func knownRoleIDs(ids []string, roles map[string]denproto.Role) bool {
+	for _, id := range ids {
+		if _, ok := roles[id]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
 // load replaces the state with a snapshot of the den with denID, which
 // arrived at now. Anything malformed in it is a protocol violation. A
 // snapshot that sends only the members changed since the client's list
@@ -494,6 +566,18 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.readAll = r.Den.ReadAll
 	next.relay, next.auditLog, next.membersSeen, next.forward = r.Den.Relay, r.Den.AuditLog, r.Den.MembersSeen, r.Den.Forward
 	next.deviceNames, next.statuses = r.Den.DeviceNames, r.Den.Status
+	next.hasRoles = r.Den.Roles
+	roles, ok := cleanRoles(r.Roles)
+	if !ok {
+		return errMalformed
+	}
+	next.roles = roles
+	if r.Sync.MembersSince != nil {
+		for id, m := range next.members {
+			m.RoleIDs = pruneRoleIDs(m.RoleIDs, next.roles)
+			next.members[id] = m
+		}
+	}
 	sounds, ok := cleanSounds(r.Sounds)
 	if !ok {
 		return errMalformed
@@ -511,7 +595,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.events, next.eventLimits = events, r.Den.EventLimits
 	for _, m := range r.Members {
 		m, ok := cleanMember(m)
-		if !ok || !validID(m.ID) {
+		if !ok || !validID(m.ID) || !knownRoleIDs(m.RoleIDs, next.roles) {
 			return errMalformed
 		}
 		next.members[m.ID] = m
@@ -530,7 +614,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 			continue
 		}
 		c, ok := cleanChannel(c)
-		if !ok || !next.keepsKind(c) {
+		if !ok || !next.keepsKind(c) || !knownRoleIDs(c.RoleIDs, next.roles) {
 			return errMalformed
 		}
 		next.channels[c.ID] = c
@@ -637,18 +721,20 @@ type keptState struct {
 	// The den's events to come and live that the member saw, each
 	// with their own mark, as the connection last knew them.
 	Events []denproto.DenEvent `json:"events,omitempty"`
+	// The custom roles visible to this member.
+	Roles []denproto.Role `json:"roles,omitempty"`
 }
 
 // kept returns the state as the cache keeps it, and its members.
 func (s *denState) kept() (keptState, []denproto.Member) {
 	k := keptState{Den: denproto.Den{Limits: s.limits, CallLimits: s.callLimits, Retention: s.retention, SoundLimits: s.soundLimits,
 		EmojiLimits: s.emojiLimits, EventLimits: s.eventLimits, SealedCalls: s.sealedCalls, Disappearing: s.disappearing, Spoilers: s.spoilers,
-		MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles},
+		MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Roles: s.hasRoles},
 		Groups: slices.Collect(maps.Values(s.groups)), Channels: slices.Collect(maps.Values(s.channels)),
 		Reads: slices.Collect(maps.Values(s.reads)), Keys: slices.Collect(maps.Values(s.keys)), SealCheck: s.sealCheck,
 		Sounds: slices.Collect(maps.Values(s.sounds)), Emoji: slices.Collect(maps.Values(s.emoji)),
 		SignedKeys: slices.Collect(maps.Values(s.signed)), Identities: s.identities, Notes: s.notes,
-		Events: sortedEvents(s.events), Kinds: maps.Clone(s.kinds)}
+		Events: sortedEvents(s.events), Roles: sortedRoles(s.roles), Kinds: maps.Clone(s.kinds)}
 	return k, slices.Collect(maps.Values(s.members))
 }
 
@@ -677,7 +763,12 @@ func restore(denID []byte, k keptState, members []denproto.Member) (*denState, e
 	s.limits, s.callLimits, s.retention, s.sealCheck = k.Den.Limits, k.Den.CallLimits, k.Den.Retention, k.SealCheck
 	s.soundLimits, s.sealedCalls, s.disappearing = k.Den.SoundLimits, k.Den.SealedCalls, k.Den.Disappearing
 	s.spoilers, s.moveMembers, s.away, s.nameStyles = k.Den.Spoilers, k.Den.MoveMembers, k.Den.Away, k.Den.NameStyles
-	s.readAll = k.Den.ReadAll
+	s.readAll, s.hasRoles = k.Den.ReadAll, k.Den.Roles
+	roles, ok := cleanRoles(k.Roles)
+	if !ok {
+		return nil, errMalformed
+	}
+	s.roles = roles
 	sounds, ok := cleanSounds(k.Sounds)
 	if !ok {
 		return nil, errMalformed
@@ -807,6 +898,10 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 					s.gone = append(s.gone, pic[0].ID) // replaced, so deleted
 				}
 			}
+			// member.updated goes to Everyone without RoleIDs; keep the visible ones.
+			if e.T == denproto.EventMemberUpdated && m.RoleIDs == nil {
+				m.RoleIDs = slices.Clone(old.RoleIDs)
+			}
 		}
 		s.members[m.ID] = m
 		data = m
@@ -822,11 +917,60 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 					s.gone = append(s.gone, pic.ID)
 				}
 			}
-			m.LeftAt, m.Role, m.Avatar, m.Banner = l.LeftAt, denproto.RoleMember, denproto.Image{}, denproto.Image{}
+			m.LeftAt, m.Role, m.Avatar, m.Banner, m.RoleIDs = l.LeftAt, denproto.RoleMember, denproto.Image{}, denproto.Image{}, nil
 			s.members[l.ID] = m
 		}
 		delete(s.online, l.ID)
 		data = l
+	case denproto.EventRoleCreated, denproto.EventRoleUpdated:
+		var role denproto.Role
+		if json.Unmarshal(e.D, &role) != nil || denproto.CheckRole(role) != nil {
+			return e, false, errMalformed
+		}
+		if _, ok := s.roles[role.ID]; !ok && len(s.roles) >= denproto.MaxRoles {
+			return e, false, errMalformed
+		}
+		s.roles[role.ID] = role
+		data = role
+	case denproto.EventRoleDeleted:
+		var d denproto.RoleDeleted
+		if json.Unmarshal(e.D, &d) != nil || !validID(d.ID) {
+			return e, false, errMalformed
+		}
+		delete(s.roles, d.ID)
+		for id, m := range s.members {
+			if slices.Contains(m.RoleIDs, d.ID) {
+				m.RoleIDs = slices.DeleteFunc(slices.Clone(m.RoleIDs), func(r string) bool { return r == d.ID })
+				if len(m.RoleIDs) == 0 {
+					m.RoleIDs = nil
+				}
+				s.members[id] = m
+			}
+		}
+		for id, ch := range s.channels {
+			if slices.Contains(ch.RoleIDs, d.ID) {
+				ch.RoleIDs = slices.DeleteFunc(slices.Clone(ch.RoleIDs), func(r string) bool { return r == d.ID })
+				if len(ch.RoleIDs) == 0 {
+					ch.RoleIDs = nil
+				}
+				s.channels[id] = ch
+			}
+		}
+		data = d
+	case denproto.EventMemberRolesUpdated:
+		var u denproto.MemberRoles
+		if json.Unmarshal(e.D, &u) != nil || !validID(u.MemberID) || denproto.CheckRoleIDs(u.RoleIDs) != nil {
+			return e, false, errMalformed
+		}
+		if m, ok := s.members[u.MemberID]; ok {
+			if len(u.RoleIDs) == 0 {
+				m.RoleIDs = nil
+			} else {
+				m.RoleIDs = slices.Clone(u.RoleIDs)
+			}
+			s.members[u.MemberID] = m
+		}
+		data = u
 	case denproto.EventPresence:
 		var p denproto.Presence
 		if json.Unmarshal(e.D, &p) != nil {
@@ -998,7 +1142,25 @@ func (s *denState) applyEvent(denID []byte, e denproto.Event, me denproto.Member
 				return e, false, errMalformed
 			}
 		}
+		if d.LastMessage != nil && *d.LastMessage != "" && !validID(*d.LastMessage) {
+			return e, false, errMalformed
+		}
 		s.gone = append(s.gone, d.Files...)
+		if d.LastMessage != nil {
+			r, ok := s.reads[d.ChannelID]
+			if !ok {
+				if c, known := s.channels[d.ChannelID]; known && hasMessages(c) {
+					r, ok = denproto.ReadState{ChannelID: d.ChannelID}, true
+				}
+			}
+			// Guard against an out-of-order delete regressing a newer message.
+			if ok && *d.LastMessage != r.LastMessage &&
+				(compareIDs(d.ID, r.LastMessage) >= 0 || compareIDs(*d.LastMessage, r.LastMessage) > 0) {
+				r.LastMessage = *d.LastMessage
+				s.reads[d.ChannelID] = r
+				s.touched[d.ChannelID] = true
+			}
+		}
 		data = d
 	case denproto.EventReactionAdded, denproto.EventReactionRemoved:
 		var ch denproto.ReactionChange

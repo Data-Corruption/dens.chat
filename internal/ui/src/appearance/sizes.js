@@ -1,10 +1,10 @@
-// Appearance's sizes: how large a message's photos and videos show, and
-// its YouTube players, on a wide window: Small, Medium, Large or Largest,
-// by the width of a landscape one. Each still gives way to the pane, and
-// a photo is never enlarged past its own pixels. The phone layout keeps
-// Small, where the screen is the limit. The browser keeps each choice, as
-// it keeps Density; until the member makes one, photos and videos are
-// Medium and players Small.
+// Appearance's sizes: how large a message's photos and videos, its YouTube
+// players, and its Steam cards show on a wide window: Small, Medium, Large
+// or Largest, by the width of a landscape one. Each still gives way to the
+// pane, and a photo is never enlarged past its own pixels. The phone layout
+// keeps Small, where the screen is the limit. The browser keeps each
+// choice, as it keeps Density; until the member makes one, photos and
+// videos are Medium, and players and Steam cards Small.
 
 import { useEffect, useState } from 'preact/hooks';
 import { useNarrow } from '../core/nav.js';
@@ -12,10 +12,10 @@ import { useNarrow } from '../core/nav.js';
 export const SIZES = ['small', 'medium', 'large', 'largest'];
 const WIDTHS = { small: 400, medium: 640, large: 960, largest: 1280 };
 
-/** MEDIA and PLAYERS are the two settings: a message's photos and videos,
-    and its YouTube players */
+/** MEDIA, PLAYERS and STEAM are the three size settings */
 export const MEDIA = { key: 'DENS_MEDIA_SIZE', first: 'medium' };
 export const PLAYERS = { key: 'DENS_PLAYER_SIZE', first: 'small' };
+export const STEAM = { key: 'DENS_STEAM_SIZE', first: 'small' };
 
 const listeners = new Set();
 // chosen are the member's choices on this page, which last until it
@@ -80,4 +80,30 @@ const PORTRAIT = { small: 'w-[225px]', medium: 'w-[360px]', large: 'w-[405px]', 
     16:9, or a Short's 9:16 */
 export function playerClass(choice, short) {
     return short ? `aspect-[9/16] ${PORTRAIT[choice] || PORTRAIT.small}` : `aspect-video ${LANDSCAPE[choice] || LANDSCAPE.small}`;
+}
+
+// Steam cards' classes, spelled out so Tailwind keeps them. Small stacks
+// the picture over the facts; larger sizes put them side by side with the
+// picture taking a fixed share so the card never overflows a narrow pane.
+const STEAM_CARD = {
+    small: 'w-[400px] flex-col',
+    medium: 'w-[640px] flex-row',
+    large: 'w-[960px] flex-row',
+    largest: 'w-[1280px] flex-row',
+};
+const STEAM_MEDIA = {
+    small: 'aspect-video w-full',
+    medium: 'aspect-video w-[56.25%]',
+    large: 'aspect-video w-[62.5%]',
+    largest: 'aspect-video w-[68.75%]',
+};
+
+/** steamCardClass sizes a Steam card and sets its stacked vs side-by-side layout */
+export function steamCardClass(choice) {
+    return STEAM_CARD[choice] || STEAM_CARD.small;
+}
+
+/** steamMediaClass sizes a Steam card's picture and trailer box before anything loads */
+export function steamMediaClass(choice) {
+    return STEAM_MEDIA[choice] || STEAM_MEDIA.small;
 }

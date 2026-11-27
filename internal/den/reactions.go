@@ -249,7 +249,7 @@ func (d *Den) react(ctx context.Context, s *Session, messageID string, req denpr
 		t = denproto.EventReactionAdded
 	}
 	return d.Hub.Publish(t, denproto.ReactionChange{MessageID: denproto.FormatID(mid), ChannelID: c.ID,
-		MemberID: denproto.FormatID(s.MemberID), Emoji: req.Emoji, EmojiID: req.EmojiID}, audienceOf(c))
+		MemberID: denproto.FormatID(s.MemberID), Emoji: req.Emoji, EmojiID: req.EmojiID}, d.audienceOf(c))
 }
 
 // checkDenEmoji checks that the den has an emoji to react with, and that
@@ -344,7 +344,7 @@ func (d *Den) ClearReactions(ctx context.Context, s *Session, messageID string, 
 	d.audited()
 	d.log.Infof("Member %d took %d reactions off message %d", s.MemberID, len(cleared), mid)
 	return d.Hub.Publish(denproto.EventReactionCleared, denproto.ReactionCleared{MessageID: denproto.FormatID(mid), ChannelID: c.ID,
-		Emoji: req.Emoji, EmojiID: req.EmojiID, Members: formatIDs(cleared)}, audienceOf(c))
+		Emoji: req.Emoji, EmojiID: req.EmojiID, Members: formatIDs(cleared)}, d.audienceOf(c))
 }
 
 // reactionsConflict refuses a DM's set made against a revision other than
@@ -440,7 +440,7 @@ func (d *Den) SetDMReactions(ctx context.Context, s *Session, messageID string, 
 		return denproto.SealedReactions{}, err
 	}
 	return out, d.Hub.Publish(denproto.EventDMReactions, denproto.DMReactions{MessageID: denproto.FormatID(mid), ChannelID: c.ID,
-		SealedReactions: out}, audienceOf(c))
+		SealedReactions: out}, d.audienceOf(c))
 }
 
 // reactedWith lists the channels' messages that hold reactions with one of
@@ -525,7 +525,7 @@ func (d *Den) publishUnreacted(ctx context.Context, changes []denproto.ReactionC
 			if err != nil {
 				return err
 			}
-			audience = audienceOf(c)
+			audience = d.audienceOf(c)
 			audiences[change.ChannelID] = audience
 		}
 		if err := d.Hub.Publish(denproto.EventReactionRemoved, change, audience); err != nil {
