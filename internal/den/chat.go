@@ -100,7 +100,10 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, rolesMas
 		if roles, err = allRoles(ctx, tx); err != nil {
 			return err
 		}
-		mroles, err = allMemberRoles(ctx, tx)
+		if mroles, err = allMemberRoles(ctx, tx); err != nil {
+			return err
+		}
+		r.Collections, err = d.collectionsFor(ctx, tx, member, staff, version)
 		return err
 	})
 	if err != nil {
@@ -234,8 +237,10 @@ func (d *Den) snapshotAt(ctx context.Context, member int64, staff bool, rolesMas
 	if r.Emoji, err = d.emojis(ctx, d.db); err != nil {
 		return r, err
 	}
-	r.Events, err = d.eventsFor(ctx, d.db, member, staff)
-	return r, err
+	if r.Events, err = d.eventsFor(ctx, d.db, member, staff); err != nil {
+		return r, err
+	}
+	return r, nil
 }
 
 // newestSeen selects each channel and DM a member sees, as id, and its

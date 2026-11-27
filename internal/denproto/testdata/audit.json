@@ -91,7 +91,16 @@
     {"line": {"id": "38", "at": 1795176000000, "kind": "member.roles", "by": "3", "member_id": "2",
       "changes": [{"field": "roles_added", "to": "Raiders, VIP"}, {"field": "roles_removed", "to": "Beta"}]},
       "text": "@carol changed @bob's roles", "changes": ["Added roles: Raiders, VIP", "Removed roles: Beta"]},
-    {"line": {"id": "39", "at": 1795176000000, "kind": "pin.added", "by": "3", "channel_id": "10", "channel": "chat", "changes": [{"field": "slot", "from": "1", "to": "2"}]},
+    {"line": {"id": "39", "at": 1795176000000, "kind": "collection.created", "by": "3", "channel_id": "10", "channel": "chat", "ref": "4", "name": "Guides"},
+      "text": "@carol made the collection Guides in #chat"},
+    {"line": {"id": "40", "at": 1795176000000, "kind": "collection.updated", "by": "3", "channel_id": "10", "channel": "chat", "ref": "4", "name": "Raid Guides",
+      "changes": [{"field": "name", "from": "Guides", "to": "Raid Guides"}, {"field": "who_adds", "from": "staff", "to": "everyone"}]},
+      "text": "@carol changed the collection Raid Guides in #chat", "changes": ["Name: Guides → Raid Guides", "Who can add: Staff only → Everyone"]},
+    {"line": {"id": "41", "at": 1795176000000, "kind": "collection.deleted", "by": "3", "channel_id": "10", "channel": "chat", "ref": "4", "name": "Raid Guides"},
+      "text": "@carol deleted the collection Raid Guides in #chat"},
+    {"line": {"id": "42", "at": 1795176000000, "kind": "collection.item_removed", "by": "3", "member_id": "2", "channel_id": "10", "channel": "chat", "ref": "4", "name": "Raid Guides"},
+      "text": "@carol removed a message added by @bob from Raid Guides in #chat"},
+    {"line": {"id": "43", "at": 1795176000000, "kind": "pin.added", "by": "3", "channel_id": "10", "channel": "chat", "changes": [{"field": "slot", "from": "1", "to": "2"}]},
       "text": "@carol: pin.added", "changes": ["slot: 1 → 2"]}
   ]
 }

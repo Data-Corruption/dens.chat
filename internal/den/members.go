@@ -308,6 +308,8 @@ func (d *Den) SetRole(ctx context.Context, s *Session, id string, req denproto.R
 	if mid == s.MemberID {
 		return denproto.Member{}, invalid("the owner stays the owner until the den changes hands")
 	}
+	d.roles.Lock()
+	defer d.roles.Unlock()
 	var was string
 	err = d.tx(ctx, func(tx *sql.Tx) error {
 		err := tx.QueryRowContext(ctx, `SELECT role FROM den_members WHERE id = ? AND left_at IS NULL AND role != 'owner'`, mid).Scan(&was)
@@ -368,6 +370,7 @@ func (d *Den) depart(ctx context.Context, tx *sql.Tx, id, now int64) (departure,
 		`DELETE FROM den_read_states WHERE member_id = ?2`,
 		`DELETE FROM den_mentions WHERE member_id = ?2`,
 		`DELETE FROM den_member_roles WHERE member_id = ?2`,
+		`DELETE FROM den_collections WHERE owner_id = ?2`,
 		`DELETE FROM den_invites WHERE created_by = ?2 AND role = 'member'`,
 	} {
 		if _, err := tx.ExecContext(ctx, stmt, now, id); err != nil {

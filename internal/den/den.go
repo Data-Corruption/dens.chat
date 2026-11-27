@@ -103,10 +103,13 @@ type Den struct {
 	// calendar orders changes to events, the timer's among them, and their
 	// events.
 	calendar sync.Mutex
-	// roles orders custom role CRUD and member role updates against socket
-	// subscribe so a connecting socket never subscribes with a stale role mask.
-	// Always taken before calendar, db and Hub.mu when multiple are needed.
+	// roles orders custom role CRUD, staff rank changes and member role updates
+	// against socket subscribe so a connecting socket never subscribes with a
+	// stale staff flag or role mask. Lock order when multiple are needed:
+	// roles -> calendar -> calls -> Hub / db reads.
 	roles sync.RWMutex
+	// collections orders collection mutations and their events.
+	collections sync.Mutex
 	// requests are sign-ins waiting for approval.
 	requests requests
 
@@ -248,7 +251,8 @@ func Open(ctx context.Context, db *sql.DB, v *vault.Vault, log *xlog.Logger, sto
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, Retention: retention,
 		SoundLimits: sounds, EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, Away: true,
-		NameStyles: true, Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, ForwardLinks: true, DeviceNames: true, Status: true, Roles: true}
+		NameStyles: true, Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, ForwardLinks: true, DeviceNames: true, Status: true, Roles: true,
+		Collections: true}
 	if err := d.loadRoleSlots(ctx); err != nil {
 		d.key.Close()
 		return nil, fmt.Errorf("load roles: %w", err)
@@ -399,7 +403,7 @@ func (d *Den) Create(ctx context.Context, name, url string) ([]byte, error) {
 	}
 	d.info = &denproto.Den{ID: denproto.ID(pub), Name: name, URL: url, Limits: limits, CallLimits: calls, SoundLimits: sounds,
 		EmojiLimits: &emoji, EventLimits: &events, SealedCalls: true, Disappearing: true, Spoilers: true, MoveMembers: true, Away: true, NameStyles: true,
-		Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, ForwardLinks: true, DeviceNames: true, Status: true, Roles: true}
+		Relay: true, ReadAll: true, AuditLog: true, MembersSeen: true, Forward: true, ForwardLinks: true, DeviceNames: true, Status: true, Roles: true, Collections: true}
 	d.log.Infof("Den created")
 	return code, nil
 }

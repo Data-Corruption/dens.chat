@@ -936,6 +936,38 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// Collections: channel-scoped shared collections and den-wide personal
+	// collections, with names sealed under the data key.
+	m.Add("Collections", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			CREATE TABLE den_collections (
+				id         INTEGER PRIMARY KEY AUTOINCREMENT,
+				channel_id INTEGER REFERENCES den_channels (id) ON DELETE CASCADE,
+				owner_id   INTEGER REFERENCES den_members (id) ON DELETE CASCADE,
+				name       BLOB NOT NULL,
+				who_adds   TEXT NOT NULL DEFAULT 'staff' CHECK (who_adds IN ('everyone', 'staff')),
+				created_by INTEGER NOT NULL REFERENCES den_members (id),
+				created_at INTEGER NOT NULL,
+				CHECK ((channel_id IS NULL) != (owner_id IS NULL))
+			) STRICT;
+			CREATE INDEX den_collections_channel ON den_collections (channel_id) WHERE channel_id IS NOT NULL;
+			CREATE INDEX den_collections_owner ON den_collections (owner_id) WHERE owner_id IS NOT NULL;
+
+			CREATE TABLE den_collection_items (
+				collection_id INTEGER NOT NULL REFERENCES den_collections (id) ON DELETE CASCADE,
+				message_id    INTEGER NOT NULL REFERENCES den_messages (id) ON DELETE CASCADE,
+				added_by      INTEGER NOT NULL REFERENCES den_members (id),
+				added_at      INTEGER NOT NULL,
+				PRIMARY KEY (collection_id, message_id)
+			) STRICT, WITHOUT ROWID;
+			CREATE INDEX den_collection_items_message ON den_collection_items (message_id);
+			CREATE INDEX den_collection_items_order ON den_collection_items (collection_id, added_at DESC, message_id DESC);
+		`); err != nil {
+			return fmt.Errorf("add collections: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

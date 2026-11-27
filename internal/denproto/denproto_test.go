@@ -184,6 +184,25 @@ func TestNames(t *testing.T) {
 	}
 }
 
+func TestFoldName(t *testing.T) {
+	same := [][2]string{
+		{"Raiders", "raiders"},
+		{"SAVED", "saved"},
+		{"École", "école"},
+		{"İ", "i"},
+		{"I\u0307", "i\u0307"},
+		{"\u212a", "k"},
+	}
+	for _, p := range same {
+		if FoldName(p[0]) != FoldName(p[1]) {
+			t.Errorf("FoldName(%q)=%q != FoldName(%q)=%q", p[0], FoldName(p[0]), p[1], FoldName(p[1]))
+		}
+	}
+	if FoldName("İ") == FoldName("i\u0307") {
+		t.Errorf("FoldName(İ) unexpectedly matched combining i\\u0307: %q", FoldName("İ"))
+	}
+}
+
 func TestRecoveryCodes(t *testing.T) {
 	code := Random(RecoveryCodeSize)
 	shown := FormatRecoveryCode(code)

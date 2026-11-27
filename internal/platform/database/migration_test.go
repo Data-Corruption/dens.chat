@@ -79,9 +79,9 @@ var m19Tables = []string{"background"}
 // m23Tables are the tables v1.15.0's steps add: the audit log.
 var m23Tables = []string{"den_audit"}
 
-// m25Tables are the tables Channel roles adds: roles and their links to
-// members, channels and ended events.
-var m25Tables = []string{"den_roles", "den_member_roles", "den_channel_roles", "den_event_roles"}
+// m25Tables are the tables Channel roles and Collections add: roles,
+// collections and their links.
+var m25Tables = []string{"den_roles", "den_member_roles", "den_channel_roles", "den_event_roles", "den_collections", "den_collection_items"}
 
 // retiredKeys are the tables of DM keys, which Identities changes for a
 // release before it: an exchange still running, or checked by one member
@@ -460,6 +460,35 @@ func TestMigrationFromReleasedSchemasKeepsEveryRow(t *testing.T) {
 						t.Errorf("%s took %s", what, q)
 					}
 				}
+				// Collections belong to either a channel or an owner, never both or neither,
+				// and cascade their items on delete.
+				if _, err := db.Exec(`INSERT INTO den_collections (id, channel_id, name, who_adds, created_by, created_at) VALUES (1, 1, x'c1', 'everyone', 1, 20)`); err != nil {
+					t.Errorf("%s takes no shared collection after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`INSERT INTO den_collections (id, owner_id, name, created_by, created_at) VALUES (2, 1, x'c2', 1, 21)`); err != nil {
+					t.Errorf("%s takes no personal collection after the migration: %v", what, err)
+				}
+				if _, err := db.Exec(`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 1, 1, 22), (2, 1, 1, 23)`); err != nil {
+					t.Errorf("%s takes no collection items after the migration: %v", what, err)
+				}
+				for _, q := range []string{
+					`INSERT INTO den_collections (name, created_by, created_at) VALUES (x'c3', 1, 24)`,
+					`INSERT INTO den_collections (channel_id, owner_id, name, created_by, created_at) VALUES (1, 1, x'c3', 1, 24)`,
+					`INSERT INTO den_collections (channel_id, name, who_adds, created_by, created_at) VALUES (1, x'c3', 'mods', 1, 24)`,
+					`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 1, 1, 25)`,
+					`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (99, 1, 1, 25)`,
+					`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 99, 1, 25)`,
+				} {
+					if _, err := db.Exec(q); err == nil {
+						t.Errorf("%s took %s", what, q)
+					}
+				}
+				if _, err := db.Exec(`DELETE FROM den_collections WHERE id IN (1, 2)`); err != nil {
+					t.Errorf("%s failed deleting collections: %v", what, err)
+				}
+				if err := db.QueryRow(`SELECT count(*) FROM den_collection_items`).Scan(&leftovers); err != nil || leftovers != 0 {
+					t.Errorf("%s kept %d collection items after collection delete, %v", what, leftovers, err)
+				}
 				var on int
 				if err := db.QueryRow(`PRAGMA foreign_keys`).Scan(&on); err != nil || on != 1 {
 					t.Errorf("%s has foreign keys %d after the migration, %v", what, on, err)
@@ -796,4 +825,78 @@ func dumpQuery(t *testing.T, db *sql.DB, query string) string {
 	}
 	slices.Sort(lines)
 	return strings.Join(lines, "\n")
+}
+
+// TestCollectionsMigration checks that migrating from v1.16.0's schema adds
+// den_collections and den_collection_items with their constraints, and cascades
+// items and shared collections when messages, channels or owners go.
+func TestCollectionsMigration(t *testing.T) {
+	dir := t.TempDir()
+	log, err := xlog.New(filepath.Join(t.TempDir(), "logs"), "error")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { log.Close() })
+	bi := build.BuildInfo{DefaultLogLevel: "warn"}
+	ctx := context.Background()
+
+	old, err := Open(filepath.Join(dir, FileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, err := newMigrator(bi).Upto(22).Run(ctx, old, log); err != nil || v != 22 {
+		old.Close()
+		t.Fatalf("make v1.16.0 schema: version %d, %v", v, err)
+	}
+	fillEveryTable(t, old, 22)
+	if err := old.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	db, err := New(dir, log, bi, ApplyPendingMigrations)
+	if err != nil {
+		t.Fatalf("migrate to current schema: %v", err)
+	}
+	defer db.Close()
+
+	// Insert a shared collection and a personal collection with items.
+	if _, err := db.Exec(`INSERT INTO den_collections (id, channel_id, name, who_adds, created_by, created_at) VALUES (1, 1, x'01', 'staff', 1, 100)`); err != nil {
+		t.Fatalf("insert shared collection: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO den_collections (id, owner_id, name, created_by, created_at) VALUES (2, 1, x'02', 1, 101)`); err != nil {
+		t.Fatalf("insert personal collection: %v", err)
+	}
+	if _, err := db.Exec(`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 1, 1, 102), (2, 1, 1, 103), (2, 3, 1, 104)`); err != nil {
+		t.Fatalf("insert collection items: %v", err)
+	}
+
+	// Deleting a message cascades its collection items.
+	if _, err := db.Exec(`DELETE FROM den_messages WHERE id = 1`); err != nil {
+		t.Fatalf("delete message: %v", err)
+	}
+	var count int
+	if err := db.QueryRow(`SELECT count(*) FROM den_collection_items WHERE message_id = 1`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("items left after message delete: %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM den_collection_items WHERE collection_id = 2`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("other item affected by message delete: %d, %v", count, err)
+	}
+
+	// Deleting a channel cascades its shared collections (and their items).
+	if _, err := db.Exec(`INSERT INTO den_collection_items (collection_id, message_id, added_by, added_at) VALUES (1, 3, 1, 105)`); err != nil {
+		t.Fatalf("insert shared item: %v", err)
+	}
+	if _, err := db.Exec(`DELETE FROM den_channels WHERE id = 1`); err != nil {
+		t.Fatalf("delete channel: %v", err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM den_collections WHERE id = 1`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("shared collection left after channel delete: %d, %v", count, err)
+	}
+	if err := db.QueryRow(`SELECT count(*) FROM den_collection_items`).Scan(&count); err != nil || count != 0 {
+		t.Fatalf("items left after channel delete: %d, %v", count, err)
+	}
+	// Personal collection row stays intact when a channel is deleted.
+	if err := db.QueryRow(`SELECT count(*) FROM den_collections WHERE id = 2`).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("personal collection lost on channel delete: %d, %v", count, err)
+	}
 }
