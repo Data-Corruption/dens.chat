@@ -103,9 +103,10 @@ type Den struct {
 	// calendar orders changes to events, the timer's among them, and their
 	// events.
 	calendar sync.Mutex
-	// roles orders custom role CRUD and member role updates. Always taken
-	// before calendar when both are needed.
-	roles sync.Mutex
+	// roles orders custom role CRUD and member role updates against socket
+	// subscribe so a connecting socket never subscribes with a stale role mask.
+	// Always taken before calendar, db and Hub.mu when multiple are needed.
+	roles sync.RWMutex
 	// requests are sign-ins waiting for approval.
 	requests requests
 

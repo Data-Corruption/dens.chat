@@ -15,11 +15,13 @@ import (
 // recently deleted roles until they fall out of the replay ring.
 const maxRoleSlots = 64
 
-// Audience says which members an event is for. Packing staff beside kind keeps
-// Audience at 48 bytes with zero heap allocations for role-gated channels.
+// Audience says which members an event is for. Packing staff and gated beside
+// kind keeps Audience at 48 bytes with zero heap allocations for role-gated
+// channels.
 type Audience struct {
 	kind  audienceKind
 	staff bool
+	gated bool
 	a, b  int64
 	roles uint64
 	// set holds a poll's voters (or an event's interested members), for an
@@ -63,13 +65,14 @@ func Roles(mask uint64) Audience { return Audience{kind: toRoles, roles: mask} }
 
 // Voters is the audience of a poll's voters (or an event's interested members)
 // among those who see its channel, and NonVoters the rest of them. voters
-// mustn't change once it's passed.
-func Voters(voters map[int64]bool, staffOnly bool, roles uint64) Audience {
-	return Audience{kind: toVoters, set: voters, staff: staffOnly, roles: roles}
+// mustn't change once it's passed. gated marks a role-gated channel so a zero
+// role mask fails closed instead of reading as ungated.
+func Voters(voters map[int64]bool, staffOnly, gated bool, roles uint64) Audience {
+	return Audience{kind: toVoters, set: voters, staff: staffOnly, gated: gated, roles: roles}
 }
 
-func NonVoters(voters map[int64]bool, staffOnly bool, roles uint64) Audience {
-	return Audience{kind: toNonVoters, set: voters, staff: staffOnly, roles: roles}
+func NonVoters(voters map[int64]bool, staffOnly, gated bool, roles uint64) Audience {
+	return Audience{kind: toNonVoters, set: voters, staff: staffOnly, gated: gated, roles: roles}
 }
 
 // notesOf is the audience of a member's notes: the member, on sockets
@@ -104,9 +107,9 @@ func (a Audience) includes(member int64, staff bool, roles uint64, version int) 
 	case toRoles:
 		return staff || (a.roles&roles) != 0
 	case toVoters:
-		return (staff || (!a.staff && (a.roles == 0 || (a.roles&roles) != 0))) && a.set[member]
+		return (staff || (!a.staff && (!a.gated || (a.roles&roles) != 0))) && a.set[member]
 	case toNonVoters:
-		return (staff || (!a.staff && (a.roles == 0 || (a.roles&roles) != 0))) && !a.set[member]
+		return (staff || (!a.staff && (!a.gated || (a.roles&roles) != 0))) && !a.set[member]
 	}
 	return true
 }

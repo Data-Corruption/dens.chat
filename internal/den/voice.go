@@ -68,6 +68,7 @@ type call struct {
 // any.
 type callRoom struct {
 	staffOnly bool
+	gated     bool
 	roles     uint64
 	members   []*call // in the order they joined
 	sound     *sounding
@@ -283,6 +284,29 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		refuse(denproto.VoiceFailed)
 		return
 	}
+	// Re-read the channel and member roles under r.mu so a visibility change
+	// or role delete cannot land between the pre-lock check and room setup.
+	c, err = d.channel(ctx, d.db, cid)
+	if errors.Is(err, errChannelNotFound) {
+		refuse(denproto.VoiceNotFound)
+		return
+	}
+	if err != nil {
+		d.log.Errorf("join call: %v", err)
+		refuse(denproto.VoiceFailed)
+		return
+	}
+	staff = d.Hub.Staff(sub)
+	roles, err = d.memberRoleMask(ctx, d.db, s.MemberID)
+	if err != nil {
+		d.log.Errorf("join call: %v", err)
+		refuse(denproto.VoiceFailed)
+		return
+	}
+	if c.Kind != denproto.KindVoice || !d.visibleMask(c, s.MemberID, staff, roles) {
+		refuse(denproto.VoiceNotFound)
+		return
+	}
 	old := r.byMember[s.MemberID]
 	in, total := 0, len(r.byMember)
 	if room := r.rooms[cid]; room != nil {
@@ -309,7 +333,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		}
 		changed = append(changed, old.channel)
 	}
-	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: d.Hub.Staff(sub), roles: d.Hub.Roles(sub), muted: req.Muted, deafened: req.Deafened,
+	nc := &call{member: s.MemberID, channel: cid, key: sock.keyID, staff: staff, roles: roles, muted: req.Muted, deafened: req.Deafened,
 		away: req.Away && req.Muted, joined: d.now()}
 	nc.sock.Store(sock)
 	bitrate := c.Bitrate
@@ -332,7 +356,7 @@ func (d *Den) joinCall(ctx context.Context, s *Session, sock *socket, sub *Sub, 
 		if v, ok := r.records[cid]; ok {
 			record = v
 		}
-		room = &callRoom{staffOnly: c.StaffOnly, roles: d.channelMask(c), began: nc.joined, record: record, kept: record, counts: true}
+		room = &callRoom{staffOnly: c.StaffOnly, gated: len(c.RoleIDs) > 0, roles: d.channelMask(c), began: nc.joined, record: record, kept: record, counts: true}
 		r.rooms[cid] = room
 		markAt = room.nextMark()
 	}
@@ -1012,7 +1036,7 @@ func (r *callRegistry) recall(key []byte, channel int64, now time.Time) string {
 
 // roomVisible reports whether a member with staff flag and role mask sees room.
 func roomVisible(room *callRoom, staff bool, roles uint64) bool {
-	return staff || (!room.staffOnly && (room.roles == 0 || (room.roles&roles) != 0))
+	return staff || (!room.staffOnly && (!room.gated || (room.roles&roles) != 0))
 }
 
 // channelChanged ends the calls a channel's change leaves out: everyone's
@@ -1034,6 +1058,7 @@ func (d *Den) channelChanged(c denproto.Channel, deleted bool) {
 	// The call's audience changes with the channel's before anyone hears
 	// of it, so a restricted call isn't shown to members who lost access.
 	room.staffOnly = c.StaffOnly
+	room.gated = len(c.RoleIDs) > 0
 	room.roles = mask
 	for _, x := range slices.Clone(room.members) {
 		switch {
@@ -1086,12 +1111,13 @@ func (d *Den) memberRolesChanged(member int64, roles uint64) {
 func (d *Den) roleDeletedInCalls(deletedBit uint64, affectedChannels []denproto.Channel) {
 	type chVis struct {
 		staffOnly bool
+		gated     bool
 		roles     uint64
 	}
 	vis := make(map[int64]chVis, len(affectedChannels))
 	for _, c := range affectedChannels {
 		if cid, err := denproto.ParseID(c.ID); err == nil {
-			vis[cid] = chVis{staffOnly: c.StaffOnly, roles: d.channelMask(c)}
+			vis[cid] = chVis{staffOnly: c.StaffOnly, gated: len(c.RoleIDs) > 0, roles: d.channelMask(c)}
 		}
 	}
 	r := &d.calls
@@ -1107,6 +1133,7 @@ func (d *Den) roleDeletedInCalls(deletedBit uint64, affectedChannels []denproto.
 			continue
 		}
 		room.staffOnly = v.staffOnly
+		room.gated = v.gated
 		room.roles = v.roles
 		for _, x := range slices.Clone(room.members) {
 			if !roomVisible(room, x.staff, x.roles) {
@@ -1357,9 +1384,9 @@ func (d *Den) publishCallsLocked(channels ...int64) {
 			continue
 		}
 		state := denproto.VoiceState{Calls: []denproto.Call{r.callOf(cid, room, now)}}
-		staffOnly, roles := room.staffOnly, room.roles
+		staffOnly, gated, roles := room.staffOnly, room.gated, room.roles
 		if err := d.Hub.Ephemeral(denproto.EventVoiceState, state, func(sub *Sub) bool {
-			return sub.staff || (!staffOnly && (roles == 0 || (roles&sub.roles) != 0))
+			return sub.staff || (!staffOnly && (!gated || (roles&sub.roles) != 0))
 		}); err != nil {
 			d.log.Errorf("announce call: %v", err)
 		}

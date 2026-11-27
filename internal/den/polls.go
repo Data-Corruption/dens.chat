@@ -415,13 +415,14 @@ func (d *Den) publishTotals(c denproto.Channel, p *pollRow) error {
 		return d.Hub.Publish(denproto.EventPollUpdated, update, d.audienceOf(c))
 	}
 	voters := p.voters()
+	gated := len(c.RoleIDs) > 0
 	mask := d.channelMask(c)
 	update.Tally = p.poll.TallyFor(votes, true)
-	if err := d.Hub.Publish(denproto.EventPollUpdated, update, Voters(voters, c.StaffOnly, mask)); err != nil {
+	if err := d.Hub.Publish(denproto.EventPollUpdated, update, Voters(voters, c.StaffOnly, gated, mask)); err != nil {
 		return err
 	}
 	update.Tally = p.poll.TallyFor(votes, false)
-	return d.Hub.Publish(denproto.EventPollUpdated, update, NonVoters(voters, c.StaffOnly, mask))
+	return d.Hub.Publish(denproto.EventPollUpdated, update, NonVoters(voters, c.StaffOnly, gated, mask))
 }
 
 // endDue ends every poll whose time came, records each in the change log
