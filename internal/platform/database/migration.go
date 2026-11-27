@@ -922,6 +922,20 @@ func newMigrator(buildInfo build.BuildInfo) *migrator.Migrator {
 		return nil
 	})
 
+	// Forward links. A channel's forwarded message may carry the den, channel
+	// and message ID of the channel message it came from; a DM's or notes'
+	// forward source goes inside its seal.
+	m.Add("Forward links", func(ctx context.Context, tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, `
+			ALTER TABLE den_messages ADD COLUMN forward_den BLOB CHECK (forward_den IS NULL OR length(forward_den) = 32);
+			ALTER TABLE den_messages ADD COLUMN forward_channel INTEGER CHECK (forward_channel IS NULL OR forward_channel > 0);
+			ALTER TABLE den_messages ADD COLUMN forward_message INTEGER CHECK (forward_message IS NULL OR forward_message > 0);
+		`); err != nil {
+			return fmt.Errorf("add forward links: %w", err)
+		}
+		return nil
+	})
+
 	return m
 }
 

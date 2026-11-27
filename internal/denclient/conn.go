@@ -734,7 +734,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 			c.den.emojiLimits, c.den.sealedCalls, c.den.disappearing = d.EmojiLimits, d.SealedCalls, d.Disappearing
 			c.den.spoilers, c.den.moveMembers, c.den.eventLimits = d.Spoilers, d.MoveMembers, d.EventLimits
 			c.den.nameStyles, c.den.relay, c.den.away, c.den.readAll = d.NameStyles, d.Relay, d.Away, d.ReadAll
-			c.den.auditLog, c.den.membersSeen, c.den.forward, c.den.hasRoles = d.AuditLog, d.MembersSeen, d.Forward, d.Roles
+			c.den.auditLog, c.den.membersSeen, c.den.forward, c.den.forwardLinks, c.den.hasRoles = d.AuditLog, d.MembersSeen, d.Forward, d.ForwardLinks, d.Roles
 		}
 		c.mu.Unlock()
 		c.m.relayChanged()
@@ -747,7 +747,7 @@ func (c *conn) apply(ctx context.Context, e denproto.Event) (denproto.Event, boo
 		// The page shows the den's name, limits and retention; the address
 		// is this install's business.
 		out, err := denproto.NewEvent(e.T, e.Seq, denproto.Den{ID: c.j.denID, Name: c.status().Name, Limits: d.Limits,
-			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits, SealedCalls: d.SealedCalls, Roles: d.Roles})
+			CallLimits: d.CallLimits, Retention: d.Retention, SoundLimits: d.SoundLimits, EmojiLimits: d.EmojiLimits, SealedCalls: d.SealedCalls, ForwardLinks: d.ForwardLinks, Roles: d.Roles})
 		return out, err == nil, err
 	case denproto.EventVoiceOffer, denproto.EventVoiceEnded, denproto.EventVoiceResumed, denproto.EventVoiceRefused, denproto.EventVoiceTalking,
 		denproto.EventVoiceSounding, denproto.EventVoiceKey, denproto.EventVoiceMove:

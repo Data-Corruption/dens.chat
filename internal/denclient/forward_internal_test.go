@@ -44,6 +44,32 @@ func ForgetForward(m *Manager, denID string) error {
 	return nil
 }
 
+// ForgetForwardLinks has a den's state say the den keeps no forward source
+// (like v1.16.0, which supports forward but not forward_links).
+func ForgetForwardLinks(m *Manager, denID string) error {
+	c, err := m.find(denID)
+	if err != nil {
+		return err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil {
+		return ErrNotStarted
+	}
+	c.den.forwardLinks = false
+	return nil
+}
+
+// OpenMessage runs the client's message opener directly, for tests that verify
+// openLocked strips unsealed fields on sealed messages.
+func OpenMessage(m *Manager, denID string, msg denproto.Message) (PageMessage, error) {
+	c, err := m.find(denID)
+	if err != nil {
+		return PageMessage{}, err
+	}
+	return c.open(msg), nil
+}
+
 // ForgetChannel takes a channel out of a den's state and leaves its kind
 // kept, as where the den answered with it and its event hasn't come, for
 // the tests of package denclient_test.

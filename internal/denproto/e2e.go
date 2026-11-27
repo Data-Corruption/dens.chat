@@ -462,13 +462,15 @@ func OpenExchangeState(seal, denID []byte, channel, member int64, commit []byte,
 	return nil
 }
 
-// DMPayload is what a DM message seals: its text, and each file's key and
-// details, which the den never sees; and its forwarded mark, which an
-// older Dens leaves out of what it seals, and reads past.
+// DMPayload is what a DM message seals: its text, each file's key and
+// details, its forwarded mark and, for a channel forward, its source,
+// which the den never sees; an older Dens leaves out the forward fields
+// and reads past them.
 type DMPayload struct {
-	Text      string   `json:"text"`
-	Files     []DMFile `json:"files,omitempty"`
-	Forwarded bool     `json:"forwarded,omitempty"`
+	Text          string         `json:"text"`
+	Files         []DMFile       `json:"files,omitempty"`
+	Forwarded     bool           `json:"forwarded,omitempty"`
+	ForwardSource *ForwardSource `json:"forward_source,omitempty"`
 }
 
 // DMFile is an attachment in a DM: the den's sealed blob of the file and
@@ -561,6 +563,14 @@ func CheckDMPayload(p DMPayload) error {
 	}
 	if err := CheckMessageText(p.Text, len(p.Files) > 0); err != nil {
 		return err
+	}
+	if p.ForwardSource != nil {
+		if !p.Forwarded {
+			return errors.New("a DM message has a forward source without forwarded")
+		}
+		if err := CheckForwardSource(p.ForwardSource); err != nil {
+			return err
+		}
 	}
 	for _, f := range p.Files {
 		if len(f.Key) != chacha20poly1305.KeySize {

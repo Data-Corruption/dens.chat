@@ -324,6 +324,30 @@ func TestForwardedMarkInTheSeal(t *testing.T) {
 	if p, err := OpenDMMessage(key, dmAD, sealed); err != nil || !reflect.DeepEqual(p, forwarded) {
 		t.Errorf("a DM's forward opened as %+v, %v", p, err)
 	}
+
+	src := &ForwardSource{DenID: den, ChannelID: "14", MessageID: "205"}
+	linked := DMPayload{Text: "the beach", Files: []DMFile{file}, Forwarded: true, ForwardSource: src}
+	sealed, err = SealDMMessage(key, dmAD, linked)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, err := OpenDMMessage(key, dmAD, sealed); err != nil || !reflect.DeepEqual(p, linked) {
+		t.Errorf("a DM's forward with source opened as %+v, %v", p, err)
+	}
+	for name, bad := range map[string]DMPayload{
+		"source without forwarded": {Text: "hi", ForwardSource: src},
+		"short den ID":             {Text: "hi", Forwarded: true, ForwardSource: &ForwardSource{DenID: []byte{1}, ChannelID: "14", MessageID: "205"}},
+		"bad channel ID":           {Text: "hi", Forwarded: true, ForwardSource: &ForwardSource{DenID: den, ChannelID: "0", MessageID: "205"}},
+		"bad message ID":           {Text: "hi", Forwarded: true, ForwardSource: &ForwardSource{DenID: den, ChannelID: "14", MessageID: "x"}},
+	} {
+		sealed, err := SealDMMessage(key, dmAD, bad)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := OpenDMMessage(key, dmAD, sealed); err == nil {
+			t.Errorf("OpenDMMessage accepted %s", name)
+		}
+	}
 }
 
 // A side's state, sealed for the den to keep, opens only with the same

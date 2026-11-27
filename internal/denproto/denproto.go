@@ -335,8 +335,10 @@ type Den struct {
 	AuditLog    bool `json:"audit_log,omitempty"`
 	MembersSeen bool `json:"members_seen,omitempty"`
 	// Forward says the den keeps a channel's message's forwarded mark; a
-	// den older than it drops the mark.
-	Forward bool `json:"forward,omitempty"`
+	// den older than it drops the mark. ForwardLinks says it also keeps a
+	// channel forward's source (den_id, channel_id, message_id).
+	Forward      bool `json:"forward,omitempty"`
+	ForwardLinks bool `json:"forward_links,omitempty"`
 	// DeviceNames says a device may change its own label, at PATCH
 	// /api/me/devices/{key_id}, and Status that members set a status, at
 	// PUT /api/me/status; a den older than them has neither route.

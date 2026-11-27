@@ -152,6 +152,9 @@ func TestAStatusReachesMembers(t *testing.T) {
 	if got := statusOf(member, "🍕 at lunch"); got.StatusUntil != until {
 		t.Fatalf("the member reads the status until %d", got.StatusUntil)
 	}
+	if got := statusOf(owner, "🍕 at lunch"); got.StatusUntil != until {
+		t.Fatalf("the owner reads the status until %d", got.StatusUntil)
+	}
 	if v, _ := owner.View(denID); v.Me.Status != "🍕 at lunch" {
 		t.Fatalf("the owner's own record: %+v", v.Me)
 	}

@@ -74,10 +74,11 @@ type denState struct {
 	nameStyles bool
 	// relay says the den passes boxes between the member's devices,
 	// auditLog that it keeps staff's acts for staff to read, membersSeen
-	// that it tells staff when each member was last seen, and forward that
-	// it keeps a channel's message's forwarded mark. The cache keeps none
+	// that it tells staff when each member was last seen, forward that
+	// it keeps a channel's message's forwarded mark, and forwardLinks that
+	// it also keeps a channel forward's source. The cache keeps none
 	// of them: they matter only while connected.
-	relay, auditLog, membersSeen, forward bool
+	relay, auditLog, membersSeen, forward, forwardLinks bool
 	// deviceNames says a device may change its label there, and statuses
 	// that members set a status.
 	deviceNames, statuses bool
@@ -149,8 +150,10 @@ type View struct {
 	AuditLog    bool `json:"audit_log"`
 	MembersSeen bool `json:"members_seen"`
 	// Forward says the den keeps a channel's message's forwarded mark,
-	// which Forward offers its channels only then.
-	Forward bool `json:"forward"`
+	// which Forward offers its channels only then; ForwardLinks says it
+	// also keeps a channel forward's source.
+	Forward      bool `json:"forward"`
+	ForwardLinks bool `json:"forward_links"`
 	// DeviceNames says a device may change its label, which Devices offers
 	// only then, and Statuses that members set a status, which their own
 	// card offers only then.
@@ -239,7 +242,7 @@ func (s *denState) view(status Status, me denproto.Member) View {
 		CallLimits: s.callLimits, Retention: s.retention, Sounds: sortedSounds(s.sounds), SoundLimits: s.soundLimits,
 		Emoji: sortedEmoji(s.emoji), EmojiLimits: s.emojiLimits, KeepsIdentities: s.identities, SealedCalls: s.sealedCalls,
 		Disappearing: s.disappearing, Spoilers: s.spoilers, MoveMembers: s.moveMembers, Away: s.away, ReadAll: s.readAll, NameStyles: s.nameStyles, Events: sortedEvents(s.events),
-		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen, Forward: s.forward,
+		EventLimits: s.eventLimits, AuditLog: s.auditLog, MembersSeen: s.membersSeen, Forward: s.forward, ForwardLinks: s.forwardLinks,
 		DeviceNames: s.deviceNames, Statuses: s.statuses, Roles: sortedRoles(s.roles), HasRoles: s.hasRoles}
 	for id := range s.online {
 		v.Online = append(v.Online, id)
@@ -564,7 +567,7 @@ func (s *denState) load(denID []byte, r denproto.Ready, prev map[string]denproto
 	next.sealedCalls, next.disappearing = r.Den.SealedCalls, r.Den.Disappearing
 	next.spoilers, next.moveMembers, next.away, next.nameStyles = r.Den.Spoilers, r.Den.MoveMembers, r.Den.Away, r.Den.NameStyles
 	next.readAll = r.Den.ReadAll
-	next.relay, next.auditLog, next.membersSeen, next.forward = r.Den.Relay, r.Den.AuditLog, r.Den.MembersSeen, r.Den.Forward
+	next.relay, next.auditLog, next.membersSeen, next.forward, next.forwardLinks = r.Den.Relay, r.Den.AuditLog, r.Den.MembersSeen, r.Den.Forward, r.Den.ForwardLinks
 	next.deviceNames, next.statuses = r.Den.DeviceNames, r.Den.Status
 	next.hasRoles = r.Den.Roles
 	roles, ok := cleanRoles(r.Roles)

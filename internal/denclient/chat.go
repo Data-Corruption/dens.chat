@@ -154,6 +154,7 @@ func (m *Manager) Send(ctx context.Context, denID, channelID string, req denprot
 		return PageMessage{}, err
 	}
 	req.Forwarded = false
+	req.ForwardSource = nil
 	return c.sendMessage(ctx, channelID, req)
 }
 
@@ -199,7 +200,7 @@ func (c *conn) sendMessage(ctx context.Context, channelID string, req denproto.S
 		return PageMessage{}, err
 	}
 	if dm {
-		p := denproto.DMPayload{Text: req.Text, Forwarded: req.Forwarded}
+		p := denproto.DMPayload{Text: req.Text, Forwarded: req.Forwarded, ForwardSource: req.ForwardSource}
 		var blobs []string
 		if p.Files, blobs, err = c.takeUploads(channelID, req.Attachments); err != nil {
 			return PageMessage{}, err
@@ -212,7 +213,9 @@ func (c *conn) sendMessage(ctx context.Context, channelID string, req denproto.S
 		if req.KeyID, req.Sealed, err = c.sealMessage(ctx, channelID, c.memberID(), req.Nonce, 1, p); err != nil {
 			return PageMessage{}, err
 		}
-		req.Text, req.Attachments, req.Spoilers, req.Forwarded = "", blobs, nil, false
+		req.Text, req.Attachments, req.Spoilers, req.Forwarded, req.ForwardSource = "", blobs, nil, false, nil
+	} else if !c.supportsForwardLinks() {
+		req.ForwardSource = nil
 	}
 	var msg denproto.Message
 	if err := c.call(ctx, http.MethodPost, "/api/channels/"+channelID+"/messages", req, &msg); err != nil {

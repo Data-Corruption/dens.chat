@@ -16,9 +16,11 @@ import (
 // write in, in its den or another this install is in. This service reads
 // each file, from the cache or the den, uploads it to the place as the
 // member's own, sealed anew where the place is sealed, and sends the
-// message marked forwarded, with nothing of where it came from: no author,
-// channel, den, reply or link. The place's limits are checked before
-// anything goes.
+// message marked forwarded. A forward from a text channel carries its
+// source (den_id, channel_id, message_id — no URL or hostname), sealed
+// inside DMPayload when sent to a DM or notes; a forward from a DM or
+// notes carries no source. The place's limits are checked before anything
+// goes.
 
 // ForwardTo is where a forward goes, and the nonce the page picked for it,
 // so a retry after a lost answer doesn't post twice.
@@ -79,6 +81,13 @@ func (m *Manager) Forward(ctx context.Context, denID, channelID, messageID strin
 	}
 
 	req := denproto.SendRequest{Nonce: to.Nonce, Text: msg.Text, Forwarded: true}
+	if src.isTextChannel(channelID) {
+		req.ForwardSource = &denproto.ForwardSource{
+			DenID:     src.denIDBytes(),
+			ChannelID: channelID,
+			MessageID: messageID,
+		}
+	}
 	// What went up waits unsent within the hour if the forward goes no
 	// further; it goes at once instead.
 	sent := false
@@ -178,6 +187,27 @@ func (c *conn) takesForward(ctx context.Context, channel string) (bool, error) {
 		return false, inputError(errors.New("That den is too old to mark a forward in its channels."))
 	}
 	return false, nil
+}
+
+func (c *conn) denIDBytes() denproto.Bytes {
+	return append(denproto.Bytes(nil), c.j.denID...)
+}
+
+// isTextChannel reports whether channel is a text channel (never a DM or
+// notes), which determines whether forwards from it carry a ForwardSource.
+func (c *conn) isTextChannel(channel string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.den == nil || c.privateLocked(channel) {
+		return false
+	}
+	return c.den.channels[channel].Kind == denproto.KindText || c.den.kinds[channel] == denproto.KindText
+}
+
+func (c *conn) supportsForwardLinks() bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.den != nil && c.den.forwardLinks
 }
 
 // roomFor checks that files of those sizes fit the den's limits as a

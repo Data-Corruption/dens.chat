@@ -145,9 +145,37 @@ type Message struct {
 	// ExpiresAt is when a DM's message disappears, by the time its channel
 	// had as it was sent.
 	ExpiresAt int64 `json:"expires_at,omitempty"`
-	// Forwarded marks a channel's message its author forwarded, which
-	// says nothing of where from; a sealed place's mark is in its seal.
-	Forwarded bool `json:"forwarded,omitempty"`
+	// Forwarded marks a channel's message its author forwarded; a sealed
+	// place's mark is in its seal. ForwardSource names the channel message
+	// it came from, by den, channel and message ID alone.
+	Forwarded     bool           `json:"forwarded,omitempty"`
+	ForwardSource *ForwardSource `json:"forward_source,omitempty"`
+}
+
+// ForwardSource identifies the channel message a forward came from, by
+// den, channel and message ID alone.
+type ForwardSource struct {
+	DenID     Bytes  `json:"den_id"`
+	ChannelID string `json:"channel_id"`
+	MessageID string `json:"message_id"`
+}
+
+// CheckForwardSource checks a forward's source: a 32-byte den ID, and
+// positive channel and message IDs.
+func CheckForwardSource(s *ForwardSource) error {
+	if s == nil {
+		return errors.New("forward source is missing")
+	}
+	if len(s.DenID) != IDSize {
+		return errors.New("forward source has an invalid den ID")
+	}
+	if _, err := ParseID(s.ChannelID); err != nil {
+		return errors.New("forward source has an invalid channel ID")
+	}
+	if _, err := ParseID(s.MessageID); err != nil {
+		return errors.New("forward source has an invalid message ID")
+	}
+	return nil
 }
 
 // Reply previews the message another one replies to, so a reply reads
@@ -238,8 +266,10 @@ type SendRequest struct {
 	// spoilers go inside its seal, so the den never learns them.
 	Spoilers []string `json:"spoilers,omitempty"`
 	// Forwarded marks a channel's message as forwarded, with no poll,
-	// reply or editors; a DM's goes inside its seal.
-	Forwarded bool `json:"forwarded,omitempty"`
+	// reply or editors; ForwardSource names the channel message it came
+	// from. A DM's mark and source go inside its seal.
+	Forwarded     bool           `json:"forwarded,omitempty"`
+	ForwardSource *ForwardSource `json:"forward_source,omitempty"`
 }
 
 // EditRequest replaces a message's text, and its editors when set, which
@@ -396,6 +426,17 @@ func CheckMessage(m Message) error {
 	}
 	if m.Sealed != nil && (m.Poll != nil || m.Everyone) {
 		return errors.New("a DM's message has no poll and mentions nobody by @everyone")
+	}
+	if m.ForwardSource != nil {
+		if m.Sealed != nil {
+			return errors.New("a DM's forward source goes inside its sealed text")
+		}
+		if !m.Forwarded {
+			return errors.New("message has a forward source without forwarded")
+		}
+		if err := CheckForwardSource(m.ForwardSource); err != nil {
+			return err
+		}
 	}
 	// Only a DM's messages disappear, after they're sent.
 	if m.ExpiresAt != 0 && (m.Sealed == nil || m.ExpiresAt <= m.CreatedAt) {
