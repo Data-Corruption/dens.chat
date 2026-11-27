@@ -14,10 +14,12 @@ import { shownDen, switcherList } from '../core/switcher.js';
 import { openCall } from '../voice/voice.js';
 import { ErrorText, useBackdrop } from './components.jsx';
 import { openSwitcher } from './dialogs.js';
-import { HashIcon, MenuIcon, SearchIcon, SpeakerIcon } from './icons.jsx';
+import { BookmarkIcon, HashIcon, MenuIcon, SearchIcon, SpeakerIcon } from './icons.jsx';
+import { COLLECTIONS, channelCollectionsPath } from '../chat/collections.js';
+import { showCollection } from '../chat/collections.jsx';
 import { Handle, useDragDown } from './sheet.jsx';
 
-const LABEL = 'Find a channel, DM or den';
+const LABEL = 'Find a channel, DM, collection or den';
 
 // SwitcherButton is the magnifier that opens the switcher.
 export function SwitcherButton({ class: extra = '' }) {
@@ -34,7 +36,13 @@ export function SwitcherButton({ class: extra = '' }) {
 function go(e) {
     if (e.kind === 'den') nav().open(`/den/${e.den}`);
     else if (e.kind === 'voice') openCall(e.den, e.id, { den: e.denName, channel: e.name });
-    else nav().den(e.den, e.id, 'chan');
+    else if (e.kind === 'collection') {
+        showCollection(e.den, e.id);
+        nav().den(e.den, COLLECTIONS, 'chan');
+    } else if (e.kind === 'channel_collection') {
+        showCollection(e.den, e.id);
+        nav().den(e.den, channelCollectionsPath(e.channelId), 'chan');
+    } else nav().den(e.den, e.id, 'chan');
 }
 
 function EntryIcon({ e }) {
@@ -42,6 +50,7 @@ function EntryIcon({ e }) {
     if (e.kind === 'voice') return <SpeakerIcon size="h-4 w-4" />;
     if (e.kind === 'dm') return <MenuIcon name="profile" />;
     if (e.kind === 'notes') return <MenuIcon name="notes" />;
+    if (e.kind === 'collection' || e.kind === 'channel_collection') return <BookmarkIcon />;
     return <span class="flex h-4 w-4 items-center justify-center rounded bg-base-300 text-[10px] font-semibold uppercase">{[...e.name][0] || '?'}</span>;
 }
 

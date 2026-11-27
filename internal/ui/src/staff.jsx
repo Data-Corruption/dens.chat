@@ -233,6 +233,7 @@ const FIELDS = {
     sound_wait: ['Wait between sounds', (v) => `${Number(v)} seconds`],
     emojis: ['Max emoji', count],
     member_events: ['Events per member', count],
+    who_adds: ['Who can add', (v) => (v === 'everyone' ? 'Everyone' : 'Staff only')],
 };
 
 const SUMMARY_FIELDS = new Set(['channels_staff_only', 'roles_added', 'roles_removed']);
@@ -252,7 +253,7 @@ export function changeText(c, kind, locale) {
 
 // LISTED are the kinds whose changes show under their sentence; the rest
 // say theirs in it.
-const LISTED = new Set(['channel.updated', 'group.updated', 'event.updated', 'den.updated', 'role.deleted', 'member.roles']);
+const LISTED = new Set(['channel.updated', 'group.updated', 'event.updated', 'den.updated', 'role.deleted', 'member.roles', 'collection.updated']);
 
 /** auditText says a line in words: { text, changes }, its sentence and
     the changes listed under it. nameOf gives a member's @username by ID.
@@ -314,6 +315,10 @@ export function auditText(l, nameOf, locale) {
         'event.canceled': () => `${by} canceled ${on}'s event ${name()}`,
         'event.ended': () => `${by} ended ${on}'s event ${name()}`,
         'den.updated': () => `${by} changed the den's settings`,
+        'collection.created': () => `${by} made the collection ${name()} in ${channel()}`,
+        'collection.updated': () => `${by} changed the collection ${name()} in ${channel()}`,
+        'collection.deleted': () => `${by} deleted the collection ${name()} in ${channel()}`,
+        'collection.item_removed': () => `${by} removed a message added by ${on} from ${name()} in ${channel()}`,
     }[l.kind];
     const sentence = known?.();
     const plain = !known || lacking;

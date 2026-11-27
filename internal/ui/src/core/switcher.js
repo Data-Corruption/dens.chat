@@ -49,6 +49,20 @@ function entriesOf(den, view) {
                 left: !other || !!other.left_at });
         }
     }
+    if (view.collections?.length) {
+        const text = new Map(view.channels.filter((c) => c.kind === 'text').map((c) => [c.id, c]));
+        for (const col of view.collections) {
+            if (!col.channel_id) {
+                out.push({ ...base, kind: 'collection', id: col.id, name: col.name, detail: 'Personal', words: [col.name], unread: false, mentions: 0 });
+            } else if (text.has(col.channel_id)) {
+                const ch = text.get(col.channel_id);
+                out.push({
+                    ...base, kind: 'channel_collection', id: col.id, channelId: col.channel_id, name: col.name,
+                    detail: `#${ch.name}`, words: [col.name, ch.name], unread: false, mentions: 0,
+                });
+            }
+        }
+    }
     return out;
 }
 

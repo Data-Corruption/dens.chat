@@ -55,7 +55,7 @@ function openThere({ message, event, open }) {
     if (open) nav().open(open);
     const at = chatRoute(to);
     if (event && at?.channelID === EVENTS) showEvent(at.denID, event);
-    else if (message && at?.channelID && at.channelID !== 'dms' && at.channelID !== EVENTS) openAt(at.denID, at.channelID, message);
+    else if (message && at?.channelID && /^[0-9]+$/.test(at.channelID)) openAt(at.denID, at.channelID, message);
 }
 
 // takeSettingsPath opens the settings over the home page for /settings,

@@ -201,3 +201,102 @@ export function MessageLink({ url, link }) {
         </>
     );
 }
+
+// forwardPlace resolves a forward's source against dens joined on this
+// install: only a visible text channel in a joined den opens, never a DM,
+// voice channel, hidden channel or unjoined den.
+export function forwardPlace(source, links, viewOf = otherView) {
+    if (!source || !links) return { den: null, view: null, channel: null };
+    const den = denOf({ den: source.den_id }, links);
+    if (!den) return { den: null, view: null, channel: null };
+    const view = den.den_id === links.denID ? links.view : viewOf(den.den_id);
+    const channel = (view && view.channels.find((c) => c.id === source.channel_id && c.kind === 'text')) || null;
+    return { den, view, channel };
+}
+
+// forwardLabel describes a forward's source for the header over the message.
+// chip is non-empty only for a visible text channel in a joined den.
+export function forwardLabel(source, { den, view, channel }, hereID) {
+    if (!source) return { text: 'Forwarded', chip: '' };
+    if (!den) return { text: 'Forwarded from another den', chip: '' };
+    if (view === null) return { text: 'Forwarded', chip: '' };
+    if (!channel) return { text: 'Forwarded from another channel', chip: '' };
+    const chip = den.den_id === hereID ? `#${channel.name}` : `${den.name} · #${channel.name}`;
+    return { text: 'Forwarded from ', chip };
+}
+
+// followForward opens the channel message a forward came from, or says why it
+// can't. It checks the den's current state on this install first, and never
+// opens a non-text channel or exposes any den URL.
+export async function followForward(source, links) {
+    const den = denOf({ den: source.den_id }, links);
+    if (!den) return '';
+    const view = den.den_id === links.denID ? links.view : await api.get(`/api/dens/${den.den_id}/state`);
+    const { channel } = forwardPlace(source, { ...links, view, denID: den.den_id });
+    if (!channel) return CHANNEL_GONE;
+    try {
+        const page = await api.get(`/api/dens/${den.den_id}/channels/${channel.id}/messages?around=${source.message_id}&limit=1`);
+        if (page.messages[0]?.id !== source.message_id) return MESSAGE_GONE;
+    } catch {
+        // Offline den without this message cached: open the channel anyway,
+        // so the channel shows its offline notice.
+    }
+    links.open(den.den_id, channel.id, source.message_id);
+    return '';
+}
+
+// ForwardedLabel renders a forwarded message's source header: plain
+// "Forwarded" when no source is carried, plain text for unjoined dens or
+// hidden/deleted channels without querying any den, and a clickable channel
+// chip for a visible text channel in a joined den.
+export function ForwardedLabel({ source }) {
+    const links = useContext(LinkContext);
+    const [, setVersion] = useState(0);
+    const [refusal, setRefusal] = useState('');
+    const [busy, setBusy] = useState(false);
+    const timer = useRef(null);
+    const at = source && links ? forwardPlace(source, links) : { den: null, view: null, channel: null };
+    const otherDen = at.den && at.den.den_id !== links.denID ? at.den.den_id : '';
+    useEffect(() => {
+        if (!otherDen) return;
+        const fn = () => setVersion((n) => n + 1);
+        listeners.add(fn);
+        fetchOther(otherDen);
+        if (otherView(otherDen) !== at.view) fn();
+        return () => listeners.delete(fn);
+    }, [otherDen]);
+    useEffect(() => () => clearTimeout(timer.current), []);
+    if (!source || !links) return 'Forwarded';
+    const { text, chip } = forwardLabel(source, at, links.denID);
+    if (!chip) return text;
+    async function click(e) {
+        e.preventDefault();
+        if (busy) return;
+        setBusy(true);
+        let why = '';
+        try {
+            why = await followForward(source, links);
+        } catch (err) {
+            why = err.message;
+        }
+        setBusy(false);
+        setRefusal(why);
+        clearTimeout(timer.current);
+        if (why) timer.current = setTimeout(() => setRefusal(''), 6000);
+    }
+    return (
+        <span class="min-w-0">
+            {text}
+            <button
+                type="button"
+                data-forward-link
+                aria-busy={busy}
+                onClick={click}
+                class={`inline-flex max-w-full cursor-pointer items-center rounded bg-primary/15 px-1 align-bottom not-italic font-medium text-primary hover:bg-primary/25 ${busy ? 'cursor-wait opacity-70' : ''}`}
+            >
+                <span class="truncate">{chip}</span>
+            </button>
+            {refusal ? <StatusText kind="error" inline role="status" class="ml-1 not-italic">{refusal}</StatusText> : null}
+        </span>
+    );
+}

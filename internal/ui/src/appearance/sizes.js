@@ -82,20 +82,21 @@ export function playerClass(choice, short) {
     return short ? `aspect-[9/16] ${PORTRAIT[choice] || PORTRAIT.small}` : `aspect-video ${LANDSCAPE[choice] || LANDSCAPE.small}`;
 }
 
-// Steam cards' classes, spelled out so Tailwind keeps them. Small stacks
-// the picture over the facts; larger sizes put them side by side with the
-// picture taking a fixed share so the card never overflows a narrow pane.
+// Steam cards' classes, spelled out so Tailwind keeps them. Medium places
+// the picture beside the facts, where both share a height; Small, Large and
+// Largest stack the 16:9 picture or trailer above the facts so larger cards
+// give trailers full width with a compact bar below.
 const STEAM_CARD = {
     small: 'w-[400px] flex-col',
     medium: 'w-[640px] flex-row',
-    large: 'w-[960px] flex-row',
-    largest: 'w-[1280px] flex-row',
+    large: 'w-[960px] flex-col',
+    largest: 'w-[1280px] flex-col',
 };
 const STEAM_MEDIA = {
     small: 'aspect-video w-full',
     medium: 'aspect-video w-[56.25%]',
-    large: 'aspect-video w-[62.5%]',
-    largest: 'aspect-video w-[68.75%]',
+    large: 'aspect-video w-full',
+    largest: 'aspect-video w-full',
 };
 
 /** steamCardClass sizes a Steam card and sets its stacked vs side-by-side layout */
