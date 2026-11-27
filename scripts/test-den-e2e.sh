@@ -265,13 +265,32 @@ run() {
 
   # The owner sets a status, the member forwards her message, and names
   # the install, which the den lists it by, each read again after the
-  # restart.
-  local forwarded label
+  # restart. A role-gated channel and shared and personal collections also
+  # cross the restart.
+  local forwarded label alice_id bob_id raiders raids shared_col personal_col
+  alice_id=$(guest "$DEN" member-id "$den_id" alice)
+  bob_id=$(guest "$DEN" member-id "$den_id" bob)
   guest "$DEN" set-status "$den_id" "out walking"
   forwarded=$(guest "$CLIENT" forward "$den_id" "$channel" "$reply" "$channel")
   guest "$CLIENT" device-name "Bob's laptop"
   label=$(guest "$CLIENT" wait-device-label "$den_id" "Bob's laptop (")
   echo ">> The member named their install, which the den lists as $label"
+
+  raiders=$(guest "$DEN" create-role "$den_id" Raiders)
+  raids=$(guest "$DEN" channel-gated "$den_id" raids "$raiders")
+  guest "$DEN" send "$den_id" "$raids" "meet at eight" >/dev/null
+  guest "$CLIENT" channel-hidden "$den_id" "$raids" raids
+  guest "$DEN" set-member-roles "$den_id" "$bob_id" "$raiders"
+  [[ "$(guest "$CLIENT" named-channel "$den_id" raids)" == "$raids" ]] ||
+    { echo "error: the member didn't see the role-gated channel once granted the role" >&2; return 1; }
+  [[ "$(guest "$CLIENT" history "$den_id" "$raids")" == "meet at eight" ]] ||
+    { echo "error: the member's gated channel history reads: $(guest "$CLIENT" history "$den_id" "$raids")" >&2; return 1; }
+  echo ">> The role-gated channel stayed hidden until the role was granted"
+
+  shared_col=$(guest "$DEN" create-collection "$den_id" "$channel" Pins everyone)
+  guest "$CLIENT" collection-add "$den_id" "$shared_col" "$reply"
+  personal_col=$(guest "$CLIENT" create-collection "$den_id" - Saved)
+  guest "$CLIENT" collection-add "$den_id" "$personal_col" "$reply"
 
   echo ">> Restarting the den's service"
   "${INCUS[@]}" exec "$DEN" -- systemctl restart dens@main
@@ -285,10 +304,20 @@ run() {
   echo ">> The member's history is complete after the restart"
   [[ "$(guest "$CLIENT" forwarded "$den_id" "$channel" "$forwarded")" == true && "$(guest "$CLIENT" forwarded "$den_id" "$channel" "$reply")" == false ]] ||
     { echo "error: after the restart the forward doesn't read as forwarded, or its original does" >&2; return 1; }
+  [[ "$(guest "$CLIENT" forward-source "$den_id" "$channel" "$forwarded")" == "$den_id $channel $reply" && "$(guest "$CLIENT" forward-source "$den_id" "$channel" "$reply")" == none ]] ||
+    { echo "error: after the restart the forward's source is: $(guest "$CLIENT" forward-source "$den_id" "$channel" "$forwarded")" >&2; return 1; }
+  [[ "$(guest "$CLIENT" named-channel "$den_id" raids)" == "$raids" && "$(guest "$CLIENT" channel-roles "$den_id" "$raids")" == "$raiders" && "$(guest "$CLIENT" history "$den_id" "$raids")" == "meet at eight" ]] ||
+    { echo "error: the role-gated channel didn't hold after the restart" >&2; return 1; }
+  [[ "$(guest "$CLIENT" collection-info "$den_id" "$shared_col")" == "Pins 1" && "$(guest "$CLIENT" collection-items "$den_id" "$shared_col")" == "$reply hello back, @bob" ]] ||
+    { echo "error: the shared collection didn't hold after the restart" >&2; return 1; }
+  [[ "$(guest "$CLIENT" collection-info "$den_id" "$personal_col")" == "Saved 1" && "$(guest "$CLIENT" collection-items "$den_id" "$personal_col")" == "$reply hello back, @bob" ]] ||
+    { echo "error: the personal collection didn't hold after the restart" >&2; return 1; }
+  [[ "$(guest "$DEN" collection-info "$den_id" "$shared_col")" == "Pins 1" && "$(guest "$DEN" collection-info "$den_id" "$personal_col")" == none ]] ||
+    { echo "error: the owner's view of collections after the restart is wrong" >&2; return 1; }
   [[ "$(guest "$CLIENT" status-of "$den_id" alice)" == "out walking" ]] ||
     { echo "error: after the restart the member reads the owner's status as: $(guest "$CLIENT" status-of "$den_id" alice)" >&2; return 1; }
   [[ "$(guest "$CLIENT" wait-device-label "$den_id" "Bob's laptop (")" == "$label" ]] || return 1
-  echo ">> The forward, the owner's status and the install's name read the same through Caddy after the restart"
+  echo ">> The forward link, gated channel, collections, status and install name read the same through Caddy after the restart"
   guest "$CLIENT" wait-retention "$den_id" 30
   guest "$DEN" retention "$den_id" 0
   guest "$CLIENT" wait-retention "$den_id" 0
@@ -302,11 +331,9 @@ run() {
   echo ">> A YouTube share link reached the channel without its tracking, with its timestamp"
 
   echo ">> A call through the den's media ports"
-  local lounge alice_id bob_id network
+  local lounge network
   lounge=$(guest "$DEN" channel "$den_id" Lounge voice)
   [[ "$(guest "$CLIENT" named-channel "$den_id" Lounge)" == "$lounge" ]] || { echo "error: the member sees another voice channel" >&2; return 1; }
-  alice_id=$(guest "$DEN" member-id "$den_id" alice)
-  bob_id=$(guest "$DEN" member-id "$den_id" bob)
   # The owner's install reaches its den on this machine's own addresses;
   # the member's, at the address den.test resolves to. Over TCP alone, as
   # on a network that blocks UDP, the member's side takes the fallback port.
@@ -459,13 +486,15 @@ run() {
   echo ">> Lounge's longest call, $record ms, held after the den restarted"
 
   # Each of staff's acts so far wrote its line, which the restart keeps:
-  # the invite, the channels, the retention set and turned off, the staff
-  # mute and its lifting, the disconnect, and the bitrate.
+  # the invite, the channels, the retention set and turned off, the role
+  # and member roles, the shared collection, the staff mute and its
+  # lifting, the disconnect, and the bitrate.
   local log want
   log=$(guest "$DEN" audit "$den_id")
   want=$(printf '%s\n' "channel.updated $alice_id" "call.disconnected $alice_id $bob_id" "call.unmuted $alice_id $bob_id" \
-    "call.muted $alice_id $bob_id" "channel.created $alice_id" "den.updated $alice_id" "den.updated $alice_id" "channel.created $alice_id" \
-    "invite.created $alice_id")
+    "call.muted $alice_id $bob_id" "channel.created $alice_id" "den.updated $alice_id" "collection.created $alice_id" \
+    "member.roles $alice_id $bob_id" "channel.created $alice_id" "role.created $alice_id" "den.updated $alice_id" \
+    "channel.created $alice_id" "invite.created $alice_id")
   [[ "$log" == "$want" ]] || { printf 'error: the audit log after the restart reads:\n%s\n' "$log" >&2; return 1; }
   echo ">> The audit log holds each of staff's acts after the restart"
 

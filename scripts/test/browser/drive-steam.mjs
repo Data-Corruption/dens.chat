@@ -10,10 +10,12 @@
 // one Steam doesn't have; and one for adults only, its pictures and trailer
 // covered and unasked until bob shows them. A card starts at Small (400 px
 // stacked), keeps its size from before it loads, resizes independently via
-// Appearance's Steam cards setting (Medium 640 / Large 960 / Largest 1280
-// side by side), steps through screenshots, plays its dual-SourceBuffer fMP4
-// trailer on click with zero CSP violations, and shares one-at-a-time
-// playback with YouTube players.
+// Appearance's Steam cards setting (Medium 640 side by side; Large 960 and
+// Largest 1280 stacked with a compact wide bar below), steps through
+// screenshots (with the trailer play button only on the header slide), plays
+// its dual-SourceBuffer fMP4 trailer on click with shared custom video
+// controls, carousel browsing during playback and zero CSP violations, and
+// shares one-at-a-time playback with YouTube players.
 //
 //   run.sh steam chromium|firefox
 import fs from 'node:fs';
@@ -145,21 +147,24 @@ try {
     c.report(loaded.w === 400 && loaded.stacked && !loaded.beside, `Small is 400 pixels wide, stacked: ${q(loaded)}`);
     await shot('sale-small');
 
-    step('its arrows step through the screenshots, each asked for as it shows');
+    step('its arrows step through the screenshots, each asked for as it shows, play button only on header');
     const before = asked().filter((u) => u.includes('/shots/')).length;
     const pictures = [];
+    const playOnSlide = [];
     for (let i = 0; i < 4; i++) {
         await b.eval(`${CARD(first, 1771300)}.querySelector('button[aria-label="Next picture"]').click(), true`);
         await sleep(400);
         pictures.push(await b.eval(`${CARD(first, 1771300)}.querySelector('img')?.getAttribute('src') || ''`));
+        playOnSlide.push(await b.eval(`!!${CARD(first, 1771300)}.querySelector('[data-steam-play]')`));
     }
     const shots = asked().filter((u) => u.includes('/shots/')).length - before;
     const afterShots = await geom(first, 1771300);
     c.report(q(pictures) === q(['/api/steam/1771300/shots/1', '/api/steam/1771300/shots/2', '/api/steam/1771300/shots/3', '/api/steam/1771300/header'])
+        && q(playOnSlide) === q([false, false, false, true])
         && shots >= 3 && afterShots.w === loaded.w && afterShots.h === loaded.h,
-        `the arrows step through three screenshots and back, ${shots} asked, the card's size kept: ${q(pictures)}`);
+        `the arrows step through three screenshots and back, ${shots} asked, play button header-only (${q(playOnSlide)}), size kept: ${q(pictures)}`);
 
-    step("Appearance's Steam cards setting resizes side by side (Medium, Large, Largest) without shifting");
+    step("Appearance's Steam cards setting resizes Medium side by side and Large / Largest stacked with wide bar");
     const slideSteam = async (choice) => {
         await openAppearance(b, 'Messages');
         await waitFor(() => b.eval(`!!document.querySelector('input[type=range][data-steam-size]')`), 'the Steam cards slider');
@@ -175,14 +180,15 @@ try {
     const med = await slideSteam('medium');
     await shot('sale-medium');
     const lrg = await slideSteam('large');
+    await shot('sale-large');
     const max = await slideSteam('largest');
     const fits = await b.eval(`JSON.stringify((() => { const s = document.querySelector('[data-scroller]'); return [s.scrollWidth, s.clientWidth]; })())`).then(JSON.parse);
     const kept = await b.eval(`JSON.stringify([localStorage.getItem('DENS_STEAM_SIZE'), localStorage.getItem('DENS_PLAYER_SIZE')])`);
-    c.report(med.w === 640 && med.beside && lrg.w === 960 && lrg.beside && max.w === 1280 && max.beside && fits[0] <= fits[1] && kept === '["largest",null]',
-        `Medium 640, Large 960 and Largest 1280 lay out side by side within the pane (${q({ med, lrg, max, fits, kept })})`);
+    c.report(med.w === 640 && med.beside && lrg.w === 960 && lrg.stacked && !lrg.beside && max.w === 1280 && max.stacked && !max.beside && fits[0] <= fits[1] && kept === '["largest",null]',
+        `Medium 640 side by side, Large 960 and Largest 1280 stacked within the pane (${q({ med, lrg, max, fits, kept })})`);
     await slideSteam('medium');
 
-    step('trailer: zero fetches before click, dual-SourceBuffer fMP4 plays with zero CSP violations, shares lock with YouTube');
+    step('trailer: zero fetches before click, custom video controls, carousel browsing during play, 0 CSP violations, shared lock with YouTube');
     const noTrailerYet = !asked().some((u) => u.includes('/trailer/'));
     const beforePlay = await geom(first, 1771300);
     await b.eval(`${CARD(first, 1771300)}.querySelector('[data-steam-play]').click(), true`, true);
@@ -196,11 +202,30 @@ try {
         return JSON.stringify({ hasVideo: !!v, w: v?.videoWidth, h: v?.videoHeight, t: v?.currentTime, paused: v?.paused, muted: v?.muted, rs: v?.readyState, err: v?.error?.code, msg: k?.querySelector('[data-steam-trailer-error]')?.textContent || '' });
     })()`);
     const duringPlay = await geom(first, 1771300);
+    const customControls = await b.eval(`(() => { const k = ${CARD(first, 1771300)}; return !!k?.querySelector('[data-video-controls]') && !k?.querySelector('video[controls]'); })()`);
     const cspViolations = await b.eval(`JSON.stringify(window.__cspViolations || [])`).then(JSON.parse);
     await shot('trailer-playing');
-    c.report(noTrailerYet && playing && playing.w === 320 && playing.h === 180 && playing.t >= 0.2
+    c.report(noTrailerYet && playing && playing.w === 320 && playing.h === 180 && playing.t >= 0.2 && customControls
         && duringPlay.w === beforePlay.w && duringPlay.h === beforePlay.h && cspViolations.length === 0,
-        `zero trailer asks before click (${noTrailerYet}), trailer played (${q(playing || diag)}), box unchanged (${q(duringPlay)}), 0 CSP violations (${q(cspViolations)})`);
+        `zero trailer asks before click (${noTrailerYet}), trailer played (${q(playing || diag)}), custom controls (${customControls}), box unchanged (${q(duringPlay)}), 0 CSP violations (${q(cspViolations)})`);
+
+    // Stepping through screenshots while playing keeps the trailer running behind a return pill.
+    await b.eval(`${CARD(first, 1771300)}.querySelector('button[aria-label="Next picture"]').click(), true`);
+    await sleep(300);
+    const browsed = JSON.parse(await b.eval(`(() => {
+        const k = ${CARD(first, 1771300)};
+        return JSON.stringify({
+            shot: k?.querySelector('img')?.getAttribute('src') || '',
+            hasVideo: !!k?.querySelector('video[data-steam-video]'),
+            pill: k?.querySelector('[data-steam-playing-pill]')?.textContent.trim() || '',
+            playBtn: !!k?.querySelector('[data-steam-play]'),
+        });
+    })()`));
+    await b.eval(`${CARD(first, 1771300)}.querySelector('[data-steam-playing-pill] button').click(), true`);
+    await sleep(200);
+    const returned = await b.eval(`!!${CARD(first, 1771300)}.querySelector('video[data-steam-video]:not(.hidden)') && !${CARD(first, 1771300)}.querySelector('[data-steam-playing-pill]')`);
+    c.report(browsed.shot === '/api/steam/1771300/shots/1' && browsed.hasVideo && browsed.pill.includes('Trailer') && !browsed.playBtn && returned,
+        `carousel steps to screenshots during trailer (${q(browsed)}) and pill returns (${returned})`);
 
     // Turn on YouTube players and start a YouTube player: Steam trailer stops.
     await b.eval(`localStorage.setItem('DENS_YOUTUBE', '1'), true`);
